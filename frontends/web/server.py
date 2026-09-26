@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import gm_moments
+from core import gm_moments, openings
 from core.coach import Coach, audiences
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
 from core.review import CACHE_DIR, load_pgn, review_game
@@ -324,6 +324,26 @@ class GmReq(BaseModel):
 def gm_check(req: GmReq):
     """Is there a GM-level resource (sacrifice / forced mate) for the side to move?"""
     return {"moment": gm_moments.find(S.engine, parse_fen(req.fen))}
+
+
+class LinesReq(BaseModel):
+    fen: str
+    db: str = "masters"
+    ratings: list[int] | None = None
+    speeds: list[str] | None = None
+    depth: int = 8
+
+
+@app.post("/api/lines")
+def lines(req: LinesReq):
+    """Main lines from a position, straight from the explorer (no coach involved)."""
+    board = parse_fen(req.fen)
+    if not explorer.available():
+        raise HTTPException(400, "The explorer needs a Lichess token: add LICHESS_TOKEN to .env.")
+    try:
+        return openings.main_lines(explorer.explore, board, req.depth, req.db, req.ratings, req.speeds, max_lines=8)
+    except (RuntimeError, ValueError) as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/api/review")

@@ -434,6 +434,7 @@ function setEtab(tab) {
 
 function requestExplorer(c) {
   clearTimeout(xTimer);
+  if (linesFor && !state.demo && c && c.fen() !== linesFor) { $('x-lines-box').classList.add('hidden'); linesFor = null; }
   const token = ++xToken;
   if (state.etab !== 'explorer' || !c) return;
   const f = explorerFilters();
@@ -451,6 +452,85 @@ function requestExplorer(c) {
       if (token === xToken) $('x-body').innerHTML = `<p class="hint">${esc(e.message)}</p>`;
     }
   }, 350);
+}
+
+// ---- instant "most studied / most played lines" demos, straight from the explorer
+
+let linesFor = null;  // FEN the lines box was built for
+
+function linesOrigin() {
+  // the board position in coach-tool terms (ply + extra moves), so demos can be discussed
+  if (state.demo) {
+    const d = state.demo;
+    return { ply: d.ply, then_moves: [...d.then_moves, ...d.moves.slice(0, d.step)] };
+  }
+  if (state.play) return { ply: 1, then_moves: state.play.moves.slice(0, state.play.view) };
+  return { ply: state.ply + 1, then_moves: [...state.extra] };
+}
+
+function updateLinesButton() {
+  const masters = $('x-db').value === 'masters';
+  $('x-lines').textContent = masters ? '▶ Most studied lines' : '▶ Most played lines at this level';
+  $('x-lines').title = masters ? 'The lines masters play most from this position, as demos'
+    : 'The lines Lichess players in this rating band play most, as demos';
+}
+
+async function showLines() {
+  const c = currentGame();
+  const box = $('x-lines-box');
+  const f = explorerFilters();
+  const origin = linesOrigin();
+  linesFor = c.fen();
+  box.classList.remove('hidden');
+  box.innerHTML = '<p class="hint">Mapping the lines… (the first time for a position can take ~20 s)</p>';
+  let data;
+  try {
+    data = await api('/api/lines', { fen: c.fen(), db: f.db, ratings: f.ratings, speeds: f.speeds });
+  } catch (e) {
+    box.innerHTML = `<p class="hint">${esc(e.message)}</p>`;
+    return;
+  }
+  if (linesFor !== c.fen()) return;
+  if (!data.main_lines.length) { box.innerHTML = '<p class="hint">No established lines from here.</p>'; return; }
+  const src = data.source === 'masters' ? 'master games' : 'Lichess games';
+  // lines sharing a name get the moves where they part ways ("English Attack · 8...h5 9. Nd5")
+  const nameOf = (l) => (l.opening ? l.opening.replace(/^.*?: /, '') : l.moves.slice(0, 3).join(' '));
+  const counts = {};
+  data.main_lines.forEach((l) => { counts[nameOf(l)] = (counts[nameOf(l)] || 0) + 1; });
+  const tail = (l) => {
+    const same = data.main_lines.filter((o) => o !== l && nameOf(o) === nameOf(l));
+    let split = 0;  // first ply where this line differs from every sibling
+    for (const o of same) {
+      let i = 0;
+      while (i < l.moves.length && o.moves[i] === l.moves[i]) i++;
+      split = Math.max(split, i);
+    }
+    const labels = demoLabels({ start_fen: c.fen(), moves: l.moves });
+    return l.moves.slice(split, split + 2).map((m, j) => {
+      const lab = labels[split + j];
+      if (j > 0 && lab.endsWith('...')) return m;
+      return lab.endsWith('...') ? `${lab}${m}` : `${lab} ${m}`;
+    }).join(' ');
+  };
+  const demos = data.main_lines.map((l) => ({
+    title: counts[nameOf(l)] > 1 ? `${nameOf(l)} · ${tail(l)}` : nameOf(l),
+    ply: origin.ply, then_moves: origin.then_moves, start_fen: c.fen(),
+    moves: l.moves,
+    notes: l.steps.map((s) => `Played in ${s.share}% of ${src} here · White wins ${s.white}%, draws ${s.draws}%, Black wins ${s.black}%`),
+  }));
+  box.innerHTML = `<div class="x-lines-h"><span>${data.source === 'masters' ? 'Most studied' : 'Most played'} lines`
+      + `${data.start_opening ? ` · ${esc(data.start_opening)}` : ''}</span><button class="link" id="x-lines-close">×</button></div>`
+    + data.main_lines.map((l, i) => {
+      const r = l.results_pct || {};
+      return `<div class="x-line" data-i="${i}" title="${esc(l.line)}">
+        <span class="x-line-name">▶ ${esc(demos[i].title)}</span>
+        <span class="x-line-share">${l.share_of_games_pct}%</span>
+        <span class="x-line-moves">${esc(l.line)}</span>
+        ${r.white !== undefined ? `<span class="x-bar"><i class="w" style="width:${r.white}%"></i><i class="d" style="width:${r.draws}%"></i><i class="b" style="width:${r.black}%"></i></span>` : ''}
+      </div>`;
+    }).join('') + (data.partial ? '<p class="hint">Lichess was busy, so some lines are shorter.</p>' : '');
+  $('x-lines-close').onclick = () => { box.classList.add('hidden'); linesFor = null; };
+  box.querySelectorAll('.x-line').forEach((el) => { el.onclick = () => openDemo(demos[+el.dataset.i]); });
 }
 
 function showExplorer(data) {
@@ -599,13 +679,20 @@ function markdown(text) {
     if (points.length) html.push(`<ol class="points">${points.map((p) => `<li>${p}</li>`).join('')}</ol>`);
     points = [];
   };
+  const MOVE_START = /^(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?|O-O(?:-O)?[+#]?)[!?]*\s+(?:\d+\.|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8]|O-O)/;
+  const point = (text) => {
+    // "Grand Prix Attack – 3. f4. He wants…" -> titled card
+    const t = text.match(/^\**([^.:–—*]{3,48}?)\**\s*(?:[–—:]|\s-\s)\s*([\s\S]+)$/);
+    return t ? `<span class="pt-title">${inline(t[1], seen)}</span>${inline(t[2], seen)}` : inline(text, seen);
+  };
   for (const block of blocks) {
     const lines = block.split('\n');
-    // "1. That f6 pawn is a crowbar…" style points (numbered from 1, real sentences, not moves)
-    const item = block.match(/^\s*(\d+)\.\s+([\s\S]{30,})$/);
-    const isMoveLine = item && /^(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?|O-O(?:-O)?[+#]?)[!?]*\s+(?:\d+\.|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8]|O-O)/.test(item[2]);
-    if (item && !isMoveLine && +item[1] === points.length + 1 && lines.length <= 3) {
-      points.push(inline(item[2], seen));
+    // "1. That f6 pawn is a crowbar…" style points: numbered from 1, real sentences (not move
+    // sequences), either one per paragraph or several on consecutive lines
+    const items = lines.map((l) => l.match(/^\s*(\d+)\.\s+(.{12,})$/));
+    const sequential = items.every((m, i) => m && +m[1] === points.length + i + 1 && !MOVE_START.test(m[2]));
+    if (sequential && (lines.length > 1 || items[0][2].length >= 30)) {
+      items.forEach((m) => points.push(point(m[2])));
       continue;
     }
     flush();
@@ -1673,6 +1760,7 @@ $('from-color').querySelectorAll('button').forEach((b) => {
 $('gm-toggle').onchange = (e) => { state.gmAlerts = e.target.checked; store('gmAlerts', e.target.checked ? '1' : '0'); };
 
 function renderAudience(list) {
+  $('audience').classList.toggle('hidden', list.length < 2);  // one voice: no switch needed
   $('audience').innerHTML = list.map((a) => `<button data-a="${esc(a)}">${esc(a[0].toUpperCase() + a.slice(1))}</button>`).join('');
   $('audience').querySelectorAll('button').forEach((b) => {
     b.classList.toggle('on', b.dataset.a === state.audience);
@@ -1782,8 +1870,15 @@ $('nav-flip').onclick = () => {
 };
 $('engine-toggle').onchange = (e) => setEngine(e.target.checked);
 $('etabs').querySelectorAll('button').forEach((b) => { b.onclick = () => setEtab(b.dataset.etab); });
+$('x-lines').onclick = showLines;
 for (const id of ['x-db', 'x-band', 'x-speed']) {
-  $(id).onchange = () => { store(id, $(id).value); if (!state.editor) requestExplorer(currentGame()); };
+  $(id).onchange = () => {
+    store(id, $(id).value);
+    updateLinesButton();
+    $('x-lines-box').classList.add('hidden');
+    linesFor = null;
+    if (!state.editor) requestExplorer(currentGame());
+  };
 }
 
 $('chat-form').onsubmit = (e) => { e.preventDefault(); ask($('chat-text').value); };
@@ -1818,6 +1913,7 @@ document.addEventListener('keydown', (e) => {
   state.gmAlerts = recall('gmAlerts') !== '0';
   $('gm-toggle').checked = state.gmAlerts;
   for (const id of ['x-db', 'x-band', 'x-speed']) { const v = recall(id); if (v !== null) $(id).value = v; }
+  updateLinesButton();
   setEtab(recall('etab') === 'explorer' ? 'explorer' : 'engine');
   state.me = recall('me') || cfg.me || '';
   const engineOn = recall('engineOn') !== '0';

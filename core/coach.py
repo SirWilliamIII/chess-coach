@@ -8,7 +8,7 @@ from pathlib import Path
 import anthropic
 import chess
 
-from . import features, tricks
+from . import features, openings, tricks
 from .engine import Engine
 
 MODEL = os.environ.get("COACH_MODEL", "claude-opus-5")
@@ -190,15 +190,6 @@ OPENING_LINES_TOOL = {
         "required": ["ply"],
     },
 }
-
-
-def _numbered(board: chess.Board, sans: list[str]) -> str:
-    """'e4 e5 Nf3' from `board` -> '1. e4 e5 2. Nf3' (numbering taken from the position)."""
-    b = board.copy(stack=False)
-    moves = []
-    for san in sans:
-        moves.append(b.push_san(san))
-    return board.variation_san(moves)
 
 
 def _final_answer(parts: list[str]) -> str:
@@ -393,78 +384,15 @@ class Coach:
 
     def opening_lines(self, ply: int, then_moves: list[str] | None = None, depth: int = 6,
                       db: str = "masters", ratings: list[int] | None = None) -> dict:
-        """Breadth-first walk of the explorer tree, keeping only moves real players choose often."""
         board, played = self._position(ply, then_moves)
-        depth = max(2, min(10, depth))
-        budget, min_share, width, min_prob = 20, 15.0, 3, 0.02  # budget = explorer lookups per call
-        partial = []
-
-        def look(b: chess.Board, source: str, required: bool = False) -> dict | None:
-            try:
-                return self.explorer(b.fen(), source, ratings if source == "lichess" else None, None)
-            except RuntimeError as e:
-                if required:
-                    raise ValueError(str(e))
-                partial.append(str(e))  # e.g. rate limited mid-walk: keep what we have
-                return None
-
-        source = db
-        root = look(board, source, required=True)
-        if source == "masters" and root["total"] < 50:  # little master theory here: use what people play
-            source = "lichess"
-            root = look(board, source, required=True)
-        used = 1
-        lines = []  # (moves, explorer data at the end or None, probability, name so far)
-        frontier = [([], board, root, 1.0, root.get("opening"))]
-        while frontier:
-            moves, b, data, prob, named = frontier.pop(0)
-            picks = [m for m in data["moves"] if m["share"] >= min_share][:width] or data["moves"][:1]
-            if len(moves) >= depth or not picks:
-                lines.append((moves, data, prob, named))
-                continue
-            for m in picks:
-                p = prob * m["share"] / 100
-                if used >= budget or p < min_prob or len(moves) + 1 >= depth:
-                    lines.append((moves + [m["san"]], None, p, named))
-                    continue
-                nb = b.copy(stack=False)
-                nb.push_uci(m["uci"])
-                used += 1
-                child = None if partial else look(nb, source)
-                if child is None:
-                    lines.append((moves + [m["san"]], None, p, named))
-                else:
-                    frontier.append((moves + [m["san"]], nb, child, p, child.get("opening") or named))
-
-        out = []
-        for moves, data, prob, named in sorted(lines, key=lambda x: -x[2])[:10]:
-            if not moves:
-                continue
-            end = data or {}
-            if not end and not partial and used < budget + 8:  # name and results at the end of the line
-                b = board.copy(stack=False)
-                for san in moves:
-                    b.push_san(san)
-                end = look(b, source) or {}
-                used += 1
-            name = end.get("opening") or named or {}
-            out.append({
-                "line": _numbered(board, moves),
-                "moves": moves,
-                "opening": name.get("name"), "eco": name.get("eco"),
-                "share_of_games_pct": round(prob * 100, 1),
-                "games": end.get("total"),
-                "results_pct": end.get("results"),
-            })
-        start = root.get("opening") or {}
+        data = openings.main_lines(self.explorer, board, depth, db, ratings)
+        for line in data["main_lines"]:
+            line.pop("steps")  # per-move stats are for the page's demos; the coach has enough
         return {
             "position": f"ply {ply}" + (f" then {' '.join(played)}" if played else ""),
-            "start_opening": start.get("name"), "start_eco": start.get("eco"),
-            "source": source, "games_at_start": root["total"],
-            "main_lines": out,
-            "partial": bool(partial),
+            **data,
             "note": "share_of_games_pct: how often games from this position follow the whole line."
-                    + (" The explorer was busy, so some lines are shorter or unnamed." if partial else ""),
+                    + (" The explorer was busy, so some lines are shorter or unnamed." if data["partial"] else ""),
         }
 
     def _run_tool(self, name: str, args: dict) -> str:

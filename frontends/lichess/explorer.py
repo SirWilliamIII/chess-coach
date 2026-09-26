@@ -19,6 +19,7 @@ RATING_BANDS = [0, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500]  # lower boun
 SPEEDS = ["ultraBullet", "bullet", "blitz", "rapid", "classical", "correspondence"]
 
 _lock = threading.Lock()  # Lichess asks for one request at a time
+MAX_AGE = 30 * 24 * 3600  # reuse saved answers for a month
 MIN_INTERVAL = 0.35      # seconds between requests, so tree walks don't trip the rate limit
 _last_request = 0.0
 _memory: dict[str, dict] = {}
@@ -83,6 +84,10 @@ def explore(fen: str, db: str = "lichess", ratings: list[int] | None = None,
     if key in _memory:
         return _memory[key]
     cached = CACHE_DIR / f"{key}.json"
+    if cached.exists() and time.time() - cached.stat().st_mtime < MAX_AGE:
+        result = json.loads(cached.read_text())  # opening statistics barely change in a month
+        _memory[key] = result
+        return result
 
     token = os.environ.get("LICHESS_TOKEN")
     try:

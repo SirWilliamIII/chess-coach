@@ -34,12 +34,14 @@ terminal version.
   plays theirs, and the coach steps in at GM moments (and warns you before the opponent's).
 - **⚡ GM alerts**: Stockfish checks each position where it's your turn in bot games and replays for
   a sacrifice or forced mate that beats everything else; only then does the coach speak up.
-- **Audience** switch in the chat (Coach / Hustler): same grounded coach, different voice.
 - **Show me**: when the coach explains a line it attaches a demo; the button plays it on a
   grey demo board (with a note per move) where you can also try your own moves.
   **Back to my game** returns you exactly where you were.
 - **Set up position**: place pieces freely or pick an endgame preset (Lucena, Philidor, basic
   mates, king + pawn), then **Play vs bot from here** or **Analyse**.
+- **▶ Most studied lines** (in the Explorer tab): instant demos of the main lines from the board
+  position, straight from real games: Masters = most studied, Lichess + rating band = most played
+  at that level. Each step shows how often it's played and how it scores. No coach call needed.
 - **Explorer** tab (next to the engine lines): what real Lichess players at a chosen rating band
   and time control play in the current position, with results, plus a Masters database and
   example games you can open. Needs a free Lichess account token (`LICHESS_TOKEN` in `.env`, no
@@ -54,7 +56,7 @@ The coach's instructions live in `prompts/` as Markdown: `coach.md` (ground rule
 explain, answer format including the "Habit to build" line) plus one file per voice in
 `prompts/audiences/`, and `player.md` (your level, goals and style, which the coach pitches to).
 They're re-read on every question, so edits apply without a restart;
-add a new `prompts/audiences/<name>.md` and it appears as a button.
+the coach's voice is `prompts/audiences/coach.md`; add another file there and a voice switch appears in the chat.
 
 ## Offline use
 
@@ -88,6 +90,7 @@ core/features.py   verifiable facts: structure, king safety, loose pieces, outpo
 core/review.py     one engine pass over a game, cached in data/reviews/
 core/gm_moments.py sacrifice / forced-mate detector (static exchange evaluation)
 core/tricks.py     traps and high-risk/high-reward candidates (what if they take the bait?)
+core/openings.py   main lines from real-game statistics (explorer tree walk)
 core/coach.py      Claude + tools (move_report, compare_moves, analyze_position, find_tricks,
                    show_on_board, opening_explorer)
 frontends/         chess.com + Lichess clients (incl. opening explorer), shared game loader
