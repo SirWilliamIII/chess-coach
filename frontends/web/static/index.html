@@ -15,6 +15,7 @@
       <button id="btn-play" class="btn">Play bot</button>
       <button id="btn-setup" class="btn ghost">Set up position</button>
       <button id="btn-games" class="btn">Search games</button>
+      <button id="btn-library" class="btn ghost">📚 Library</button>
       <button id="btn-load" class="btn">Load game</button>
       <button id="btn-analysis" class="btn ghost">Analysis board</button>
     </div>
@@ -158,6 +159,17 @@
       <span class="label">You play (best-moves mode)</span>
       <div class="seg" id="from-color"><button data-color="white">White</button><button data-color="black">Black</button></div>
     </div>
+  </dialog>
+
+  <dialog id="dlg-library" class="wide">
+    <form method="dialog" class="dlg-head"><h2>📚 Your library</h2><button class="link">Close</button></form>
+    <input id="lib-q" placeholder="Search your coach answers: back rank, Najdorf, knight fork…" autocomplete="off">
+    <div class="lib-filters">
+      <label class="toggle"><input type="checkbox" id="lib-starred"> ★ Favourites</label>
+      <label class="toggle"><input type="checkbox" id="lib-habits"> 🧠 Habits only</label>
+    </div>
+    <div id="lib-tags" class="lib-tags"></div>
+    <div id="lib-list" class="games-list"></div>
   </dialog>
 
   <dialog id="dlg-load">

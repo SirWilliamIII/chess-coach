@@ -46,6 +46,10 @@ terminal version.
   and time control play in the current position, with results, plus a Masters database and
   example games you can open. Needs a free Lichess account token (`LICHESS_TOKEN` in `.env`, no
   scopes). The coach uses it too ("what do people at my level play here?").
+- **📚 Library**: every coach answer is saved automatically (with its position, game, Habit line
+  and auto-tags like back-rank, fork, sicilian) in `data/library.sqlite`. Search it, filter by tag,
+  favourites (☆ on any answer) or habits, and click an entry to put the board back where it was.
+  Works offline.
 - **Analysis board** gives an empty board to set up and discuss any line.
 - Add `--host 0.0.0.0` to open it from another device on your network (anyone on the network
   could then use your API key through it).
@@ -91,6 +95,7 @@ core/review.py     one engine pass over a game, cached in data/reviews/
 core/gm_moments.py sacrifice / forced-mate detector (static exchange evaluation)
 core/tricks.py     traps and high-risk/high-reward candidates (what if they take the bait?)
 core/openings.py   main lines from real-game statistics (explorer tree walk)
+core/library.py    saved coach answers: SQLite + full-text search, auto-tags
 core/coach.py      Claude + tools (move_report, compare_moves, analyze_position, find_tricks,
                    show_on_board, opening_explorer)
 frontends/         chess.com + Lichess clients (incl. opening explorer), shared game loader

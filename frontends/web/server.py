@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import gm_moments, openings
+from core import gm_moments, library, openings
 from core.coach import Coach, audiences
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
 from core.review import CACHE_DIR, load_pgn, review_game
@@ -346,6 +346,37 @@ def lines(req: LinesReq):
         raise HTTPException(400, str(e))
 
 
+# ---------- the chat library ----------
+
+@app.get("/api/library")
+def library_search(q: str = "", tag: str | None = None, starred: bool = False, habits: bool = False):
+    return {"entries": library.search(q, tag, starred, habits), "tags": library.tag_counts()}
+
+
+@app.get("/api/library/{entry_id}")
+def library_get(entry_id: int):
+    entry = library.get(entry_id)
+    if not entry:
+        raise HTTPException(404, "not found")
+    return entry
+
+
+class StarReq(BaseModel):
+    starred: bool
+
+
+@app.post("/api/library/{entry_id}/star")
+def library_star(entry_id: int, req: StarReq):
+    library.set_star(entry_id, req.starred)
+    return {"ok": True}
+
+
+@app.delete("/api/library/{entry_id}")
+def library_delete(entry_id: int):
+    library.delete(entry_id)
+    return {"ok": True}
+
+
 @app.get("/api/review")
 def current_review():
     return public_review()
@@ -372,6 +403,9 @@ class ChatReq(BaseModel):
     ply: int = 0
     extra: list[str] = []
     audience: str = "coach"
+    where: str | None = None   # the page's label for the position ("After 35. Nf5")
+    mode: str | None = None    # review / replay / play / analysis / demo
+    label: str | None = None   # set for automatic GM alerts ("⚡ GM moment")
 
 
 @app.post("/api/chat")
@@ -394,7 +428,20 @@ def chat(req: ChatReq):
         coach.messages.clear()
         raise HTTPException(502, f"Claude API error: {e}")
     tools = [t for t in tools if t["name"] != "show_on_board"]  # shown as buttons instead
-    return {"answer": answer, "tools": tools, "demos": coach.last_demos}
+    entry_id = None
+    try:  # save to the library (a failure here must never cost the player their answer)
+        r = coach.review
+        board, _ = coach._position(req.ply + 1, req.extra)
+        entry_id = library.add(
+            question=req.label or req.question, answer=answer,
+            kind="gm alert" if req.label else "question", mode=req.mode, fen=board.fen(),
+            game_id=r.get("game_id") if r["moves"] else None,
+            game_label=f"{r['white']} vs {r['black']}" if r["moves"] else None,
+            position_label=req.where, ply=req.ply, extra=req.extra, opening=r.get("opening"),
+            demos=coach.last_demos, tools=tools)
+    except Exception as e:  # noqa: BLE001
+        print(f"library: could not save answer: {e}")
+    return {"answer": answer, "tools": tools, "demos": coach.last_demos, "entry_id": entry_id}
 
 
 @app.get("/api/chat/progress")

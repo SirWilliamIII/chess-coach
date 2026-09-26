@@ -48,9 +48,9 @@ function recall(key) {
   try { return localStorage.getItem(key); } catch { return null; }
 }
 
-async function api(path, body) {
-  const res = await fetch(path, body === undefined ? {} : {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+async function api(path, body, method) {
+  const res = await fetch(path, body === undefined ? { method: method || 'GET' } : {
+    method: method || 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.detail || `request failed (${res.status})`);
@@ -968,20 +968,15 @@ async function ask(question, opts = {}) {
     })();
     let data;
     try {
-      data = await api('/api/chat', { question, ...where, audience: state.audience });
+      data = await api('/api/chat', {
+        question, ...where, audience: state.audience,
+        where: opts.where || positionLabel(), mode: currentMode(), label: opts.silent ? opts.label : null,
+      });
     } finally {
       polling = false;
     }
     pending.remove();
-    const n = data.tools.length;
-    const tools = n
-      ? `<details class="tools"><summary>🔍 ${n} check${n > 1 ? 's' : ''}</summary>${data.tools.map((t) => `<div title="${esc(toolTitle(t))}">✓ ${esc(toolLabel(t))}</div>`).join('')}</details>` : '';
-    const demos = data.demos || [];
-    const buttons = demos.length
-      ? `<div class="demos">${demos.map((d, i) => `<button class="demo-btn" data-i="${i}">▶ Show me: ${esc(d.title)}</button>`).join('')}</div>` : '';
-    const label = opts.label ? `<div class="gm-label">${esc(opts.label)}</div>` : '';
-    const msg = addMsg(opts.label ? 'coach gm' : 'coach', label + markdown(data.answer) + buttons + tools, opts.where);
-    msg.querySelectorAll('.demo-btn').forEach((b) => { b.onclick = () => openDemo(demos[+b.dataset.i]); });
+    renderAnswer(data, opts);
   } catch (e) {
     pending.remove();
     addMsg('error', esc(e.message));
@@ -989,6 +984,118 @@ async function ask(question, opts = {}) {
     state.chatBusy = false;
     $('chat-send').disabled = false;
   }
+}
+
+function currentMode() {
+  if (state.demo) return 'demo';
+  if (state.play) return 'play';
+  if (state.replay) return 'replay';
+  return state.review.moves.length ? 'review' : 'analysis';
+}
+
+function renderAnswer(data, opts = {}) {
+  // a coach answer bubble: text, Show me buttons, the checks bubble and a ☆ for the library
+  const n = (data.tools || []).length;
+  const tools = n
+    ? `<details class="tools"><summary>🔍 ${n} check${n > 1 ? 's' : ''}</summary>${data.tools.map((t) => `<div title="${esc(toolTitle(t))}">✓ ${esc(toolLabel(t))}</div>`).join('')}</details>` : '';
+  const demos = data.demos || [];
+  const buttons = demos.length
+    ? `<div class="demos">${demos.map((d, i) => `<button class="demo-btn" data-i="${i}">▶ Show me: ${esc(d.title)}</button>`).join('')}</div>` : '';
+  const label = opts.label ? `<div class="gm-label">${esc(opts.label)}</div>` : '';
+  const star = data.entry_id
+    ? `<button class="star${data.starred ? ' on' : ''}" title="Save to favourites in your library">${data.starred ? '★' : '☆'}</button>` : '';
+  const msg = addMsg(opts.label ? 'coach gm' : 'coach', star + label + markdown(data.answer) + buttons + tools, opts.where);
+  msg.querySelectorAll('.demo-btn').forEach((b) => { b.onclick = () => openDemo(demos[+b.dataset.i]); });
+  const starBtn = msg.querySelector('.star');
+  if (starBtn) {
+    starBtn.onclick = async () => {
+      const on = !starBtn.classList.contains('on');
+      try {
+        await api(`/api/library/${data.entry_id}/star`, { starred: on });
+        starBtn.classList.toggle('on', on);
+        starBtn.textContent = on ? '★' : '☆';
+      } catch (e) { addMsg('error', esc(e.message)); }
+    };
+  }
+  return msg;
+}
+
+// ---------------------------------------------------------------- the chat library
+
+let libTag = null;
+
+function openLibrary() {
+  $('dlg-library').showModal();
+  $('lib-q').focus();
+  searchLibrary();
+}
+
+let libTimer = null;
+
+async function searchLibrary() {
+  const params = new URLSearchParams({ q: $('lib-q').value.trim() });
+  if (libTag) params.set('tag', libTag);
+  if ($('lib-starred').checked) params.set('starred', 'true');
+  if ($('lib-habits').checked) params.set('habits', 'true');
+  let res;
+  try {
+    res = await api(`/api/library?${params}`);
+  } catch (e) {
+    $('lib-list').innerHTML = `<p class="hint">${esc(e.message)}</p>`;
+    return;
+  }
+  $('lib-tags').innerHTML = res.tags.map((t) =>
+    `<button class="lib-tag${t.tag === libTag ? ' on' : ''}" data-tag="${esc(t.tag)}">${esc(t.tag)} <span>${t.count}</span></button>`).join('');
+  $('lib-tags').querySelectorAll('.lib-tag').forEach((b) => {
+    b.onclick = () => { libTag = libTag === b.dataset.tag ? null : b.dataset.tag; searchLibrary(); };
+  });
+  if (!res.entries.length) {
+    $('lib-list').innerHTML = `<p class="hint">${res.tags.length ? 'Nothing matches.' : 'Nothing saved yet: every coach answer lands here automatically.'}</p>`;
+    return;
+  }
+  $('lib-list').innerHTML = res.entries.map((e) => {
+    const when = new Date(e.created_at * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+    const where = [e.position_label, e.game_label].filter(Boolean).join(' · ');
+    return `<div class="lib-entry" data-id="${e.id}">
+      <div class="lib-top"><span class="lib-q">${e.starred ? '★ ' : ''}${esc(e.question)}</span>
+        <button class="link lib-del" title="Delete from library">🗑</button></div>
+      <div class="lib-meta">${esc(where)}${where ? ' · ' : ''}${esc(when)}</div>
+      ${e.habit ? `<div class="lib-habit">🧠 ${esc(e.habit)}</div>` : `<div class="lib-snippet">${esc(e.snippet)}</div>`}
+      <div class="lib-etags">${e.tags.map((t) => `<span>${esc(t)}</span>`).join('')}</div>
+    </div>`;
+  }).join('');
+  $('lib-list').querySelectorAll('.lib-entry').forEach((el) => {
+    el.onclick = () => openEntry(+el.dataset.id);
+    el.querySelector('.lib-del').onclick = async (ev) => {
+      ev.stopPropagation();
+      if (!confirm('Delete this answer from your library?')) return;
+      await api(`/api/library/${el.dataset.id}`, undefined, 'DELETE');
+      searchLibrary();
+    };
+  });
+}
+
+async function openEntry(id) {
+  const e = await api(`/api/library/${id}`);
+  $('dlg-library').close();
+  const when = new Date(e.created_at * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+  let review = null;
+  if (e.game_id) {  // put the board back exactly where the answer was given
+    try {
+      review = await api('/api/saved/open', { game_id: e.game_id, me: state.me || null });
+    } catch { /* game no longer saved: fall back to the position itself */ }
+  }
+  if (review) {
+    setReview(review, `From your library (${when}).`);
+    state.ply = Math.min(e.ply ?? 0, review.moves.length);
+    state.extra = e.extra || [];
+    update();
+  } else {
+    setReview(await api('/api/analysis', { fen: e.fen }), `From your library (${when}), on an analysis board of that position.`);
+  }
+  if (e.kind !== 'gm alert') addMsg('user', esc(e.question), e.position_label);
+  renderAnswer({ answer: e.answer, tools: e.tools, demos: e.demos, entry_id: e.id, starred: e.starred },
+    { label: e.kind === 'gm alert' ? e.question : null, where: e.kind === 'gm alert' ? e.position_label : null });
 }
 
 function renderChips() {
@@ -1790,6 +1897,10 @@ async function startGame() {
 // ---------------------------------------------------------------- wiring
 
 $('btn-play').onclick = () => { pendingFen = null; openPlayDialog(); };
+$('btn-library').onclick = openLibrary;
+$('lib-q').oninput = () => { clearTimeout(libTimer); libTimer = setTimeout(searchLibrary, 250); };
+$('lib-starred').onchange = searchLibrary;
+$('lib-habits').onchange = searchLibrary;
 $('from-best').onclick = startFromBest;
 $('from-replay').onclick = startReplay;
 $('from-color').querySelectorAll('button').forEach((b) => {
