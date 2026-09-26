@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import threading
+import time
 from pathlib import Path
 
 import requests
@@ -18,6 +19,8 @@ RATING_BANDS = [0, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500]  # lower boun
 SPEEDS = ["ultraBullet", "bullet", "blitz", "rapid", "classical", "correspondence"]
 
 _lock = threading.Lock()  # Lichess asks for one request at a time
+MIN_INTERVAL = 0.35      # seconds between requests, so tree walks don't trip the rate limit
+_last_request = 0.0
 _memory: dict[str, dict] = {}
 
 
@@ -48,7 +51,10 @@ def _summarise(raw: dict, db: str) -> dict:
             "winner": g.get("winner"), "year": g.get("year"), "move": g.get("uci"),
             "url": f"https://lichess.org/{g['id']}",
         })
-    return {"db": db, "opening": raw.get("opening"), "total": total, "moves": moves, "games": games[:8]}
+    results = {"white": _pct(raw.get("white", 0), total), "draws": _pct(raw.get("draws", 0), total),
+               "black": _pct(raw.get("black", 0), total)}
+    return {"db": db, "opening": raw.get("opening"), "total": total, "results": results,
+            "moves": moves, "games": games[:8]}
 
 
 def masters_pgn(game_id: str) -> str:
@@ -82,9 +88,16 @@ def explore(fen: str, db: str = "lichess", ratings: list[int] | None = None,
     try:
         if not token:
             raise RuntimeError("The opening explorer needs a Lichess token: add LICHESS_TOKEN to .env.")
+        global _last_request
         with _lock:
-            r = requests.get(f"{API}/{db}", params=params, timeout=20,
-                             headers={"Authorization": f"Bearer {token}"})
+            wait = MIN_INTERVAL - (time.monotonic() - _last_request)
+            if wait > 0:
+                time.sleep(wait)
+            try:
+                r = requests.get(f"{API}/{db}", params=params, timeout=20,
+                                 headers={"Authorization": f"Bearer {token}"})
+            finally:
+                _last_request = time.monotonic()
         if r.status_code == 401:
             raise RuntimeError("Lichess rejected the token in LICHESS_TOKEN; create a new one.")
         if r.status_code == 429:

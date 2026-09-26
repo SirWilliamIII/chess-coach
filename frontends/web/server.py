@@ -377,6 +377,11 @@ def chat(req: ChatReq):
     return {"answer": answer, "tools": tools, "demos": coach.last_demos}
 
 
+@app.get("/api/chat/progress")
+def chat_progress():
+    return {"steps": S.coach.progress if S.coach else []}
+
+
 @app.post("/api/chat/reset")
 def chat_reset():
     S.coach.messages.clear()

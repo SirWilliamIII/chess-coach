@@ -31,6 +31,7 @@ const CHIPS = {
     ['Plan behind this move?', 'What was the plan behind this move?'],
     ['What should I have played?', 'What should have been played instead, and why?'],
     ['Step by step', "Walk me through this position step by step. Ask me what I'd play before each move."],
+    ['Main lines', 'Show me the main lines from this position: how to play them properly, the ideas for both sides, what to expect and the traps. Show me each line.'],
   ],
   play: [
     ['What idea should I aim for?', 'What idea or plan should I be formulating in this position?'],
@@ -581,6 +582,11 @@ function inline(text, seen = new Set()) {
       seen.add(key);
       return `<span class="term" tabindex="0" data-tip="${esc(GLOSSARY_BY_KEY[key])}">${w}</span>`;
     });
+  // bare pawn moves inside a sequence ("e4 c5") become chips too
+  for (let prev = null; prev !== out;) {
+    prev = out;
+    out = out.replace(/(\u0002\s+)([a-h][1-8](?:=[QRBN])?[+#]?)(?=[\s,.;:)!?]|$)/g, (_, pre, pawn) => pre + hold(moveChip(pawn)));
+  }
   return out.replace(/\u0001(\d+)\u0002/g, (_, i) => slots[+i]);
 }
 
@@ -603,6 +609,12 @@ function markdown(text) {
       continue;
     }
     flush();
+    const heading = lines[0].match(/^\s*#{1,4}\s+(.+)$/);
+    if (heading) {
+      html.push(`<div class="mh">${inline(heading[1], seen)}</div>`);
+      if (lines.length > 1) html.push(`<p>${lines.slice(1).map((l) => inline(l, seen)).join('<br>')}</p>`);
+      continue;
+    }
     if (lines.every((l) => /^\s*>/.test(l))) {  // quote = the coach flagging a special move
       html.push(`<div class="alert-red"><span class="alert-ico">⚡</span>${lines.map((l) => inline(l.replace(/^\s*>\s?/, ''), seen)).join('<br>')}</div>`);
     } else if (/^\s*\**habit to build:?\**:?/i.test(block)) {
@@ -740,10 +752,16 @@ function addMsg(kind, html, where) {
     el.onblur = () => el.classList.remove('open');
   });
   if (kind.startsWith('coach')) div.querySelector(':scope > p')?.classList.add('lead');
-  // special-move alerts go to the top of the message so they can't be missed
-  const alerts = [...div.querySelectorAll('.alert-red')];
-  const anchor = div.querySelector('.gm-label')?.nextSibling || div.querySelector('.where')?.nextSibling || div.firstChild;
-  for (const a of alerts.reverse()) div.insertBefore(a, anchor);
+  // special-move alerts stay in context; if one is further down, flag it at the top
+  const alert = div.querySelector('.alert-red');
+  const blocks = [...div.children].filter((el) => !el.matches('.where, .gm-label'));
+  if (alert && blocks.indexOf(alert) > 1) {
+    const tag = document.createElement('button');
+    tag.className = 'special-tag';
+    tag.textContent = '⚡ Special move inside ↓';
+    tag.onclick = () => alert.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    div.insertBefore(tag, blocks[0]);
+  }
   $('chat-log').appendChild(div);
   if (kind.startsWith('coach') && div.offsetHeight > $('chat-log').clientHeight * 0.8) {
     div.scrollIntoView({ block: 'start' });  // long answer: start reading at the top
@@ -770,6 +788,7 @@ function toolLabel(t) {
   if (t.name === 'analyze_position') return `analysed · ${where}`;
   if (t.name === 'find_tricks') return `looked for tricks · ${where}`;
   if (t.name === 'opening_explorer') return `checked real games · ${where}`;
+  if (t.name === 'opening_lines') return `mapped the main lines · ${where}`;
   return t.name;
 }
 
@@ -804,10 +823,31 @@ async function ask(question, opts = {}) {
     const where = state.demo
       ? { ply: Math.max(0, state.demo.ply - 1), extra: [...state.demo.then_moves, ...state.demo.moves.slice(0, state.demo.step)] }
       : { ply: state.ply, extra: state.extra };
-    const data = await api('/api/chat', { question, ...where, audience: state.audience });
+    let polling = true;
+    (async () => {  // live progress: show the coach's tool steps while it works
+      while (polling) {
+        await new Promise((r) => setTimeout(r, 1200));
+        if (!polling) break;
+        try {
+          const { steps } = await api('/api/chat/progress');
+          const shown = steps.filter((t) => t.name !== 'show_on_board');
+          if (polling && shown.length) {
+            pending.innerHTML = `<span class="thinking">${opts.silent ? 'Spotted something' : 'Analysing'}</span>`
+              + `<div class="steps">${shown.map((t) => `<div>✓ ${esc(toolLabel(t))}</div>`).join('')}</div>`;
+          }
+        } catch { /* ignore */ }
+      }
+    })();
+    let data;
+    try {
+      data = await api('/api/chat', { question, ...where, audience: state.audience });
+    } finally {
+      polling = false;
+    }
     pending.remove();
-    const tools = data.tools.length
-      ? `<div class="tools">${data.tools.map((t) => `<span title="${esc(toolTitle(t))}">${esc(toolLabel(t))}</span>`).join('')}</div>` : '';
+    const n = data.tools.length;
+    const tools = n
+      ? `<details class="tools"><summary>🔍 ${n} check${n > 1 ? 's' : ''}</summary>${data.tools.map((t) => `<div title="${esc(toolTitle(t))}">✓ ${esc(toolLabel(t))}</div>`).join('')}</details>` : '';
     const demos = data.demos || [];
     const buttons = demos.length
       ? `<div class="demos">${demos.map((d, i) => `<button class="demo-btn" data-i="${i}">▶ Show me: ${esc(d.title)}</button>`).join('')}</div>` : '';

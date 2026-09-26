@@ -175,8 +175,11 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .msg.system { align-self: center; background: none; color: var(--muted); font-size: 13px; text-align: center; }
 .msg.error { align-self: stretch; background: #4a2322; color: #ffd6d4; font-size: 13px; }
 .msg .where { display: block; font-size: 11px; color: rgba(255,255,255,.6); margin-bottom: 2px; }
-.msg .tools { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
-.msg .tools span { font-size: 11px; background: #2a2926; color: var(--muted); padding: 1px 7px; border-radius: 8px; }
+.msg .tools { margin-top: 8px; font-size: 12px; color: var(--muted); }
+.msg .tools summary { display: inline-block; cursor: pointer; background: #2a2926; padding: 1px 9px; border-radius: 9px; list-style: none; }
+.msg .tools summary::-webkit-details-marker { display: none; }
+.msg .tools[open] summary { margin-bottom: 4px; }
+.msg .tools div { padding: 1px 4px; }
 .san { display: inline-flex; align-items: baseline; gap: 3px; font-weight: 700; color: #d9f2b8; background: #2f4020;
        border: 1px solid #45602c; border-radius: 5px; padding: 0 5px; cursor: pointer; white-space: nowrap; line-height: 1.35; }
 .san:hover { background: #3d5a26; border-color: #6c9a40; }
@@ -350,3 +353,7 @@ ol.points li::before { content: counter(pt); position: absolute; left: 9px; top:
 .habit-h { font-size: 12px; font-weight: 800; color: #a9d67a; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 3px; }
 .habit p { margin: 0; }
 .alert-ico { margin-right: 6px; }
+.special-tag { display: block; background: #e5484d; color: #fff; border: 0; border-radius: 12px; font-size: 12px;
+  font-weight: 800; padding: 3px 10px; margin-bottom: 8px; animation: alert-pulse 1.2s ease-out 2; }
+.steps { margin-top: 6px; font-size: 12px; color: var(--muted); font-style: normal; display: flex; flex-direction: column; gap: 2px; }
+.msg .mh { font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: #a9d67a; margin: 10px 0 4px; }
