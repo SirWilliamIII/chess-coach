@@ -27,7 +27,7 @@ const state = {
 const CHIPS = {
   review: [
     ['Best move?', 'What is the best move here, and why?'],
-    ['Any tricks?', 'Any tricks, traps or high-risk, high-reward ideas here, beyond the safe engine move?'],
+    ['Any tactics?', 'Any tactics here? Tricks, traps or high-risk, high-reward ideas, beyond the safe engine move?'],
     ['Plan behind this move?', 'What was the plan behind this move?'],
     ['What should I have played?', 'What should have been played instead, and why?'],
     ['Step by step', "Walk me through this position step by step. Ask me what I'd play before each move."],
@@ -35,7 +35,7 @@ const CHIPS = {
   ],
   play: [
     ['What idea should I aim for?', 'What idea or plan should I be formulating in this position?'],
-    ['Any tricks?', 'Any tricks, traps or high-risk, high-reward ideas for me here?'],
+    ['Any tactics?', 'Any tactics for me here? Tricks, traps or high-risk, high-reward ideas?'],
     ['Any threats?', 'What is my opponent threatening, and is anything of mine in danger?'],
     ['Hint', "Give me a hint for this position without telling me the move outright."],
   ],
