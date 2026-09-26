@@ -22,7 +22,7 @@ terminal version.
 ./start        # then open http://localhost:8000
 ```
 
-- **My games** lists your recent chess.com games; pick one and it's reviewed (about 40 s on a Pi, cached after).
+- **Search games** lists your recent chess.com games; pick one and it's reviewed (about 40 s on a Pi, cached after).
 - Click moves, use the arrow keys, or drag pieces to try your own lines; the engine eval follows the board.
 - Ask the coach anything about the position on the board ("best move?", "what was the plan here?").
   Moves in its answers are clickable and play on the board.
@@ -34,6 +34,10 @@ terminal version.
   **Back to my game** returns you exactly where you were.
 - **Set up position**: place pieces freely or pick an endgame preset (Lucena, Philidor, basic
   mates, king + pawn), then **Play vs bot from here** or **Analyse**.
+- **Explorer** tab (next to the engine lines): what real Lichess players at a chosen rating band
+  and time control play in the current position, with results, plus a Masters database and
+  example games you can open. Needs a free Lichess account token (`LICHESS_TOKEN` in `.env`, no
+  scopes). The coach uses it too ("what do people at my level play here?").
 - **Analysis board** gives an empty board to set up and discuss any line.
 - Add `--host 0.0.0.0` to open it from another device on your network (anyone on the network
   could then use your API key through it).
@@ -42,8 +46,8 @@ terminal version.
 
 Everything except the coach chat (Claude API) and fetching new games from chess.com works
 without internet: board, Stockfish, bot games, set-up board, and any game already analysed.
-Before a trip, open **My games → Save my last 20 games for offline**; saved games are under
-**My games → Saved on this Pi**. The browser libraries live in `frontends/web/static/vendor/`.
+Before a trip, open **Search games → Save my last 20 games for offline**; saved games are under
+**Search games → Saved on this Pi**. The browser libraries live in `frontends/web/static/vendor/`.
 
 ## Terminal
 
@@ -68,8 +72,9 @@ In the review prompt: `/go 16b` jumps to 16...; then ask things like
 core/engine.py     Stockfish wrapper: lines, evals, null-move threats, win% classification
 core/features.py   verifiable facts: structure, king safety, loose pieces, outposts, move effects
 core/review.py     one engine pass over a game, cached in data/reviews/
-core/coach.py      Claude + tools (move_report, compare_moves, analyze_position)
-frontends/         chess.com + Lichess clients, shared game loader
+core/coach.py      Claude + tools (move_report, compare_moves, analyze_position, show_on_board,
+                   opening_explorer)
+frontends/         chess.com + Lichess clients (incl. opening explorer), shared game loader
 frontends/web/     FastAPI server + board/chat page (chessground, chess.js)
 cli.py             terminal front end
 ```

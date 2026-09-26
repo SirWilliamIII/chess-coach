@@ -24,6 +24,7 @@ from core.coach import Coach
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
 from core.review import CACHE_DIR, load_pgn, review_game
 from frontends.chesscom import client as chesscom
+from frontends.lichess import explorer
 from frontends.loader import fetch_game_text
 
 STATIC = Path(__file__).parent / "static"
@@ -65,11 +66,15 @@ def parse_fen(fen: str) -> chess.Board:
     return board
 
 
+def make_coach(review: dict, player: str | None = None) -> Coach:
+    return Coach(review, S.engine, player=player, explorer=explorer.explore if explorer.available() else None)
+
+
 def new_analysis(fen: str, note: str | None = None):
     S.review = {"game_id": None, "white": "?", "black": "?", "white_elo": None, "black_elo": None,
                 "result": "*", "opening": None, "time_control": None, "start_fen": fen, "moves": [],
                 "note": note}
-    S.coach = Coach(S.review, S.engine)
+    S.coach = make_coach(S.review)
 
 
 def public_review() -> dict:
@@ -92,7 +97,8 @@ def index():
 @app.get("/api/config")
 def config():
     return {"me": os.environ.get("CHESS_USER", ""),
-            "coach_ready": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))}
+            "coach_ready": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
+            "explorer_ready": explorer.available()}
 
 
 @app.get("/api/games")
@@ -146,7 +152,7 @@ def open_saved(req: OpenSavedReq):
     review = json.loads(f.read_text())
     with S.lock:
         S.review, S.me = review, req.me
-        S.coach = Coach(review, S.engine, player=req.me)
+        S.coach = make_coach(review, req.me)
     return public_review()
 
 
@@ -202,7 +208,7 @@ def _load_job(ref: str, me: str | None):
         review = review_game(game, S.engine, progress=progress)
         with S.lock:
             S.review, S.me = review, me
-            S.coach = Coach(review, S.engine, player=me)
+            S.coach = make_coach(review, me)
         S.job.update(status="done")
     except Exception as e:  # surfaced to the UI
         S.job.update(status="error", error=str(e))
@@ -287,6 +293,22 @@ def play_move(req: PlayMoveReq):
         raise HTTPException(400, "game is over")
     move = S.bot.play(board, req.level)
     return {"uci": move.uci(), "san": board.san(move)}
+
+
+class ExplorerReq(BaseModel):
+    fen: str
+    db: str = "lichess"
+    ratings: list[int] | None = None
+    speeds: list[str] | None = None
+
+
+@app.post("/api/explorer")
+def explore(req: ExplorerReq):
+    parse_fen(req.fen)
+    try:
+        return explorer.explore(req.fen, req.db, req.ratings, req.speeds)
+    except (RuntimeError, ValueError) as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/api/review")

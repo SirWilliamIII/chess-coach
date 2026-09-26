@@ -126,7 +126,8 @@ def cmd_review(args):
         print("\r" + " " * 40 + "\r", end="")
 
         from core.coach import Coach  # imported late so `games` works without the anthropic key
-        coach = Coach(review, engine, player=args.me)
+        from frontends.lichess import explorer
+        coach = Coach(review, engine, player=args.me, explorer=explorer.explore if explorer.available() else None)
         me = coach.player_color
 
         print(f"{review['white']} ({review['white_elo']}) vs {review['black']} ({review['black_elo']})  "

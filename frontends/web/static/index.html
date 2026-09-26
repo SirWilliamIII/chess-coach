@@ -14,7 +14,7 @@
     <div class="actions">
       <button id="btn-play" class="btn">Play bot</button>
       <button id="btn-setup" class="btn ghost">Set up position</button>
-      <button id="btn-games" class="btn">My games</button>
+      <button id="btn-games" class="btn">Search games</button>
       <button id="btn-load" class="btn">Load game</button>
       <button id="btn-analysis" class="btn ghost">Analysis board</button>
     </div>
@@ -49,8 +49,37 @@
         <button class="navbtn" id="nav-flip" title="Flip board (f)">⇅</button>
       </div>
       <div class="engine">
-        <label class="toggle"><input type="checkbox" id="engine-toggle" checked> Engine lines</label>
-        <div id="engine-lines"></div>
+        <div class="etabs" id="etabs">
+          <button data-etab="engine" class="on">Engine</button>
+          <button data-etab="explorer">Explorer</button>
+        </div>
+        <div id="engine-pane">
+          <label class="toggle"><input type="checkbox" id="engine-toggle" checked> Engine lines</label>
+          <div id="engine-lines"></div>
+        </div>
+        <div id="explorer-pane" class="hidden">
+          <div class="xfilters">
+            <select id="x-db" title="Database">
+              <option value="lichess">Lichess</option>
+              <option value="masters">Masters</option>
+            </select>
+            <select id="x-band" title="Rating band (Lichess ratings)">
+              <option value="0,1000">Under 1200</option>
+              <option value="1200,1400">1200–1600</option>
+              <option value="1600,1800">1600–2000</option>
+              <option value="2000,2200,2500">2000+</option>
+              <option value="">All ratings</option>
+            </select>
+            <select id="x-speed" title="Time control">
+              <option value="blitz,rapid">Blitz + rapid</option>
+              <option value="bullet">Bullet</option>
+              <option value="blitz">Blitz</option>
+              <option value="rapid">Rapid</option>
+              <option value="classical">Classical</option>
+            </select>
+          </div>
+          <div id="x-body"></div>
+        </div>
       </div>
     </section>
 
@@ -70,7 +99,7 @@
   </main>
 
   <dialog id="dlg-games">
-    <form method="dialog" class="dlg-head"><h2>Your games</h2><button class="link">Close</button></form>
+    <form method="dialog" class="dlg-head"><h2>Search games</h2><button class="link">Close</button></form>
     <div class="seg" id="games-tabs">
       <button data-tab="chesscom" class="on">From chess.com</button>
       <button data-tab="saved">Saved on this Pi (offline)</button>

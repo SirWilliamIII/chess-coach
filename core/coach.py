@@ -34,6 +34,10 @@ only mention numbers when useful. Evals are from White's point of view unless st
 - Prefer ideas and plans over long move lists: at most one or two short lines per answer.
 - Refer to moves with move numbers (14...Nf6). Keep answers short and conversational; \
 the player can ask follow-ups.
+- For opening questions ("what do people play here?", "is this move common at my level?", \
+learning an opening), use opening_explorer when it's available: it gives real game statistics \
+by rating band. Combine it with the engine: popular isn't the same as good, and a move can \
+score well at club level because it sets a trap. If the tool isn't available, don't guess statistics.
 - Whenever you describe a concrete line or plan with moves (the better alternative, the \
 threat, a typical manoeuvre), also call show_on_board so the player can step through it on \
 a demo board. One demo per idea; don't create a demo for a single obvious move. The \
@@ -130,8 +134,41 @@ TOOLS = [
 ]
 
 
+EXPLORER_TOOL = {
+    "name": "opening_explorer",
+    "description": (
+        "Real-game statistics for a position from the Lichess opening explorer: which moves players "
+        "actually chose, how often, and how they scored (white/draw/black %), plus the opening name. "
+        "db='lichess' covers online games filterable by rating band; db='masters' covers over-the-board "
+        "games of strong players. Lichess ratings run roughly 300-400 points above chess.com ratings "
+        "at club level, so a ~850 chess.com player compares best with the 1200-1400 bands."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "ply": {"type": "integer", "description": "Ply whose starting position to use (as for analyze_position)"},
+            "then_moves": {"type": "array", "items": {"type": "string"},
+                           "description": "Optional SAN moves to play from that position first"},
+            "db": {"type": "string", "enum": ["lichess", "masters"], "description": "Default lichess"},
+            "ratings": {
+                "type": "array", "items": {"type": "integer", "enum": [0, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500]},
+                "description": "Lichess rating bands (lower bounds) to include; default all",
+            },
+            "speeds": {
+                "type": "array", "items": {"type": "string", "enum": ["bullet", "blitz", "rapid", "classical"]},
+                "description": "Time controls to include; default blitz and rapid",
+            },
+        },
+        "required": ["ply"],
+    },
+}
+
+
 class Coach:
-    def __init__(self, review: dict, engine: Engine, player: str | None = None):
+    def __init__(self, review: dict, engine: Engine, player: str | None = None, explorer=None):
+        """`explorer(fen, db, ratings, speeds) -> dict` enables the opening_explorer tool."""
+        self.explorer = explorer
+        self.tools = TOOLS + ([EXPLORER_TOOL] if explorer else [])
         self.review = review
         self.engine = engine
         self._client = None
@@ -276,6 +313,28 @@ class Coach:
                                 "start_fen": start_fen, "moves": line, "notes": notes})
         return {"ok": True, "demo": len(self.last_demos), "moves": line}
 
+    def opening_explorer(self, ply: int, then_moves: list[str] | None = None, db: str = "lichess",
+                         ratings: list[int] | None = None, speeds: list[str] | None = None) -> dict:
+        board, played = self._position(ply, then_moves)
+        try:
+            data = self.explorer(board.fen(), db, ratings, speeds)
+        except RuntimeError as e:
+            raise ValueError(str(e))
+        to_move = features.COLOR_NAME[board.turn]
+        return {
+            "position": f"ply {ply}" + (f" then {' '.join(played)}" if played else "") + f", {to_move} to move",
+            "opening": data.get("opening"),
+            "total_games": data["total"],
+            "moves": [
+                {"move": m["san"], "games": m["games"], "played_pct": m["share"],
+                 "white_win_pct": m["white"], "draw_pct": m["draws"], "black_win_pct": m["black"],
+                 "avg_rating": m["avg_rating"]}
+                for m in data["moves"][:8]
+            ],
+            "filters": data.get("filters"),
+            "from_offline_cache": data.get("from_cache", False),
+        }
+
     def _run_tool(self, name: str, args: dict) -> str:
         if name == "move_report":
             result = self.move_report(int(args["ply"]))
@@ -284,6 +343,9 @@ class Coach:
         elif name == "show_on_board":
             result = self.show_on_board(str(args["title"]), int(args["ply"]), list(args["moves"]),
                                         args.get("then_moves"), args.get("notes"))
+        elif name == "opening_explorer" and self.explorer:
+            result = self.opening_explorer(int(args["ply"]), args.get("then_moves"), args.get("db", "lichess"),
+                                           args.get("ratings"), args.get("speeds"))
         elif name == "analyze_position":
             result = self.analyze_position(int(args["ply"]), args.get("then_moves"), int(args.get("multipv", 3)))
         else:
@@ -335,7 +397,7 @@ class Coach:
                 model=MODEL,
                 max_tokens=16000,
                 system=SYSTEM,
-                tools=TOOLS,
+                tools=self.tools,
                 messages=self.messages,
                 thinking={"type": "adaptive"},
                 cache_control={"type": "ephemeral"},

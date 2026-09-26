@@ -13,6 +13,8 @@ const state = {
   engineOn: true,
   me: '',
   coachReady: false,
+  explorerReady: false,
+  etab: 'engine',   // bottom panel: 'engine' lines or opening 'explorer'
   chatBusy: false,
   play: null,       // practice game vs the bot: {color, level, levelName, moves, view, over, thinking}
   editor: null,     // position set-up: {tool, turn, prev: {orientation}}
@@ -277,7 +279,7 @@ function renderMoves() {
   if (state.demo) return renderDemoMoves(box);
   if (state.play) return renderPlayMoves(box);
   if (!r.moves.length) {
-    box.innerHTML = '<div class="empty">No game loaded. Use “My games” or “Load game”, or just play moves on the board.</div>';
+    box.innerHTML = '<div class="empty">No game loaded. Use “Search games” or “Load game”, or just play moves on the board.</div>';
     return;
   }
   let html = '';
@@ -380,6 +382,83 @@ function setEngine(on) {
   if (on) requestEval(currentGame());
 }
 
+// ---------------------------------------------------------------- opening explorer
+
+let xToken = 0;
+let xTimer = null;
+
+function fmtCount(n) {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}k`;
+  return String(n);
+}
+
+function explorerFilters() {
+  const band = $('x-band').value;
+  return {
+    db: $('x-db').value,
+    ratings: band ? band.split(',').map(Number) : null,
+    speeds: $('x-speed').value.split(','),
+  };
+}
+
+function setEtab(tab) {
+  state.etab = tab;
+  store('etab', tab);
+  $('etabs').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.etab === tab));
+  $('engine-pane').classList.toggle('hidden', tab !== 'engine');
+  $('explorer-pane').classList.toggle('hidden', tab !== 'explorer');
+  document.body.classList.toggle('etab-explorer', tab === 'explorer');
+  if (tab === 'explorer' && !state.editor) requestExplorer(currentGame());
+}
+
+function requestExplorer(c) {
+  clearTimeout(xTimer);
+  const token = ++xToken;
+  if (state.etab !== 'explorer' || !c) return;
+  const f = explorerFilters();
+  $('x-band').disabled = $('x-speed').disabled = f.db === 'masters';
+  if (!state.explorerReady) {
+    $('x-body').innerHTML = '<p class="hint">The explorer needs a Lichess token: add <code>LICHESS_TOKEN=lip_…</code> to <code>.env</code> and restart.</p>';
+    return;
+  }
+  $('x-body').innerHTML = '<p class="hint">Loading…</p>';
+  xTimer = setTimeout(async () => {
+    try {
+      const data = await api('/api/explorer', { fen: c.fen(), ...f });
+      if (token === xToken) showExplorer(data);
+    } catch (e) {
+      if (token === xToken) $('x-body').innerHTML = `<p class="hint">${esc(e.message)}</p>`;
+    }
+  }, 350);
+}
+
+function showExplorer(data) {
+  const head = data.opening
+    ? `<div class="x-opening"><b>${esc(data.opening.eco)}</b> ${esc(data.opening.name)}</div>` : '';
+  const cached = data.from_cache ? ' <span class="hint">(offline copy)</span>' : '';
+  if (!data.moves.length) {
+    $('x-body').innerHTML = `${head}<p class="hint">No games reached this position with these filters.${cached}</p>`;
+    return;
+  }
+  const rows = data.moves.map((m) => `<div class="x-row" data-san="${esc(m.san)}" title="Average rating ${m.avg_rating ?? '?'}">
+      <span class="x-move">${esc(m.san)}</span>
+      <span class="x-n">${fmtCount(m.games)}</span>
+      <span class="x-pct">${m.share}%</span>
+      <span class="x-bar">
+        <i class="w" style="width:${m.white}%">${m.white >= 12 ? Math.round(m.white) + '%' : ''}</i><i class="d" style="width:${m.draws}%">${m.draws >= 12 ? Math.round(m.draws) + '%' : ''}</i><i class="b" style="width:${m.black}%">${m.black >= 12 ? Math.round(m.black) + '%' : ''}</i>
+      </span>
+    </div>`).join('');
+  const games = data.games.length ? `<div class="x-games-h">Example games</div>` + data.games.slice(0, 4).map((g) => {
+    const res = g.winner === 'white' ? '1-0' : g.winner === 'black' ? '0-1' : '½-½';
+    const ref = data.db === 'masters' ? `masters:${g.id}` : g.url;
+    return `<div class="x-game" data-ref="${esc(ref)}" title="Open and review this game">${esc(g.white)}${g.white_rating ? ` (${g.white_rating})` : ''} – ${esc(g.black)}${g.black_rating ? ` (${g.black_rating})` : ''} <span class="hint">${res} · ${esc(g.year ?? '')}</span></div>`;
+  }).join('') : '';
+  $('x-body').innerHTML = `${head}<div class="x-total">${fmtCount(data.total)} games${cached}</div>${rows}${games}`;
+  $('x-body').querySelectorAll('.x-row').forEach((el) => { el.onclick = () => playSan(el.dataset.san); });
+  $('x-body').querySelectorAll('.x-game').forEach((el) => { el.onclick = () => loadGame(el.dataset.ref); });
+}
+
 // ---------------------------------------------------------------- update
 
 function update() {
@@ -390,6 +469,7 @@ function update() {
   renderMoves();
   renderVariation();
   requestEval(c);
+  requestExplorer(c);
 }
 
 // ---------------------------------------------------------------- chat
@@ -1191,6 +1271,10 @@ $('nav-flip').onclick = () => {
   update();
 };
 $('engine-toggle').onchange = (e) => setEngine(e.target.checked);
+$('etabs').querySelectorAll('button').forEach((b) => { b.onclick = () => setEtab(b.dataset.etab); });
+for (const id of ['x-db', 'x-band', 'x-speed']) {
+  $(id).onchange = () => { store(id, $(id).value); if (!state.editor) requestExplorer(currentGame()); };
+}
 
 $('chat-form').onsubmit = (e) => { e.preventDefault(); ask($('chat-text').value); };
 $('chat-text').onkeydown = (e) => {
@@ -1216,6 +1300,9 @@ document.addEventListener('keydown', (e) => {
 (async function init() {
   const cfg = await api('/api/config');
   state.coachReady = cfg.coach_ready;
+  state.explorerReady = cfg.explorer_ready;
+  for (const id of ['x-db', 'x-band', 'x-speed']) { const v = recall(id); if (v !== null) $(id).value = v; }
+  setEtab(recall('etab') === 'explorer' ? 'explorer' : 'engine');
   state.me = recall('me') || cfg.me || '';
   const engineOn = recall('engineOn') !== '0';
   $('engine-toggle').checked = engineOn;
