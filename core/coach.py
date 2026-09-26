@@ -2,6 +2,8 @@
 
 import json
 import os
+import re
+from pathlib import Path
 
 import anthropic
 import chess
@@ -11,40 +13,20 @@ from .engine import Engine
 
 MODEL = os.environ.get("COACH_MODEL", "claude-opus-5")
 
-SYSTEM = """You are a chess coach reviewing a finished game with the player who played it.
+PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
 
-Ground rules - these matter more than anything else:
-- You are not a chess engine and your own calculation is unreliable. Every concrete claim \
-(a variation, a tactic, "this wins a pawn", "this was a mistake", an evaluation) must come \
-from a tool result in this conversation. If you haven't checked it, call a tool first.
-- Never invent moves or lines. Quote engine lines as the tools give them.
-- If the tools don't support an explanation, say what the engine shows and admit the \
-"why" is uncertain rather than making one up.
 
-How to explain:
-- "What was the plan with this move?" -> use move_report. The plan is visible in \
-what the move changes (effects: new attacks, pins, outposts, structure) and in the engine \
-continuation after it. Describe it in human terms: "this prepares ...", "the idea is ...".
-- "What should I have played?" -> compare the played move with the best move (compare_moves) \
-and explain the concrete difference: what the better move achieves that the played one didn't, \
-or what the played move allowed (see the opponent's threats and engine lines).
-- "What if I had played X?" -> compare_moves or analyze_position with those moves.
-- Translate evals into words ("roughly equal", "White is clearly better", "winning") and \
-only mention numbers when useful. Evals are from White's point of view unless stated.
-- Prefer ideas and plans over long move lists: at most one or two short lines per answer.
-- Refer to moves with move numbers (14...Nf6). Keep answers short and conversational; \
-the player can ask follow-ups.
-- For opening questions ("what do people play here?", "is this move common at my level?", \
-learning an opening), use opening_explorer when it's available: it gives real game statistics \
-by rating band. Combine it with the engine: popular isn't the same as good, and a move can \
-score well at club level because it sets a trap. If the tool isn't available, don't guess statistics.
-- Whenever you describe a concrete line or plan with moves (the better alternative, the \
-threat, a typical manoeuvre), also call show_on_board so the player can step through it on \
-a demo board. One demo per idea; don't create a demo for a single obvious move. The \
-"Show me" buttons appear below your answer.
+def audiences() -> list[str]:
+    return sorted(f.stem for f in (PROMPTS / "audiences").glob("*.md"))
 
-Plies: ply 1 is White's first move, ply 2 is Black's first move, and so on. Tools that take \
-a ply look at the position *before* that move was played; ply 0 means the starting position."""
+
+def system_prompt(audience: str = "coach") -> str:
+    """prompts/coach.md + prompts/audiences/<audience>.md, re-read every call so edits apply live."""
+    if audience not in audiences():
+        audience = "coach"
+    parts = [(PROMPTS / "coach.md").read_text(), (PROMPTS / "audiences" / f"{audience}.md").read_text()]
+    text = "\n\n".join(re.sub(r"<!--.*?-->", "", part, flags=re.S).strip() for part in parts)
+    return text
 
 TOOLS = [
     {
@@ -188,20 +170,27 @@ class Coach:
     def _game_context(self) -> str:
         r = self.review
         if not r["moves"] and r.get("note"):
-            return r["note"]
+            return f"# Session\n{r['note']}"
         if not r["moves"]:
-            return ("No game is loaded: the player is using a free analysis board, starting from "
-                    f"FEN {r['start_fen']}. Moves they try on the board are given with each question.")
+            return ("# Session\nNo game is loaded: the player is using a free analysis board, starting from "
+                    f"FEN `{r['start_fen']}`. Moves they try on the board are given with each question.")
+        you = {"white": " (the player)", "black": ""} if self.player_color == "white" else \
+              {"white": "", "black": " (the player)"} if self.player_color == "black" else {"white": "", "black": ""}
         lines = [
-            f"Game: {r['white']} ({r['white_elo'] or '?'}) vs {r['black']} ({r['black_elo'] or '?'}), "
-            f"result {r['result']}, opening: {r['opening'] or 'unknown'}, time control {r['time_control'] or '?'}.",
+            "# Game being discussed",
+            f"- **White:** {r['white']} ({r['white_elo'] or '?'}){you['white']}",
+            f"- **Black:** {r['black']} ({r['black_elo'] or '?'}){you['black']}",
+            f"- **Result:** {r['result']}   **Opening:** {r['opening'] or 'unknown'}   "
+            f"**Time control:** {r['time_control'] or '?'}",
         ]
-        if self.player_color:
-            lines.append(f"The player you are coaching played {self.player_color}.")
-        lines.append("\nMoves (ply | move | eval after, White POV | engine best | verdict):")
+        if r.get("note"):
+            lines += ["", r["note"]]
+        lines += ["", "## Moves (engine review)", "",
+                  "| Ply | Move | Eval after (White POV) | Engine best | Verdict |",
+                  "|---|---|---|---|---|"]
         for m in r["moves"]:
             verdict = m["class"] or ("best" if m["played_best"] else "")
-            lines.append(f"{m['ply']} | {m['label']} {m['san']} | {m['eval_after']} | {m['best'] or '-'} | {verdict}")
+            lines.append(f"| {m['ply']} | {m['label']} {m['san']} | {m['eval_after']} | {m['best'] or '-'} | {verdict} |")
         return "\n".join(lines)
 
     # ---------- tools ----------
@@ -374,13 +363,18 @@ class Coach:
         else:
             last = "none"
         args = f"ply={after_ply + 1}" + (f", then_moves={json.dumps(played)}" if played else "")
-        return (f"[Board shows {where}. {to_move.capitalize()} to move. FEN {board.fen()}. "
-                f"For tools, this position is {args}. 'This move' means {last}.]")
+        return ("## Board now\n"
+                f"- **Position:** {where}\n"
+                f"- **To move:** {to_move}\n"
+                f"- **\"This move\" means:** {last}\n"
+                f"- **FEN:** `{board.fen()}`\n"
+                f"- **For tools:** {args}\n")
 
-    def ask(self, question: str, focus_ply: int | None = None, on_tool=None, context: str | None = None) -> str:
+    def ask(self, question: str, focus_ply: int | None = None, on_tool=None, context: str | None = None,
+            audience: str = "coach") -> str:
         text = question
         if context:
-            text = f"{context}\n{question}"
+            text = f"{context}\n## Question\n{question}"
         elif focus_ply:
             m = self.review["moves"][focus_ply - 1]
             text = f"[Player is looking at ply {focus_ply}: {m['label']} {m['san']}]\n{question}"
@@ -396,7 +390,7 @@ class Coach:
             response = self._client.beta.messages.create(
                 model=MODEL,
                 max_tokens=16000,
-                system=SYSTEM,
+                system=system_prompt(audience),
                 tools=self.tools,
                 messages=self.messages,
                 thinking={"type": "adaptive"},

@@ -85,7 +85,9 @@
 
     <section class="panel chat-panel">
       <div class="chat-head">
-        <span>Coach</span>
+        <div class="seg small" id="audience" title="Who's talking"></div>
+        <label class="toggle gm-toggle" title="Speak up when there's a GM-level sacrifice or forced mate on the board">
+          <input type="checkbox" id="gm-toggle" checked> ⚡ GM alerts</label>
         <button class="link" id="btn-chat-reset" title="Start a fresh conversation">New chat</button>
       </div>
       <div class="chat-log" id="chat-log"></div>
@@ -135,6 +137,25 @@
     <label class="toggle"><input type="checkbox" id="play-engine"> Show engine eval during the game</label>
     <p class="hint">Ask the coach for ideas and plans at any point. It will teach the idea rather than just give away the move, unless you ask for the move.</p>
     <div class="row end"><button class="btn" id="play-go">Start game</button></div>
+  </dialog>
+
+  <dialog id="dlg-from">
+    <form method="dialog" class="dlg-head"><h2>Play from here</h2><button class="link">Close</button></form>
+    <p class="hint" id="from-where"></p>
+    <div class="from-options">
+      <button class="from-opt" id="from-best">
+        <b>Best moves only</b>
+        <span>Take over from this position against a full-strength bot. See how it should have gone.</span>
+      </button>
+      <button class="from-opt" id="from-replay">
+        <b>Replay exactly as it went</b>
+        <span>You play your own moves again, the opponent plays theirs. The coach steps in when there was a GM-level idea on the board.</span>
+      </button>
+    </div>
+    <div class="field" id="from-color-field">
+      <span class="label">You play (best-moves mode)</span>
+      <div class="seg" id="from-color"><button data-color="white">White</button><button data-color="black">Black</button></div>
+    </div>
   </dialog>
 
   <dialog id="dlg-load">

@@ -20,7 +20,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core.coach import Coach
+from core import gm_moments
+from core.coach import Coach, audiences
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
 from core.review import CACHE_DIR, load_pgn, review_game
 from frontends.chesscom import client as chesscom
@@ -98,7 +99,8 @@ def index():
 def config():
     return {"me": os.environ.get("CHESS_USER", ""),
             "coach_ready": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
-            "explorer_ready": explorer.available()}
+            "explorer_ready": explorer.available(),
+            "audiences": audiences()}
 
 
 @app.get("/api/games")
@@ -263,6 +265,7 @@ class PlayNewReq(BaseModel):
     color: str
     level: int
     fen: str | None = None
+    origin: str | None = None  # e.g. "sirwill3rd vs X, after 23. Nf5", when playing on from a game
 
 
 @app.post("/api/play/new")
@@ -274,7 +277,9 @@ def play_new(req: PlayNewReq):
     if board.is_game_over():
         raise HTTPException(400, "that position is already game over")
     note = PRACTICE_NOTE.format(level=level["name"], color=req.color)
-    if req.fen:
+    if req.origin:
+        note += f" The player is playing on from a real game ({req.origin}) to see how it could have gone."
+    elif req.fen:
         note += f" The game started from a set-up position (FEN {board.fen()}), e.g. to practise an endgame."
     with S.lock:
         new_analysis(board.fen(), note)
@@ -311,6 +316,16 @@ def explore(req: ExplorerReq):
         raise HTTPException(400, str(e))
 
 
+class GmReq(BaseModel):
+    fen: str
+
+
+@app.post("/api/gm_check")
+def gm_check(req: GmReq):
+    """Is there a GM-level resource (sacrifice / forced mate) for the side to move?"""
+    return {"moment": gm_moments.find(S.engine, parse_fen(req.fen))}
+
+
 @app.get("/api/review")
 def current_review():
     return public_review()
@@ -336,6 +351,7 @@ class ChatReq(BaseModel):
     question: str
     ply: int = 0
     extra: list[str] = []
+    audience: str = "coach"
 
 
 @app.post("/api/chat")
@@ -346,7 +362,7 @@ def chat(req: ChatReq):
     tools = []
     try:
         context = coach.board_context(req.ply, req.extra)
-        answer = coach.ask(req.question, context=context,
+        answer = coach.ask(req.question, context=context, audience=req.audience,
                            on_tool=lambda name, inp: tools.append({"name": name, "input": inp}))
     except ValueError as e:
         raise HTTPException(400, str(e))

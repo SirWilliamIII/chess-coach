@@ -15,6 +15,9 @@ const state = {
   coachReady: false,
   explorerReady: false,
   etab: 'engine',   // bottom panel: 'engine' lines or opening 'explorer'
+  audience: 'coach',
+  gmAlerts: true,
+  replay: null,     // replaying a loaded game: {color, hint}; the opponent follows the PGN
   chatBusy: false,
   play: null,       // practice game vs the bot: {color, level, levelName, moves, view, over, thinking}
   editor: null,     // position set-up: {tool, turn, prev: {orientation}}
@@ -133,6 +136,7 @@ function onBoardMove(orig, dest) {
   if (state.editor) return updateEditor();
   if (state.demo) return onDemoMove(orig, dest);
   if (state.play) return onPlayMove(orig, dest);
+  if (state.replay) return onReplayMove(orig, dest);
   const c = currentGame();
   let mv;
   try {
@@ -150,13 +154,14 @@ function onBoardMove(orig, dest) {
 function canMove(c, turn) {
   if (c.isGameOver()) return false;
   if (state.demo) return true;
+  if (state.replay) return turn === state.replay.color && state.ply < state.review.moves.length && !state.extra.length;
   const p = state.play;
   if (!p) return true;
   return !p.over && !p.thinking && p.view === p.moves.length && turn === p.color;
 }
 
 function goTo(ply) {
-  if (state.editor) return;
+  if (state.editor || (state.replay && !state.demo)) return;
   if (state.demo) return demoStep(ply);
   if (state.play) return playView(ply);
   state.ply = Math.max(0, Math.min(ply, state.review.moves.length));
@@ -165,7 +170,7 @@ function goTo(ply) {
 }
 
 function back() {
-  if (state.editor) return;
+  if (state.editor || (state.replay && !state.demo)) return;
   if (state.demo) return demoStep(state.demo.step - 1);
   if (state.play) return playView(state.play.view - 1);
   if (state.extra.length) { state.extra.pop(); update(); }
@@ -173,7 +178,7 @@ function back() {
 }
 
 function forward() {
-  if (state.editor) return;
+  if (state.editor || (state.replay && !state.demo)) return;
   if (state.demo) return demoStep(state.demo.step + 1);
   if (state.play) return playView(state.play.view + 1);
   if (!state.extra.length) goTo(state.ply + 1);
@@ -261,9 +266,12 @@ function renderInfo() {
   const parts = ['blunder', 'mistake', 'inaccuracy']
     .filter((k) => counts[k])
     .map((k) => `<span class="tag ${k}" data-cls="${k}" title="Jump to next ${k}">${counts[k].length} ${counts[k].length > 1 ? PLURAL[k] : k}</span>`);
-  $('summary').innerHTML = parts.length
+  if (state.replay) return renderReplayInfo();
+  $('summary').innerHTML = (parts.length
     ? `<span style="color:var(--muted)">${whose ? 'Your' : 'Flagged'} moves:</span> ${parts.join('')}`
-    : `<span style="color:var(--muted)">No inaccuracies, mistakes or blunders${whose ? ' by you' : ''}.</span>`;
+    : `<span style="color:var(--muted)">No inaccuracies, mistakes or blunders${whose ? ' by you' : ''}.</span>`)
+    + `<div class="play-buttons"><button class="btn small" id="btn-from-here">▶ Play from here</button></div>`;
+  $('btn-from-here').onclick = openFromDialog;
   $('summary').querySelectorAll('.tag').forEach((el) => {
     el.onclick = () => {
       const plies = counts[el.dataset.cls];
@@ -549,9 +557,14 @@ function toolLabel(t) {
   return t.name;
 }
 
-async function ask(question) {
+async function ask(question, opts = {}) {
   question = question.trim();
-  if (!question || state.chatBusy) return;
+  if (!question) return;
+  if (opts.silent) {  // automatic alerts wait their turn instead of being dropped
+    while (state.chatBusy) await new Promise((r) => setTimeout(r, 300));
+  } else if (state.chatBusy) {
+    return;
+  }
   if (state.editor) {  // the coach needs a real position: switch to analysis of the set-up first
     if (!(await analyseEditorPosition())) return;
   }
@@ -561,21 +574,24 @@ async function ask(question) {
   }
   state.chatBusy = true;
   $('chat-send').disabled = true;
-  addMsg('user', esc(question), positionLabel());
-  $('chat-text').value = '';
-  const pending = addMsg('coach', '<span class="thinking">Analysing</span>');
+  if (!opts.silent) {
+    addMsg('user', esc(question), positionLabel());
+    $('chat-text').value = '';
+  }
+  const pending = addMsg('coach', `<span class="thinking">${opts.silent ? 'Spotted something' : 'Analysing'}</span>`);
   try {
     const where = state.demo
       ? { ply: Math.max(0, state.demo.ply - 1), extra: [...state.demo.then_moves, ...state.demo.moves.slice(0, state.demo.step)] }
       : { ply: state.ply, extra: state.extra };
-    const data = await api('/api/chat', { question, ...where });
+    const data = await api('/api/chat', { question, ...where, audience: state.audience });
     pending.remove();
     const tools = data.tools.length
       ? `<div class="tools">${data.tools.map((t) => `<span>${esc(toolLabel(t))}</span>`).join('')}</div>` : '';
     const demos = data.demos || [];
     const buttons = demos.length
       ? `<div class="demos">${demos.map((d, i) => `<button class="demo-btn" data-i="${i}">▶ Show me: ${esc(d.title)}</button>`).join('')}</div>` : '';
-    const msg = addMsg('coach', markdown(data.answer) + buttons + tools);
+    const label = opts.label ? `<div class="gm-label">${esc(opts.label)}</div>` : '';
+    const msg = addMsg(opts.label ? 'coach gm' : 'coach', label + markdown(data.answer) + buttons + tools, opts.where);
     msg.querySelectorAll('.demo-btn').forEach((b) => { b.onclick = () => openDemo(demos[+b.dataset.i]); });
   } catch (e) {
     pending.remove();
@@ -601,6 +617,7 @@ function resetChatUi(note) {
 
 function setReview(review, note, play = null) {
   closeDemo(false);
+  state.replay = null;
   closeEditor(false);
   if (state.play && !play) setEngineVisible(recall('engineOn') !== '0');  // leaving a game
   state.play = play;
@@ -1017,6 +1034,165 @@ async function analyseEditorPosition() {
   }
 }
 
+// ---------------------------------------------------------------- play from here / replay
+
+let fromColor = 'white';
+
+function openFromDialog() {
+  const r = state.review;
+  const c = currentGame();
+  const where = positionLabel();
+  $('from-where').textContent = `${r.white} vs ${r.black}: ${where}, ${c.turn() === 'w' ? 'White' : 'Black'} to move.`;
+  const canReplay = !state.extra.length && state.ply < r.moves.length;
+  $('from-replay').disabled = !canReplay;
+  $('from-replay').title = canReplay ? '' : 'Replay needs a position from the game itself (not your own variation) before the last move.';
+  fromColor = r.player_color || (c.turn() === 'w' ? 'white' : 'black');
+  $('from-color').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.color === fromColor));
+  $('dlg-from').showModal();
+}
+
+async function startFromBest() {
+  $('dlg-from').close();
+  const r = state.review;
+  const c = currentGame();
+  const origin = `${r.white} vs ${r.black}, ${positionLabel().replace(/^After/, 'after')}`;
+  playToken++;
+  let review;
+  try {
+    review = await api('/api/play/new', { color: fromColor, level: 9, fen: c.fen(), origin });
+  } catch (e) {
+    addMsg('error', esc(e.message));
+    return;
+  }
+  const play = { color: fromColor, level: 9, levelName: 'Full strength', startFen: review.start_fen,
+    moves: [], view: 0, over: null, thinking: false };
+  setEngineVisible(false);
+  setReview(review, `Playing on from ${origin} against a full-strength bot. You have ${fromColor}.`, play);
+  if (c.turn() !== fromColor[0]) botMove();
+  else gmCheck(c);
+}
+
+function startReplay() {
+  $('dlg-from').close();
+  const r = state.review;
+  const color = r.player_color || (currentGame().turn() === 'w' ? 'white' : 'black');
+  closeDemo(false);
+  state.replay = { color, hint: null };
+  setEngineVisible(false);
+  addMsg('system', `Replay from ${positionLabel().toLowerCase()}: play your ${color} moves from the game; your opponent plays theirs. I'll step in if there was something special on the board.`);
+  update();
+  replayStep();
+}
+
+function stopReplay() {
+  state.replay = null;
+  setEngineVisible(recall('engineOn') !== '0');
+  update();
+}
+
+function replayNextMove() {
+  return state.review.moves[state.ply];
+}
+
+function replayStep() {
+  // play the opponent's recorded move, or wait for the player's
+  const rp = state.replay;
+  if (!rp) return;
+  const next = replayNextMove();
+  if (!next) { update(); return; }
+  if (next.color !== rp.color) {
+    // before the opponent's recorded move: did *they* have something special here?
+    const started = Date.now();
+    gmCheck(currentGame(), next, 'opponent').finally(() => {
+      setTimeout(() => {
+        if (state.replay !== rp) return;
+        state.ply++;
+        update();
+        replayStep();
+      }, Math.max(300, 700 - (Date.now() - started)));
+    });
+  } else {
+    gmCheck(currentGame(), next);
+  }
+}
+
+function onReplayMove(orig, dest) {
+  const rp = state.replay;
+  const next = replayNextMove();
+  if (next && next.uci.slice(0, 4) === orig + dest) {
+    rp.hint = null;
+    state.ply++;
+    update();
+    replayStep();
+    return;
+  }
+  rp.hint = next;
+  update();  // snaps the piece back
+  if (next) cg.setAutoShapes([{ orig: next.uci.slice(0, 2), dest: next.uci.slice(2, 4), brush: 'blue' }]);
+}
+
+function renderReplayInfo() {
+  const rp = state.replay;
+  const next = replayNextMove();
+  let status;
+  if (!next) status = `End of the game (${state.review.result}).`;
+  else if (rp.hint) status = `In the game you played ${rp.hint.label} ${rp.hint.san} here. Play it to continue (arrow on the board).`;
+  else if (next.color === rp.color) status = 'Your move: play what you played in the game.';
+  else if (document.querySelector('.thinking')) status = 'Hold on, the coach spotted something before your opponent moves…';
+  else status = 'Opponent is playing their game move…';
+  $('summary').innerHTML = `<div class="status">Replay · you play ${rp.color}</div>
+    <div class="replay-status">${esc(status)}</div>
+    <div class="play-buttons"><button class="btn ghost small" id="replay-exit">Exit replay</button></div>`;
+  $('replay-exit').onclick = stopReplay;
+}
+
+// ---- "only a GM would see this": engine check each time it's the player's turn
+
+let gmToken = 0;
+const gmSeen = new Set();
+
+async function gmCheck(c, gameMove = null, side = 'player') {
+  if (!state.gmAlerts || !state.coachReady || c.isGameOver()) return;
+  const fen = c.fen();
+  if (gmSeen.has(fen)) return;
+  const token = ++gmToken;
+  let res;
+  try {
+    res = await api('/api/gm_check', { fen });
+  } catch {
+    return;
+  }
+  if (token !== gmToken || !res.moment || gmSeen.has(fen)) return;
+  gmSeen.add(fen);
+  const m = res.moment;
+  const facts = [
+    `The engine flagged a GM-level resource for ${side === 'player' ? 'the player' : "the player's opponent"} `
+      + `(${c.turn() === 'w' ? 'White' : 'Black'} to move):`,
+    `- Kind: ${m.kind}${m.mate_in ? ` (mate in ${m.mate_in})` : ''}${m.material_sacrificed ? `, sacrificing about ${m.material_sacrificed} pawns' worth` : ''}`,
+    `- Best move: ${m.move} (eval ${m.eval_white}), line: ${m.line}`,
+    `- Next best: ${m.second_best} (eval ${m.second_eval_white})`,
+  ];
+  if (side === 'opponent') {
+    facts.push(gameMove?.san === m.move
+      ? `- This is a replay of the player's real game, and the opponent found ${m.move} here.`
+      : `- This is a replay of the player's real game; the opponent missed it and played ${gameMove?.san}.`);
+    facts.push('Warn the player before the opponent moves: show the idea with show_on_board, explain it, and '
+      + 'point out what in the previous moves allowed it. Keep it short.');
+  } else {
+    if (gameMove) {
+      facts.push(gameMove.san === m.move
+        ? `- This is a replay of their real game, and they actually found ${m.move} here. Give them credit, then show why it works.`
+        : `- This is a replay of their real game: here they played ${gameMove.label} ${gameMove.san} instead.`);
+    }
+    facts.push('Point it out before they move: say there is something special on the board, show it with show_on_board, '
+      + 'and explain why it works and why it is hard to see. Keep it short.');
+  }
+  const opts = { silent: true, label: side === 'player' ? '⚡ GM moment' : '⚠ Watch out', where: positionLabel() };
+  const done = ask(facts.join('\n'), opts);
+  if (state.replay) renderInfo();  // show "hold on" in the replay status
+  if (side === 'opponent') await done;  // replays hold the opponent's move until the warning is shown
+}
+
 // ---------------------------------------------------------------- playing the bot
 
 let playToken = 0;  // invalidates a pending bot reply after takeback / new game
@@ -1061,7 +1237,7 @@ async function botMove() {
     if (token === playToken && state.play === p) {
       p.thinking = false;
       playView(p.moves.length);
-      checkGameOver();
+      if (!checkGameOver()) gmCheck(playChess(p));
     }
   }
 }
@@ -1225,6 +1401,27 @@ async function startGame() {
 // ---------------------------------------------------------------- wiring
 
 $('btn-play').onclick = () => { pendingFen = null; openPlayDialog(); };
+$('from-best').onclick = startFromBest;
+$('from-replay').onclick = startReplay;
+$('from-color').querySelectorAll('button').forEach((b) => {
+  b.onclick = () => {
+    fromColor = b.dataset.color;
+    $('from-color').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+  };
+});
+$('gm-toggle').onchange = (e) => { state.gmAlerts = e.target.checked; store('gmAlerts', e.target.checked ? '1' : '0'); };
+
+function renderAudience(list) {
+  $('audience').innerHTML = list.map((a) => `<button data-a="${esc(a)}">${esc(a[0].toUpperCase() + a.slice(1))}</button>`).join('');
+  $('audience').querySelectorAll('button').forEach((b) => {
+    b.classList.toggle('on', b.dataset.a === state.audience);
+    b.onclick = () => {
+      state.audience = b.dataset.a;
+      store('audience', state.audience);
+      $('audience').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    };
+  });
+}
 $('btn-setup').onclick = openEditor;
 $('dlg-play').addEventListener('close', () => { if (!state.editor) pendingFen = null; });
 $('play-go').onclick = startGame;
@@ -1293,6 +1490,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'End') $('nav-end').click();
   else if (e.key === 'f') $('nav-flip').click();
   else if (e.key === 'Escape' && state.demo) closeDemo();
+  else if (e.key === 'Escape' && state.replay) stopReplay();
   else return;
   e.preventDefault();
 });
@@ -1301,6 +1499,11 @@ document.addEventListener('keydown', (e) => {
   const cfg = await api('/api/config');
   state.coachReady = cfg.coach_ready;
   state.explorerReady = cfg.explorer_ready;
+  const aud = cfg.audiences || ['coach'];
+  state.audience = aud.includes(recall('audience')) ? recall('audience') : (aud.includes('coach') ? 'coach' : aud[0]);
+  renderAudience(aud);
+  state.gmAlerts = recall('gmAlerts') !== '0';
+  $('gm-toggle').checked = state.gmAlerts;
   for (const id of ['x-db', 'x-band', 'x-speed']) { const v = recall(id); if (v !== null) $(id).value = v; }
   setEtab(recall('etab') === 'explorer' ? 'explorer' : 'engine');
   state.me = recall('me') || cfg.me || '';

@@ -306,3 +306,17 @@ body.editor-mode .nav { display: none; }
 .x-game { font-size: 12px; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
 .x-game:hover { background: #3a3835; }
 body.etab-explorer .engine { max-height: 64%; min-height: 45%; }
+
+/* ---------- audience, GM moments, play from here ---------- */
+.chat-head { gap: 10px; }
+.seg.small { padding: 2px; }
+.seg.small button { padding: 3px 10px; font-size: 13px; }
+.gm-toggle { margin: 0 auto 0 0; font-size: 12px; font-weight: 400; }
+.msg.coach.gm { border: 1px solid #b58b2a; background: #3a3322; }
+.gm-label { font-size: 12px; font-weight: 800; color: #f2c14e; margin-bottom: 4px; letter-spacing: .02em; }
+.from-options { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.from-opt { text-align: left; background: #3c3a37; color: var(--text); border: 1px solid transparent; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; }
+.from-opt:hover:not(:disabled) { border-color: var(--accent); background: #45433f; }
+.from-opt:disabled { opacity: .45; cursor: default; }
+.from-opt span { color: var(--muted); font-size: 13px; }
+.replay-status { font-size: 13px; color: var(--muted); margin-top: 2px; width: 100%; }

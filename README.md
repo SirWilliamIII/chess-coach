@@ -29,6 +29,12 @@ terminal version.
 - **Play bot**: practice games against Stockfish at 9 strength levels (~600 to full strength).
   Ask the coach for ideas mid-game ("what idea should I aim for?"); it teaches the plan rather
   than giving away the move unless you ask. Takeback/resign, then **Review this game**.
+- **Play from here** (in a reviewed game): **Best moves only** takes over the position against a
+  full-strength bot; **Replay exactly as it went** has you replay your own moves while the opponent
+  plays theirs, and the coach steps in at GM moments (and warns you before the opponent's).
+- **⚡ GM alerts**: Stockfish checks each position where it's your turn in bot games and replays for
+  a sacrifice or forced mate that beats everything else; only then does the coach speak up.
+- **Audience** switch in the chat (Coach / Hustler): same grounded coach, different voice.
 - **Show me**: when the coach explains a line it attaches a demo; the button plays it on a
   grey demo board (with a note per move) where you can also try your own moves.
   **Back to my game** returns you exactly where you were.
@@ -41,6 +47,13 @@ terminal version.
 - **Analysis board** gives an empty board to set up and discuss any line.
 - Add `--host 0.0.0.0` to open it from another device on your network (anyone on the network
   could then use your API key through it).
+
+## Prompts
+
+The coach's instructions live in `prompts/` as Markdown: `coach.md` (ground rules, how to
+explain, answer format including the "Habit to build" line) plus one file per voice in
+`prompts/audiences/`. They're re-read on every question, so edits apply without a restart;
+add a new `prompts/audiences/<name>.md` and it appears as a button.
 
 ## Offline use
 
@@ -72,6 +85,7 @@ In the review prompt: `/go 16b` jumps to 16...; then ask things like
 core/engine.py     Stockfish wrapper: lines, evals, null-move threats, win% classification
 core/features.py   verifiable facts: structure, king safety, loose pieces, outposts, move effects
 core/review.py     one engine pass over a game, cached in data/reviews/
+core/gm_moments.py sacrifice / forced-mate detector (static exchange evaluation)
 core/coach.py      Claude + tools (move_report, compare_moves, analyze_position, show_on_board,
                    opening_explorer)
 frontends/         chess.com + Lichess clients (incl. opening explorer), shared game loader

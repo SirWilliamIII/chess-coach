@@ -117,6 +117,7 @@ class Engine:
                 "eval_white": fmt_score(info["score"], chess.WHITE),
                 "cp_white": score_to_cp(info["score"], chess.WHITE),
                 "line": pv_to_san(board, pv),
+                "pv": [m.uci() for m in pv[:10]],
                 "depth": info.get("depth"),
             })
         return out
