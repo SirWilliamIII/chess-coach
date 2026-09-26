@@ -313,7 +313,9 @@ function cell(m) {
 function positionLabel() {
   if (state.demo) {
     const d = state.demo;
-    return `Demo “${d.title}”` + (d.step ? `, after ${d.moves.slice(0, d.step).join(' ')}` : ', start');
+    if (!d.step) return `Demo “${d.title}”, start`;
+    const labels = demoLabels(d);
+    return `Demo “${d.title}”, after ${labels[d.step - 1]} ${d.moves[d.step - 1]}`;
   }
   const p = state.play;
   if (p) {
@@ -327,7 +329,12 @@ function positionLabel() {
     const fresh = r.start_fen === START_FEN;
     label = state.extra.length ? (fresh ? 'Analysis board' : 'Set-up position') : (fresh ? 'Starting position' : 'Set-up position');
   }
-  if (state.extra.length) label += (r.moves.length ? ' + ' : ': ') + state.extra.join(' ');
+  if (state.extra.length) {
+    const labels = demoLabels({ start_fen: state.ply ? r.moves[state.ply - 1].fen_after : r.start_fen, moves: state.extra });
+    const last = `${labels.at(-1)} ${state.extra.at(-1)}`;
+    if (!r.moves.length) return `${label} · after ${last}`;
+    label += state.extra.length <= 2 ? ` + ${state.extra.join(' ')}` : ` + your line (${state.extra.length} moves, last ${last})`;
+  }
   return label;
 }
 
@@ -493,25 +500,201 @@ function esc(s) {
 // SAN with a piece letter, a capture, castling, or a move number in front (so "the e5 square" stays plain text)
 const SAN_RE = /\b((?:\d+\.(?:\.\.)?\s?)?(?:[KQRBN][a-h]?[1-8]?x?[a-h][1-8]|[a-h]x[a-h][1-8](?:=[QRBN])?)[+#]?|O-O(?:-O)?[+#]?|\d+\.(?:\.\.)?\s?[a-h][1-8](?:=[QRBN])?[+#]?)/g;
 
-function inline(text) {
-  return esc(text)
+// ---- chat rendering: moves as chips, evals as badges, chess terms with definitions
+
+const FIGURINE = { K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞' };
+const GLOSSARY = {
+  'tempo': 'A move\'s worth of time. Gaining a tempo means forcing your opponent to spend a move reacting (e.g. moving an attacked queen) while you improve.',
+  'pin': 'A piece can\'t move (or shouldn\'t) because a more valuable piece or the king stands behind it on the same line.',
+  'fork': 'One piece attacks two or more targets at once, so only one can be saved.',
+  'skewer': 'Like a pin in reverse: a valuable piece is attacked and has to move, exposing the piece behind it.',
+  'x-ray': 'A piece exerting force through another piece along a line, so it takes effect as soon as that piece moves or is traded.',
+  'discovered attack': 'Moving one piece uncovers an attack by another piece behind it. Deadly when the moved piece also attacks something.',
+  'discovered check': 'A discovered attack where the uncovered piece gives check.',
+  'back rank': 'The first/last rank. A king stuck there behind its own pawns can be mated by a rook or queen: the back-rank mate.',
+  'deflection': 'Forcing a defending piece away from the square or piece it guards.',
+  'decoy': 'Luring an enemy piece (often the king) onto a square where it gets hit by a tactic.',
+  'removing the defender': 'Capturing or chasing away the piece that guards something, so it falls.',
+  'overloaded': 'A piece with too many defensive jobs; make it do one and the other collapses.',
+  'zwischenzug': 'An in-between move: instead of the expected recapture, a stronger forcing move first.',
+  'zugzwang': 'Any move you make worsens your position, but you have to move.',
+  'opposition': 'Kings facing each other with one square between; the side NOT to move has the opposition, key in king-and-pawn endings.',
+  'outpost': 'A square in enemy territory that can\'t be attacked by enemy pawns, ideal for a knight.',
+  'passed pawn': 'A pawn with no enemy pawns in front of it or on neighbouring files; it can run to promote.',
+  'isolated pawn': 'A pawn with no friendly pawns on the neighbouring files; it can\'t be defended by pawns.',
+  'fianchetto': 'Developing a bishop to g2/b2 (or g7/b7) after moving the knight\'s pawn one square.',
+  'gambit': 'Offering material (usually a pawn) in the opening for development, tempo or attack.',
+  'sacrifice': 'Giving up material on purpose for something bigger: an attack, a mate, or winning more back.',
+  'en prise': 'Left where it can be captured for free.',
+  'luft': 'An escape square made for the king (e.g. h3) so it can\'t be back-rank mated.',
+  'battery': 'Two pieces lined up on the same line (queen and rook, queen and bishop), doubling their power.',
+  'open file': 'A file with no pawns on it, a highway for rooks.',
+  'the exchange': 'Winning "the exchange" means winning a rook for a bishop or knight.',
+  'trap': 'A move that sets up a natural-looking reply which loses.',
+  'mating net': 'The king is boxed in and a forced mate is coming.',
+  'initiative': 'Being the one making threats, so the opponent keeps having to react.',
+};
+// "back rank" also matches "back-rank"; "x-ray" also matches "x ray"
+const termKey = (w) => w.toLowerCase().replace(/[\s-]+/g, ' ');
+const GLOSSARY_BY_KEY = Object.fromEntries(Object.entries(GLOSSARY).map(([k, v]) => [termKey(k), v]));
+const GLOSSARY_RE = new RegExp(`\\b(${Object.keys(GLOSSARY).sort((a, b) => b.length - a.length)
+  .map((k) => k.split(/[\s-]+/).join('[\\s-]')).join('|')})\\b`, 'gi');
+
+function evalWords(v) {
+  const a = Math.abs(v);
+  if (a < 0.5) return 'roughly equal';
+  const side = v > 0 ? 'White' : 'Black';
+  if (a < 1.5) return `${side} is slightly better`;
+  if (a < 3) return `${side} is clearly better`;
+  return `${side} is winning`;
+}
+
+function moveChip(token) {
+  const m = token.match(/^(\d+)\.(\.\.)?\s?(.*)$/);
+  const san = m ? m[3] : token;
+  const shown = esc(san).replace(/^([KQRBN])/, (p) => `<i class="fig">${FIGURINE[p]}</i>`)
+    .replace(/=([QRBN])/, (_, p) => `=<i class="fig">${FIGURINE[p]}</i>`);
+  const no = m ? `<span class="mvno">${m[2] ? 'B' : 'W'}${m[1]}</span>` : '';
+  const title = m ? `${m[2] ? 'Black' : 'White'}, move ${m[1]}: ${san}. Click to see it on the board.` : `${san}: click to play it on the board`;
+  return `<span class="san" data-token="${esc(token)}" title="${esc(title)}">${no}${shown}</span>`;
+}
+
+function inline(text, seen = new Set()) {
+  const slots = [];
+  const hold = (html) => `\u0001${slots.push(html) - 1}\u0002`;
+  let out = esc(text)
+    .replace(/`([^`]+)`/g, (_, c) => hold(`<code>${c}</code>`))
+    .replace(SAN_RE, (tok) => hold(moveChip(tok)))
+    .replace(/(^|[\s(])([+\-−]\d+(?:\.\d+)?|#-?\d+)(?=[\s,.;:)!?]|$)/g, (all, pre, ev) => {
+      const mate = ev.startsWith('#');
+      const v = mate ? (ev.includes('-') ? -99 : 99) : parseFloat(ev.replace('−', '-'));
+      const cls = mate ? 'm' : v > 0.5 ? 'w' : v < -0.5 ? 'b' : 'eq';
+      const title = mate ? `Forced mate for ${v > 0 ? 'White' : 'Black'} in ${ev.replace(/[#-]/g, '')}`
+        : `Engine evaluation (White's point of view): ${evalWords(v)}`;
+      return pre + hold(`<span class="evalpill ${cls}" title="${esc(title)}">${ev}</span>`);
+    })
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(SAN_RE, (m) => `<span class="san" title="Play on board">${m}</span>`);
+    .replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=[\s,.;:)!?]|$)/g, '$1<em>$2</em>')
+    .replace(GLOSSARY_RE, (w) => {
+      const key = termKey(w);
+      if (seen.has(key) || !GLOSSARY_BY_KEY[key]) return w;
+      seen.add(key);
+      return `<span class="term" tabindex="0" data-tip="${esc(GLOSSARY_BY_KEY[key])}">${w}</span>`;
+    });
+  return out.replace(/\u0001(\d+)\u0002/g, (_, i) => slots[+i]);
 }
 
 function markdown(text) {
+  const seen = new Set();
   const blocks = text.trim().split(/\n{2,}/);
-  return blocks.map((block) => {
+  const html = [];
+  let points = [];
+  const flush = () => {
+    if (points.length) html.push(`<ol class="points">${points.map((p) => `<li>${p}</li>`).join('')}</ol>`);
+    points = [];
+  };
+  for (const block of blocks) {
     const lines = block.split('\n');
+    // "1. That f6 pawn is a crowbar…" style points (numbered from 1, real sentences, not moves)
+    const item = block.match(/^\s*(\d+)\.\s+([\s\S]{30,})$/);
+    const isMoveLine = item && /^(?:[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?[+#]?|O-O(?:-O)?[+#]?)[!?]*\s+(?:\d+\.|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8]|O-O)/.test(item[2]);
+    if (item && !isMoveLine && +item[1] === points.length + 1 && lines.length <= 3) {
+      points.push(inline(item[2], seen));
+      continue;
+    }
+    flush();
     if (lines.every((l) => /^\s*>/.test(l))) {  // quote = the coach flagging a special move
-      return `<div class="alert-red">${lines.map((l) => inline(l.replace(/^\s*>\s?/, ''))).join('<br>')}</div>`;
+      html.push(`<div class="alert-red"><span class="alert-ico">⚡</span>${lines.map((l) => inline(l.replace(/^\s*>\s?/, ''), seen)).join('<br>')}</div>`);
+    } else if (/^\s*\**habit to build:?\**:?/i.test(block)) {
+      const body = block.replace(/^\s*\**habit to build:?\**:?\s*/i, '');
+      html.push(`<div class="habit"><div class="habit-h">🧠 Habit to build</div><p>${lines.length > 1 ? body.split('\n').map((l) => inline(l, seen)).join('<br>') : inline(body, seen)}</p></div>`);
+    } else if (lines.every((l) => /^\s*[-*] /.test(l))) {
+      html.push(`<ul>${lines.map((l) => `<li>${inline(l.replace(/^\s*[-*] /, ''), seen)}</li>`).join('')}</ul>`);
+    } else {
+      html.push(`<p>${lines.map((l) => inline(l, seen)).join('<br>')}</p>`);
     }
-    if (lines.every((l) => /^\s*[-*] /.test(l))) {
-      return `<ul>${lines.map((l) => `<li>${inline(l.replace(/^\s*[-*] /, ''))}</li>`).join('')}</ul>`;
-    }
-    return `<p>${lines.map(inline).join('<br>')}</p>`;
-  }).join('');
+  }
+  flush();
+  return html.join('');
+}
+
+// ---- moves referenced in chat: find them in the current line of play
+
+function currentLine() {
+  // the moves from the start position to what the board shows, and how far along we are
+  if (state.demo) {
+    const d = state.demo;
+    return { startFen: d.start_fen, sans: d.moves, at: d.step, kind: 'demo' };
+  }
+  if (state.play) {
+    const p = state.play;
+    return { startFen: p.startFen, sans: p.moves, at: p.view, kind: 'play' };
+  }
+  const r = state.review;
+  const game = r.moves.map((m) => m.san);
+  const sans = state.extra.length ? [...game.slice(0, state.ply), ...state.extra] : game;
+  return { startFen: r.start_fen, sans, at: state.ply + state.extra.length, kind: 'review' };
+}
+
+function lineIndex(startFen, number, black) {
+  const c = new Chess(startFen);
+  return (number - c.moveNumber()) * 2 + (black ? 1 : 0) - (c.turn() === 'w' ? 0 : 1);
+}
+
+function goToLine(k) {
+  // show the position after k moves of the current line
+  const line = currentLine();
+  if (line.kind === 'demo') return demoStep(k);
+  if (line.kind === 'play') return playView(k);
+  const game = state.review.moves.map((m) => m.san);
+  const matching = line.sans.slice(0, k).every((san, i) => san === game[i]);
+  if (matching && k <= game.length) goTo(k);
+  else { state.extra = line.sans.slice(state.ply, k); update(); }
+}
+
+function resolveToken(token) {
+  // -> {k, san}: the move `san` played from the position after k moves of the current line
+  const m = token.match(/^(\d+)\.(\.\.)?\s?(.*)$/);
+  const line = currentLine();
+  if (!m) return { k: line.at, san: token };
+  const k = lineIndex(line.startFen, +m[1], !!m[2]);
+  if (k < 0 || k > line.sans.length) return null;
+  return { k, san: m[3] };
+}
+
+function legalAt(k, san) {
+  const line = currentLine();
+  const c = new Chess(line.startFen);
+  try {
+    for (const x of line.sans.slice(0, k)) c.move(x);
+    return c.move(san);
+  } catch {
+    return null;
+  }
+}
+
+function clickMove(token) {
+  const t = resolveToken(token);
+  if (!t) return false;
+  const line = currentLine();
+  if (!legalAt(t.k, t.san)) return false;
+  if (line.sans[t.k] === t.san) { goToLine(t.k + 1); return true; }  // a move that was played
+  if (line.kind === 'play') {  // live game: just show the idea
+    if (t.k !== line.at) return false;
+    const mv = legalAt(t.k, t.san);
+    cg.setAutoShapes([{ orig: mv.from, dest: mv.to, brush: 'green' }]);
+    return true;
+  }
+  if (t.k !== line.at) goToLine(t.k);
+  return playSan(t.san);
+}
+
+function previewMove(token, on) {
+  if (!on) { cg.setAutoShapes([]); return; }
+  const t = resolveToken(token);
+  if (!t || t.k !== currentLine().at) return;
+  const mv = legalAt(t.k, t.san);
+  if (mv) cg.setAutoShapes([{ orig: mv.from, dest: mv.to, brush: 'paleBlue' }]);
 }
 
 function playSan(token) {
@@ -544,12 +727,19 @@ function addMsg(kind, html, where) {
   div.innerHTML = (where ? `<span class="where">${esc(where)}</span>` : '') + html;
   div.querySelectorAll('.san').forEach((el) => {
     el.onclick = () => {
-      if (!playSan(el.textContent)) {
-        el.style.textDecoration = 'line-through';
-        el.title = 'Not playable from the current board position';
+      if (!clickMove(el.dataset.token)) {
+        el.classList.add('stale');
+        el.title = 'Not reachable from the current line of play';
       }
     };
+    el.onmouseenter = () => previewMove(el.dataset.token, true);
+    el.onmouseleave = () => previewMove(el.dataset.token, false);
   });
+  div.querySelectorAll('.term').forEach((el) => {
+    el.onclick = (e) => { e.stopPropagation(); el.classList.toggle('open'); };
+    el.onblur = () => el.classList.remove('open');
+  });
+  if (kind.startsWith('coach')) div.querySelector(':scope > p')?.classList.add('lead');
   // special-move alerts go to the top of the message so they can't be missed
   const alerts = [...div.querySelectorAll('.alert-red')];
   const anchor = div.querySelector('.gm-label')?.nextSibling || div.querySelector('.where')?.nextSibling || div.firstChild;
@@ -563,15 +753,29 @@ function addMsg(kind, html, where) {
   return div;
 }
 
+function moveAt(plies, startFen = state.review.start_fen) {
+  // "move 8, Black to move" for the position `plies` half-moves after the start
+  const c = new Chess(startFen);
+  const idx = plies + (c.turn() === 'w' ? 0 : 1);
+  return { no: c.moveNumber() + Math.floor(idx / 2), side: idx % 2 ? 'Black' : 'White' };
+}
+
 function toolLabel(t) {
   const i = t.input || {};
-  const extra = i.then_moves?.length ? ` after ${i.then_moves.join(' ')}` : '';
-  if (t.name === 'move_report') return `checked move (ply ${i.ply})`;
-  if (t.name === 'compare_moves') return `compared ${(i.moves || []).join(', ')}${extra}`;
-  if (t.name === 'analyze_position') return `analysed position${extra}`;
-  if (t.name === 'find_tricks') return `looked for tricks${extra}`;
-  if (t.name === 'opening_explorer') return `checked real games${extra}`;
+  const plies = Math.max(0, (i.ply ?? 1) - 1) + (i.then_moves?.length || 0);
+  const at = moveAt(plies);
+  const where = `move ${at.no}, ${at.side} to move`;
+  if (t.name === 'move_report') return `checked ${at.side}'s move ${at.no}`;
+  if (t.name === 'compare_moves') return `compared ${(i.moves || []).join(', ')} · move ${at.no}`;
+  if (t.name === 'analyze_position') return `analysed · ${where}`;
+  if (t.name === 'find_tricks') return `looked for tricks · ${where}`;
+  if (t.name === 'opening_explorer') return `checked real games · ${where}`;
   return t.name;
+}
+
+function toolTitle(t) {
+  const i = t.input || {};
+  return i.then_moves?.length ? `From ply ${i.ply}, after ${i.then_moves.join(' ')}` : `Ply ${i.ply ?? 0}`;
 }
 
 async function ask(question, opts = {}) {
@@ -603,7 +807,7 @@ async function ask(question, opts = {}) {
     const data = await api('/api/chat', { question, ...where, audience: state.audience });
     pending.remove();
     const tools = data.tools.length
-      ? `<div class="tools">${data.tools.map((t) => `<span>${esc(toolLabel(t))}</span>`).join('')}</div>` : '';
+      ? `<div class="tools">${data.tools.map((t) => `<span title="${esc(toolTitle(t))}">${esc(toolLabel(t))}</span>`).join('')}</div>` : '';
     const demos = data.demos || [];
     const buttons = demos.length
       ? `<div class="demos">${demos.map((d, i) => `<button class="demo-btn" data-i="${i}">▶ Show me: ${esc(d.title)}</button>`).join('')}</div>` : '';
