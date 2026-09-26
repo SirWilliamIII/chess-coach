@@ -788,6 +788,69 @@ function legalAt(k, san) {
   }
 }
 
+// ---- runs of 3+ moves in an answer collapse into one "▶ Move order" button that plays the line
+
+function groupMoveRuns(root) {
+  const SEP = /^[\s:;,–—-]*$/;  // only punctuation between chips ("If 17. Kf1: 17...fxe4 18. Kg2")
+  root.querySelectorAll('p, li, .alert-red, .habit p').forEach((block) => {
+    const runs = [];
+    let cur = [];
+    const close = () => {
+      while (cur.length && cur.at(-1).nodeType === Node.TEXT_NODE) cur.pop();  // trailing separators
+      if (cur.filter((n) => n.nodeType === Node.ELEMENT_NODE).length >= 3) runs.push(cur);
+      cur = [];
+    };
+    for (const node of [...block.childNodes]) {
+      if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('san')) cur.push(node);
+      else if (node.nodeType === Node.TEXT_NODE && cur.length && SEP.test(node.textContent)) cur.push(node);
+      else close();
+    }
+    close();
+    for (const run of runs) {
+      const chips = run.filter((n) => n.nodeType === Node.ELEMENT_NODE);
+      const tokens = chips.map((c) => c.dataset.token);
+      const btn = document.createElement('button');
+      btn.className = 'line-btn';
+      btn.title = `${tokens.join(' ')}\nClick to play this line on the demo board`;
+      const preview = `${tokens[0]} … ${tokens.at(-1).replace(/^\d+\.(\.\.)?\s?/, '')}`;
+      btn.innerHTML = `<span class="line-play">▶ Move order</span><span class="line-preview">${esc(preview)} · ${tokens.length} moves</span>`;
+      btn.onclick = () => { if (!playLine(tokens)) btn.classList.add('stale'); };
+      block.insertBefore(btn, run[0]);
+      run.forEach((n) => n.remove());
+    }
+  });
+}
+
+function playLine(tokens) {
+  // start from the position before the line's first move (found via its move number), play it as a demo
+  const line = currentLine();
+  const first = resolveToken(tokens[0]);
+  if (!first) return false;
+  const c = new Chess(line.startFen);
+  try { for (const x of line.sans.slice(0, first.k)) c.move(x); } catch { return false; }
+  const startFen = c.fen();
+  const moves = [];
+  for (const tok of tokens) {
+    const san = tok.replace(/^\d+\.(\.\.)?\s?/, '');
+    try { moves.push(c.move(san).san); } catch { break; }  // stop at the first move that doesn't fit
+  }
+  if (!moves.length) return false;
+  // where this sits in coach-tool terms, so questions inside the demo still work
+  let origin;
+  if (line.kind === 'demo') {
+    origin = { ply: state.demo.ply, then_moves: [...state.demo.then_moves, ...line.sans.slice(0, first.k)] };
+  } else if (line.kind === 'play') {
+    origin = { ply: 1, then_moves: line.sans.slice(0, first.k) };
+  } else {
+    const game = state.review.moves.map((m) => m.san);
+    let p = 0;
+    while (p < first.k && p < game.length && line.sans[p] === game[p]) p++;
+    origin = { ply: p + 1, then_moves: line.sans.slice(p, first.k) };
+  }
+  openDemo({ title: `Move order: ${tokens[0]}`, start_fen: startFen, moves, notes: [], ...origin });
+  return true;
+}
+
 function moveDestination(token) {
   // the square a move lands on, straight from its notation ("7...Nxd4+" -> d4, "O-O" by colour)
   const m = token.match(/^(\d+)\.(\.\.)?\s?(.*)$/);
@@ -852,6 +915,7 @@ function addMsg(kind, html, where) {
   const div = document.createElement('div');
   div.className = `msg ${kind}`;
   div.innerHTML = (where ? `<span class="where">${esc(where)}</span>` : '') + html;
+  groupMoveRuns(div);
   div.querySelectorAll('.san').forEach((el) => {
     const dest = moveDestination(el.dataset.token);
     el.onclick = () => {

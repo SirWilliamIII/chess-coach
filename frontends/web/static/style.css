@@ -406,3 +406,11 @@ dialog.wide { width: min(720px, calc(100vw - 32px)); }
 .lib-etags span { font-size: 11px; background: #2a2926; color: var(--muted); padding: 0 7px; border-radius: 8px; }
 .msg .star { float: right; background: none; border: 0; color: #9d9c98; font-size: 17px; line-height: 1; padding: 0 0 0 6px; }
 .msg .star:hover, .msg .star.on { color: #f2c14e; }
+
+/* ---------- collapsed move sequences ---------- */
+.line-btn { display: inline-flex; align-items: baseline; gap: 8px; background: #2f4020; border: 1px solid #5d8a33;
+  color: #d9f2b8; border-radius: 7px; padding: 2px 9px; margin: 1px 0; cursor: pointer; font: inherit; }
+.line-btn:hover { background: #3d5a26; border-color: #81b64c; }
+.line-btn .line-play { font-weight: 800; }
+.line-btn .line-preview { font-size: 12px; color: #a9d67a; }
+.line-btn.stale { opacity: .5; }
