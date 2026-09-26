@@ -1,0 +1,358 @@
+"""Local web app: board + move list + engine eval + coach chat.
+
+  .venv/bin/python -m frontends.web.server [--host 127.0.0.1] [--port 8000]
+
+Single-user by design: one loaded game and one coach conversation at a time.
+"""
+
+import argparse
+import json
+import os
+import threading
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+import anthropic
+import chess
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from core.coach import Coach
+from core.engine import BOT_LEVELS, Bot, Engine, check_position
+from core.review import CACHE_DIR, load_pgn, review_game
+from frontends.chesscom import client as chesscom
+from frontends.loader import fetch_game_text
+
+STATIC = Path(__file__).parent / "static"
+
+
+class State:
+    engine: Engine | None = None
+    bot: Bot | None = None
+    review: dict | None = None
+    coach: Coach | None = None
+    me: str | None = None
+    job = {"status": "idle", "done": 0, "total": 0, "error": None}
+    lock = threading.Lock()
+
+
+S = State()
+
+
+@asynccontextmanager
+async def lifespan(app):
+    S.engine = Engine()
+    S.bot = Bot()
+    new_analysis(chess.STARTING_FEN)
+    yield
+    S.engine.close()
+    S.bot.close()
+
+
+app = FastAPI(lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
+
+def parse_fen(fen: str) -> chess.Board:
+    try:
+        board = chess.Board(fen)
+        check_position(board)
+    except ValueError as e:
+        raise HTTPException(400, str(e) if str(e).startswith("Illegal") else "invalid FEN")
+    return board
+
+
+def new_analysis(fen: str, note: str | None = None):
+    S.review = {"game_id": None, "white": "?", "black": "?", "white_elo": None, "black_elo": None,
+                "result": "*", "opening": None, "time_control": None, "start_fen": fen, "moves": [],
+                "note": note}
+    S.coach = Coach(S.review, S.engine)
+
+
+def public_review() -> dict:
+    r = S.review
+    return {
+        "game_id": r["game_id"], "white": r["white"], "black": r["black"],
+        "white_elo": r["white_elo"], "black_elo": r["black_elo"], "result": r["result"],
+        "opening": r["opening"], "start_fen": r["start_fen"],
+        "player_color": S.coach.player_color if S.coach else None,
+        "moves": [{k: m[k] for k in ("ply", "label", "color", "san", "uci", "fen_after",
+                                     "eval_after", "best", "class", "played_best")} for m in r["moves"]],
+    }
+
+
+@app.get("/")
+def index():
+    return FileResponse(STATIC / "index.html")
+
+
+@app.get("/api/config")
+def config():
+    return {"me": os.environ.get("CHESS_USER", ""),
+            "coach_ready": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))}
+
+
+@app.get("/api/games")
+def games(user: str, n: int = 15):
+    try:
+        out = []
+        for i, g in enumerate(chesscom.recent_games(user, n), 1):
+            w, b = g["white"], g["black"]
+            res = "1-0" if w["result"] == "win" else "0-1" if b["result"] == "win" else "½-½"
+            out.append({"ref": g["url"], "index": i, "time_class": g.get("time_class"),
+                        "white": w["username"], "white_rating": w["rating"],
+                        "black": b["username"], "black_rating": b["rating"], "result": res,
+                        "opening": chesscom.opening_from_url(g.get("eco", "")), "end_time": g.get("end_time")})
+        return out
+    except (RuntimeError, ValueError) as e:
+        raise HTTPException(400, str(e))
+
+
+# ---------- saved reviews (work offline) ----------
+
+def saved_reviews() -> list[dict]:
+    out = []
+    for f in CACHE_DIR.glob("*.json"):
+        try:
+            r = json.loads(f.read_text())
+        except (OSError, ValueError):
+            continue
+        if not r.get("moves"):
+            continue
+        out.append({"game_id": r["game_id"], "white": r["white"], "black": r["black"],
+                    "white_elo": r.get("white_elo"), "black_elo": r.get("black_elo"),
+                    "result": r["result"], "opening": r.get("opening"), "saved_at": f.stat().st_mtime})
+    return sorted(out, key=lambda g: g["saved_at"], reverse=True)
+
+
+@app.get("/api/saved")
+def saved():
+    return saved_reviews()
+
+
+class OpenSavedReq(BaseModel):
+    game_id: str
+    me: str | None = None
+
+
+@app.post("/api/saved/open")
+def open_saved(req: OpenSavedReq):
+    f = CACHE_DIR / f"{req.game_id}.json"
+    if not req.game_id.isalnum() or not f.exists():
+        raise HTTPException(404, "saved game not found")
+    review = json.loads(f.read_text())
+    with S.lock:
+        S.review, S.me = review, req.me
+        S.coach = Coach(review, S.engine, player=req.me)
+    return public_review()
+
+
+PREFETCH = {"status": "idle", "done": 0, "total": 0, "new": 0, "error": None}
+
+
+class PrefetchReq(BaseModel):
+    user: str
+    n: int = 20
+
+
+def _prefetch_job(user: str, n: int):
+    try:
+        games = chesscom.recent_games(user, n)
+        PREFETCH.update(total=len(games))
+        for i, g in enumerate(games, 1):
+            game = load_pgn(g["pgn"])
+            before = len(list(CACHE_DIR.glob("*.json")))
+            review_game(game, S.engine)  # returns straight away if it's already saved
+            PREFETCH["new"] += len(list(CACHE_DIR.glob("*.json"))) - before
+            PREFETCH.update(done=i)
+        PREFETCH.update(status="done")
+    except Exception as e:
+        PREFETCH.update(status="error", error=str(e))
+
+
+@app.post("/api/prefetch")
+def prefetch(req: PrefetchReq):
+    if PREFETCH["status"] == "running":
+        raise HTTPException(409, "already saving games")
+    PREFETCH.update(status="running", done=0, total=0, new=0, error=None)
+    threading.Thread(target=_prefetch_job, args=(req.user, max(1, min(50, req.n))), daemon=True).start()
+    return {"ok": True}
+
+
+@app.get("/api/prefetch")
+def prefetch_status():
+    return PREFETCH
+
+
+class LoadReq(BaseModel):
+    ref: str
+    me: str | None = None
+
+
+def _load_job(ref: str, me: str | None):
+    try:
+        game = load_pgn(fetch_game_text(ref, me))
+
+        def progress(i, n):
+            S.job.update(done=i, total=n)
+
+        review = review_game(game, S.engine, progress=progress)
+        with S.lock:
+            S.review, S.me = review, me
+            S.coach = Coach(review, S.engine, player=me)
+        S.job.update(status="done")
+    except Exception as e:  # surfaced to the UI
+        S.job.update(status="error", error=str(e))
+
+
+@app.post("/api/load")
+def load(req: LoadReq):
+    if S.job["status"] == "running":
+        raise HTTPException(409, "already loading a game")
+    S.job = {"status": "running", "done": 0, "total": 0, "error": None}
+    threading.Thread(target=_load_job, args=(req.ref, req.me), daemon=True).start()
+    return {"ok": True}
+
+
+@app.get("/api/job")
+def job():
+    out = dict(S.job)
+    if out["status"] == "done":
+        out["review"] = public_review()
+    return out
+
+
+class AnalysisReq(BaseModel):
+    fen: str | None = None
+
+
+@app.post("/api/analysis")
+def analysis(req: AnalysisReq):
+    fen = parse_fen(req.fen or chess.STARTING_FEN).fen()
+    with S.lock:
+        new_analysis(fen)
+    return public_review()
+
+
+# ---------- playing against the bot ----------
+
+PRACTICE_NOTE = (
+    "The player is playing a practice game against a bot ({level}) and has the {color} pieces. "
+    "Moves played so far are given with each question. This is training, so coach like a teacher: "
+    "when they ask for an idea or a plan, explain the key features of the position (pawn structure, "
+    "weaknesses, piece activity, king safety) and the plan to aim for, grounded in the tools. Don't "
+    "just hand over the engine's best move unless they explicitly ask for the move."
+)
+
+
+@app.get("/api/play/levels")
+def play_levels():
+    return [{"id": lv["id"], "name": lv["name"]} for lv in BOT_LEVELS]
+
+
+class PlayNewReq(BaseModel):
+    color: str
+    level: int
+    fen: str | None = None
+
+
+@app.post("/api/play/new")
+def play_new(req: PlayNewReq):
+    level = next((lv for lv in BOT_LEVELS if lv["id"] == req.level), None)
+    if level is None or req.color not in ("white", "black"):
+        raise HTTPException(400, "bad color or level")
+    board = parse_fen(req.fen or chess.STARTING_FEN)
+    if board.is_game_over():
+        raise HTTPException(400, "that position is already game over")
+    note = PRACTICE_NOTE.format(level=level["name"], color=req.color)
+    if req.fen:
+        note += f" The game started from a set-up position (FEN {board.fen()}), e.g. to practise an endgame."
+    with S.lock:
+        new_analysis(board.fen(), note)
+    return public_review()
+
+
+class PlayMoveReq(BaseModel):
+    fen: str
+    level: int
+
+
+@app.post("/api/play/move")
+def play_move(req: PlayMoveReq):
+    board = parse_fen(req.fen)
+    if board.is_game_over():
+        raise HTTPException(400, "game is over")
+    move = S.bot.play(board, req.level)
+    return {"uci": move.uci(), "san": board.san(move)}
+
+
+@app.get("/api/review")
+def current_review():
+    return public_review()
+
+
+class EvalReq(BaseModel):
+    fen: str
+    lines: int = 1
+
+
+@app.post("/api/eval")
+def evaluate(req: EvalReq):
+    board = parse_fen(req.fen)
+    if board.is_checkmate():
+        return {"eval": "#0", "cp": -10_000 if board.turn else 10_000, "lines": []}
+    if board.is_game_over():
+        return {"eval": "0.00", "cp": 0, "lines": []}
+    lines = S.engine.lines(board, multipv=max(1, min(3, req.lines)), seconds=0.6)
+    return {"eval": lines[0]["eval_white"], "cp": lines[0]["cp_white"], "lines": lines}
+
+
+class ChatReq(BaseModel):
+    question: str
+    ply: int = 0
+    extra: list[str] = []
+
+
+@app.post("/api/chat")
+def chat(req: ChatReq):
+    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        raise HTTPException(400, "Set ANTHROPIC_API_KEY before starting the server to use the coach.")
+    coach = S.coach
+    tools = []
+    try:
+        context = coach.board_context(req.ply, req.extra)
+        answer = coach.ask(req.question, context=context,
+                           on_tool=lambda name, inp: tools.append({"name": name, "input": inp}))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except anthropic.APIConnectionError:
+        coach.messages.clear()
+        raise HTTPException(503, "The coach needs internet (it runs on the Claude API) and it looks like you're "
+                                 "offline. The board, engine, bot and set-up board all still work.")
+    except anthropic.AnthropicError as e:
+        coach.messages.clear()
+        raise HTTPException(502, f"Claude API error: {e}")
+    tools = [t for t in tools if t["name"] != "show_on_board"]  # shown as buttons instead
+    return {"answer": answer, "tools": tools, "demos": coach.last_demos}
+
+
+@app.post("/api/chat/reset")
+def chat_reset():
+    S.coach.messages.clear()
+    return {"ok": True}
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--host", default="127.0.0.1", help="use 0.0.0.0 to open it from other devices on your network")
+    ap.add_argument("--port", type=int, default=8000)
+    args = ap.parse_args()
+    print(f"Chess coach running at http://{'localhost' if args.host == '127.0.0.1' else args.host}:{args.port}")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+
+
+if __name__ == "__main__":
+    main()

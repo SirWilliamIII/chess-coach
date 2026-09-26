@@ -1,0 +1,1231 @@
+import { Chessground } from './vendor/chessground-9.2.1.js';
+import { Chess } from './vendor/chess-1.4.0.js';
+
+const $ = (id) => document.getElementById(id);
+const FLAG = { inaccuracy: '?!', mistake: '?', blunder: '??' };
+const PLURAL = { inaccuracy: 'inaccuracies', mistake: 'mistakes', blunder: 'blunders' };
+
+const state = {
+  review: null,     // game (or empty analysis board) from the server
+  ply: 0,           // board shows the position after this many game plies
+  extra: [],        // SAN moves tried on the board on top of that
+  orientation: 'white',
+  engineOn: true,
+  me: '',
+  coachReady: false,
+  chatBusy: false,
+  play: null,       // practice game vs the bot: {color, level, levelName, moves, view, over, thinking}
+  editor: null,     // position set-up: {tool, turn, prev: {orientation}}
+  demo: null,       // coach's "show me" line on a grey board: {title, ply, then_moves, start_fen, moves, notes, step}
+};
+
+const CHIPS = {
+  review: [
+    ['Best move?', 'What is the best move here, and why?'],
+    ['Plan behind this move?', 'What was the plan behind this move?'],
+    ['What should I have played?', 'What should have been played instead, and why?'],
+    ['Explain position', "Explain what's going on in this position."],
+  ],
+  play: [
+    ['What idea should I aim for?', 'What idea or plan should I be formulating in this position?'],
+    ['Any threats?', 'What is my opponent threatening, and is anything of mine in danger?'],
+    ['How am I doing?', 'How is my position, and what are its strengths and weaknesses?'],
+    ['Hint', "Give me a hint for this position without telling me the move outright."],
+  ],
+};
+
+function store(key, value) {
+  try { value === undefined ? localStorage.removeItem(key) : localStorage.setItem(key, value); } catch {}
+}
+function recall(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? {} : {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || `request failed (${res.status})`);
+  return data;
+}
+
+// ---------------------------------------------------------------- board
+
+const cg = Chessground($('board'), {
+  coordinates: true,
+  animation: { duration: 180 },
+  highlight: { lastMove: true, check: true },
+  movable: { free: false, showDests: true, events: { after: onBoardMove } },
+  premovable: { enabled: false },
+  events: {
+    select: (key) => onEditorSelect(key),
+    change: () => { if (state.editor) updateEditor(); },  // e.g. a piece dragged off the board
+  },
+  drawable: { enabled: true },
+});
+
+function baseFen() {
+  const r = state.review;
+  return state.ply === 0 ? r.start_fen : r.moves[state.ply - 1].fen_after;
+}
+
+function currentGame() {
+  if (state.demo) {
+    const d = state.demo;
+    const c = new Chess(d.start_fen);
+    for (const san of d.moves.slice(0, d.step)) c.move(san);
+    return c;
+  }
+  const c = new Chess(baseFen());
+  for (const san of state.extra) c.move(san);
+  return c;
+}
+
+function dests(c) {
+  const d = new Map();
+  for (const m of c.moves({ verbose: true })) {
+    if (!d.has(m.from)) d.set(m.from, []);
+    d.get(m.from).push(m.to);
+  }
+  return d;
+}
+
+function lastMove(c) {
+  const hist = c.history({ verbose: true });
+  if (hist.length) return [hist.at(-1).from, hist.at(-1).to];
+  if (state.demo) return undefined;
+  if (state.ply > 0) {
+    const u = state.review.moves[state.ply - 1].uci;
+    return [u.slice(0, 2), u.slice(2, 4)];
+  }
+  return undefined;
+}
+
+function renderBoard() {
+  if (state.editor) {
+    cg.set({
+      orientation: state.orientation, turnColor: state.editor.turn, lastMove: undefined, check: false,
+      movable: { free: true, color: 'both', dests: undefined },
+      draggable: { deleteOnDropOff: true },
+    });
+    cg.setAutoShapes([]);
+    return null;
+  }
+  const c = currentGame();
+  const turn = c.turn() === 'w' ? 'white' : 'black';
+  cg.set({
+    fen: c.fen(),
+    orientation: state.orientation,
+    turnColor: turn,
+    lastMove: lastMove(c),
+    check: c.inCheck() ? turn : false,
+    movable: { free: false, color: canMove(c, turn) ? turn : undefined, dests: dests(c) },
+    draggable: { deleteOnDropOff: false },
+  });
+  cg.setAutoShapes([]);
+  return c;
+}
+
+function onBoardMove(orig, dest) {
+  if (state.editor) return updateEditor();
+  if (state.demo) return onDemoMove(orig, dest);
+  if (state.play) return onPlayMove(orig, dest);
+  const c = currentGame();
+  let mv;
+  try {
+    mv = c.move({ from: orig, to: dest, promotion: 'q' });
+  } catch {
+    update();
+    return;
+  }
+  const next = state.review.moves[state.ply];
+  if (!state.extra.length && next && next.uci.slice(0, 4) === orig + dest) state.ply++;
+  else state.extra.push(mv.san);
+  update();
+}
+
+function canMove(c, turn) {
+  if (c.isGameOver()) return false;
+  if (state.demo) return true;
+  const p = state.play;
+  if (!p) return true;
+  return !p.over && !p.thinking && p.view === p.moves.length && turn === p.color;
+}
+
+function goTo(ply) {
+  if (state.editor) return;
+  if (state.demo) return demoStep(ply);
+  if (state.play) return playView(ply);
+  state.ply = Math.max(0, Math.min(ply, state.review.moves.length));
+  state.extra = [];
+  update();
+}
+
+function back() {
+  if (state.editor) return;
+  if (state.demo) return demoStep(state.demo.step - 1);
+  if (state.play) return playView(state.play.view - 1);
+  if (state.extra.length) { state.extra.pop(); update(); }
+  else goTo(state.ply - 1);
+}
+
+function forward() {
+  if (state.editor) return;
+  if (state.demo) return demoStep(state.demo.step + 1);
+  if (state.play) return playView(state.play.view + 1);
+  if (!state.extra.length) goTo(state.ply + 1);
+}
+
+// ---------------------------------------------------------------- panels
+
+function playerLine(color) {
+  const p = state.play;
+  if (p) return color === p.color ? (state.me ? `${esc(state.me)} (you)` : 'You') : `Bot <span class="elo">${esc(p.levelName)}</span>`;
+  const r = state.review;
+  if (!r.moves.length) return '';
+  const name = r[color], elo = r[`${color}_elo`];
+  const you = r.player_color === color ? ' (you)' : '';
+  return `${esc(name)}${you} <span class="elo">${elo ? `(${esc(elo)})` : ''}</span>`;
+}
+
+// ---- captured pieces + material balance (chess.com style)
+const VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+const START = { p: 8, n: 2, b: 2, r: 2, q: 1 };
+const ROLE = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen' };
+let pieceImg = null;  // piece artwork borrowed from the board's own theme
+
+function pieceImages() {
+  if (pieceImg) return pieceImg;
+  pieceImg = {};
+  const probe = document.createElement('piece');
+  probe.style.display = 'none';
+  $('board').appendChild(probe);
+  for (const color of ['white', 'black']) {
+    for (const role of [...Object.values(ROLE), 'king']) {
+      probe.className = `${role} ${color}`;
+      pieceImg[`${color}-${role}`] = getComputedStyle(probe).backgroundImage;
+    }
+  }
+  probe.remove();
+  return pieceImg;
+}
+
+function material(c) {
+  const count = { w: { p: 0, n: 0, b: 0, r: 0, q: 0 }, b: { p: 0, n: 0, b: 0, r: 0, q: 0 } };
+  for (const row of c.board()) for (const sq of row) if (sq && sq.type !== 'k') count[sq.color][sq.type]++;
+  const score = (side) => Object.entries(count[side]).reduce((t, [k, n]) => t + VALUE[k] * n, 0);
+  return { count, diff: score('w') - score('b') };  // diff > 0: White is ahead
+}
+
+function capturedHtml(color, mat) {
+  // pieces this side has taken = opponent's missing pieces (promotions can push a count below zero)
+  const opp = color === 'white' ? 'b' : 'w';
+  const oppColor = color === 'white' ? 'black' : 'white';
+  const img = pieceImages();
+  let html = '';
+  for (const k of ['p', 'n', 'b', 'r', 'q']) {
+    const n = Math.max(0, START[k] - mat.count[opp][k]);
+    if (!n) continue;
+    html += '<span class="capgroup">' +
+      `<i style="background-image:${esc(img[`${oppColor}-${ROLE[k]}`])}"></i>`.repeat(n) + '</span>';
+  }
+  const lead = color === 'white' ? mat.diff : -mat.diff;
+  if (lead > 0) html += `<span class="lead">+${lead}</span>`;
+  return html ? `<span class="captured">${html}</span>` : '';
+}
+
+function renderInfo() {
+  const r = state.review;
+  const top = state.orientation === 'white' ? 'black' : 'white';
+  const mat = material(currentGame());
+  $('player-top').innerHTML = playerLine(top) + capturedHtml(top, mat);
+  $('player-bottom').innerHTML = playerLine(state.orientation) + capturedHtml(state.orientation, mat);
+  document.body.classList.toggle('demo-mode', !!state.demo);
+  if (state.demo) return renderDemoInfo();
+
+  if (state.play) return renderPlayInfo();
+  if (!r.moves.length) {
+    $('game-info').innerHTML = 'Analysis board<div class="sub">Move pieces freely and ask the coach about any position.</div>';
+    $('summary').innerHTML = '';
+    return;
+  }
+  $('game-info').innerHTML = `${esc(r.white)} vs ${esc(r.black)} · ${esc(r.result)}
+    <div class="sub">${esc(r.opening || '')}</div>`;
+
+  const whose = r.player_color;
+  const counts = {};
+  for (const m of r.moves) if (m.class && (!whose || m.color === whose)) (counts[m.class] ||= []).push(m.ply);
+  const parts = ['blunder', 'mistake', 'inaccuracy']
+    .filter((k) => counts[k])
+    .map((k) => `<span class="tag ${k}" data-cls="${k}" title="Jump to next ${k}">${counts[k].length} ${counts[k].length > 1 ? PLURAL[k] : k}</span>`);
+  $('summary').innerHTML = parts.length
+    ? `<span style="color:var(--muted)">${whose ? 'Your' : 'Flagged'} moves:</span> ${parts.join('')}`
+    : `<span style="color:var(--muted)">No inaccuracies, mistakes or blunders${whose ? ' by you' : ''}.</span>`;
+  $('summary').querySelectorAll('.tag').forEach((el) => {
+    el.onclick = () => {
+      const plies = counts[el.dataset.cls];
+      const next = plies.find((p) => p > state.ply) ?? plies[0];
+      goTo(next);
+    };
+  });
+}
+
+function renderMoves() {
+  const r = state.review;
+  const box = $('moves');
+  if (state.demo) return renderDemoMoves(box);
+  if (state.play) return renderPlayMoves(box);
+  if (!r.moves.length) {
+    box.innerHTML = '<div class="empty">No game loaded. Use “My games” or “Load game”, or just play moves on the board.</div>';
+    return;
+  }
+  let html = '';
+  for (let i = 0; i < r.moves.length;) {
+    const w = r.moves[i].color === 'white' ? r.moves[i++] : null;  // a set-up game may start with Black
+    const b = r.moves[i]?.color === 'black' ? r.moves[i++] : null;
+    const num = parseInt((w || b).label, 10);
+    html += `<div class="row"><span class="num">${num}.</span>${w ? cell(w) : '<span>…</span>'}${b ? cell(b) : '<span></span>'}</div>`;
+  }
+  box.innerHTML = html;
+  box.querySelectorAll('.mv').forEach((el) => { el.onclick = () => goTo(+el.dataset.ply); });
+  const active = box.querySelector('.mv.active');
+  if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+function cell(m) {
+  const active = m.ply === state.ply && !state.extra.length ? ' active' : '';
+  const flag = m.class ? `<span class="flag ${m.class}" title="${m.class}">${FLAG[m.class]}</span>` : '';
+  return `<span class="mv${active}" data-ply="${m.ply}">${esc(m.san)}${flag}</span>`;
+}
+
+function positionLabel() {
+  if (state.demo) {
+    const d = state.demo;
+    return `Demo “${d.title}”` + (d.step ? `, after ${d.moves.slice(0, d.step).join(' ')}` : ', start');
+  }
+  const p = state.play;
+  if (p) {
+    if (!p.view) return 'Starting position';
+    const labels = demoLabels({ start_fen: p.startFen, moves: p.moves.slice(0, p.view) });
+    return `After ${labels.at(-1)} ${p.moves[p.view - 1]}` + (p.view < p.moves.length ? ' (earlier position)' : '');
+  }
+  const r = state.review;
+  let label = state.ply === 0 ? 'Starting position' : `After ${r.moves[state.ply - 1].label} ${r.moves[state.ply - 1].san}`;
+  if (!r.moves.length) label = state.extra.length ? 'Analysis board' : 'Starting position';
+  if (state.extra.length) label += (r.moves.length ? ' + ' : ': ') + state.extra.join(' ');
+  return label;
+}
+
+function renderVariation() {
+  const show = state.extra.length && state.review.moves.length && !state.play && !state.demo;
+  $('variation').classList.toggle('hidden', !show);
+  if (show) $('variation-text').textContent = `Exploring: ${state.extra.join(' ')}`;
+  $('chat-context').textContent = `Asking about: ${positionLabel()}`;
+}
+
+// ---------------------------------------------------------------- engine
+
+let evalToken = 0;
+let evalTimer = null;
+
+function winPct(cp) {
+  return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1);
+}
+
+function requestEval(c) {
+  clearTimeout(evalTimer);
+  const token = ++evalToken;
+  if (!state.engineOn) return;
+  $('engine-lines').innerHTML = '<div class="eline" style="color:var(--muted)">Thinking…</div>';
+  evalTimer = setTimeout(async () => {
+    try {
+      const data = await api('/api/eval', { fen: c.fen(), lines: 3 });
+      if (token !== evalToken) return;
+      showEval(data);
+    } catch (e) {
+      if (token === evalToken) $('engine-lines').textContent = e.message;
+    }
+  }, 200);
+}
+
+function showEval(data) {
+  const bar = $('evalbar');
+  const pct = winPct(Math.max(-1500, Math.min(1500, data.cp)));
+  $('evalfill').style.height = `${pct}%`;
+  bar.classList.toggle('flipped', state.orientation === 'black');
+  bar.classList.toggle('black-better', data.cp < 0);
+  $('evaltext').textContent = data.eval.replace('+', '');
+  if (!data.lines.length) {
+    $('engine-lines').innerHTML = `<div class="eline">Game over</div>`;
+    return;
+  }
+  $('engine-lines').innerHTML = data.lines.map((l) =>
+    `<div class="eline"><span class="ev ${l.cp_white >= 0 ? 'w' : 'b'}">${esc(l.eval_white)}</span><span class="pv">${esc(l.line)}</span></div>`
+  ).join('');
+}
+
+function setEngineVisible(on) {
+  state.engineOn = on;
+  $('engine-toggle').checked = on;
+  $('evalbar').classList.toggle('off', !on);
+  $('engine-lines').classList.toggle('hidden', !on);
+}
+
+function setEngine(on) {
+  state.engineOn = on;
+  if (!state.play) store('engineOn', on ? '1' : '0');
+  $('evalbar').classList.toggle('off', !on);
+  $('engine-lines').classList.toggle('hidden', !on);
+  if (on) requestEval(currentGame());
+}
+
+// ---------------------------------------------------------------- update
+
+function update() {
+  if (state.editor) return updateEditor();
+  const c = renderBoard();
+  try { history.replaceState(null, '', state.ply ? `#ply=${state.ply}` : location.pathname); } catch {}
+  renderInfo();
+  renderMoves();
+  renderVariation();
+  requestEval(c);
+}
+
+// ---------------------------------------------------------------- chat
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+// SAN with a piece letter, a capture, castling, or a move number in front (so "the e5 square" stays plain text)
+const SAN_RE = /\b((?:\d+\.(?:\.\.)?\s?)?(?:[KQRBN][a-h]?[1-8]?x?[a-h][1-8]|[a-h]x[a-h][1-8](?:=[QRBN])?)[+#]?|O-O(?:-O)?[+#]?|\d+\.(?:\.\.)?\s?[a-h][1-8](?:=[QRBN])?[+#]?)/g;
+
+function inline(text) {
+  return esc(text)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(SAN_RE, (m) => `<span class="san" title="Play on board">${m}</span>`);
+}
+
+function markdown(text) {
+  const blocks = text.trim().split(/\n{2,}/);
+  return blocks.map((block) => {
+    const lines = block.split('\n');
+    if (lines.every((l) => /^\s*[-*] /.test(l))) {
+      return `<ul>${lines.map((l) => `<li>${inline(l.replace(/^\s*[-*] /, ''))}</li>`).join('')}</ul>`;
+    }
+    return `<p>${lines.map(inline).join('<br>')}</p>`;
+  }).join('');
+}
+
+function playSan(token) {
+  const san = token.replace(/^\d+\.(\.\.)?\s?/, '');
+  const c = currentGame();
+  let mv;
+  try {
+    mv = c.move(san);
+  } catch {
+    return false;
+  }
+  if (state.demo) {
+    demoPush(mv.san);
+    return true;
+  }
+  if (state.play) {  // don't move pieces in a live game; just show the idea
+    cg.setAutoShapes([{ orig: mv.from, dest: mv.to, brush: 'green' }]);
+    return true;
+  }
+  const next = state.review.moves[state.ply];
+  if (!state.extra.length && next && next.san === san) state.ply++;
+  else state.extra.push(san);
+  update();
+  return true;
+}
+
+function addMsg(kind, html, where) {
+  const div = document.createElement('div');
+  div.className = `msg ${kind}`;
+  div.innerHTML = (where ? `<span class="where">${esc(where)}</span>` : '') + html;
+  div.querySelectorAll('.san').forEach((el) => {
+    el.onclick = () => {
+      if (!playSan(el.textContent)) {
+        el.style.textDecoration = 'line-through';
+        el.title = 'Not playable from the current board position';
+      }
+    };
+  });
+  $('chat-log').appendChild(div);
+  $('chat-log').scrollTop = $('chat-log').scrollHeight;
+  return div;
+}
+
+function toolLabel(t) {
+  const i = t.input || {};
+  const extra = i.then_moves?.length ? ` after ${i.then_moves.join(' ')}` : '';
+  if (t.name === 'move_report') return `checked move (ply ${i.ply})`;
+  if (t.name === 'compare_moves') return `compared ${(i.moves || []).join(', ')}${extra}`;
+  if (t.name === 'analyze_position') return `analysed position${extra}`;
+  return t.name;
+}
+
+async function ask(question) {
+  question = question.trim();
+  if (!question || state.chatBusy) return;
+  if (state.editor) {  // the coach needs a real position: switch to analysis of the set-up first
+    if (!(await analyseEditorPosition())) return;
+  }
+  if (!state.coachReady) {
+    addMsg('error', 'The coach needs an Anthropic API key: set <code>ANTHROPIC_API_KEY</code> and restart the server.');
+    return;
+  }
+  state.chatBusy = true;
+  $('chat-send').disabled = true;
+  addMsg('user', esc(question), positionLabel());
+  $('chat-text').value = '';
+  const pending = addMsg('coach', '<span class="thinking">Analysing</span>');
+  try {
+    const where = state.demo
+      ? { ply: Math.max(0, state.demo.ply - 1), extra: [...state.demo.then_moves, ...state.demo.moves.slice(0, state.demo.step)] }
+      : { ply: state.ply, extra: state.extra };
+    const data = await api('/api/chat', { question, ...where });
+    pending.remove();
+    const tools = data.tools.length
+      ? `<div class="tools">${data.tools.map((t) => `<span>${esc(toolLabel(t))}</span>`).join('')}</div>` : '';
+    const demos = data.demos || [];
+    const buttons = demos.length
+      ? `<div class="demos">${demos.map((d, i) => `<button class="demo-btn" data-i="${i}">▶ Show me: ${esc(d.title)}</button>`).join('')}</div>` : '';
+    const msg = addMsg('coach', markdown(data.answer) + buttons + tools);
+    msg.querySelectorAll('.demo-btn').forEach((b) => { b.onclick = () => openDemo(demos[+b.dataset.i]); });
+  } catch (e) {
+    pending.remove();
+    addMsg('error', esc(e.message));
+  } finally {
+    state.chatBusy = false;
+    $('chat-send').disabled = false;
+  }
+}
+
+function renderChips() {
+  const chips = CHIPS[state.play ? 'play' : 'review'];
+  $('chips').innerHTML = chips.map(([label, q]) => `<button class="chip" data-q="${esc(q)}">${esc(label)}</button>`).join('');
+  $('chips').querySelectorAll('.chip').forEach((el) => { el.onclick = () => ask(el.dataset.q); });
+}
+
+function resetChatUi(note) {
+  $('chat-log').innerHTML = '';
+  if (note) addMsg('system', esc(note));
+}
+
+// ---------------------------------------------------------------- loading games
+
+function setReview(review, note, play = null) {
+  closeDemo(false);
+  closeEditor(false);
+  if (state.play && !play) setEngineVisible(recall('engineOn') !== '0');  // leaving a game
+  state.play = play;
+  renderChips();
+  state.review = review;
+  state.ply = 0;
+  state.extra = [];
+  state.orientation = play ? play.color : (review.player_color || 'white');
+  resetChatUi(note);
+  update();
+}
+
+async function loadGame(ref, me = state.me || null) {
+  $('overlay').classList.remove('hidden');
+  $('overlay-text').textContent = 'Fetching game…';
+  try {
+    await api('/api/load', { ref, me });
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 400));
+      const job = await api('/api/job');
+      if (job.status === 'running') {
+        if (job.total) $('overlay-text').textContent = `Analysing position ${job.done} / ${job.total}`;
+        continue;
+      }
+      if (job.status === 'error') throw new Error(job.error);
+      const r = job.review;
+      setReview(r, `Loaded ${r.white} vs ${r.black}. Click a move, or play your own on the board, then ask away.`);
+      break;
+    }
+  } catch (e) {
+    addMsg('error', `Couldn't load game: ${esc(e.message)}`);
+  } finally {
+    $('overlay').classList.add('hidden');
+  }
+}
+
+function showGamesTab(tab) {
+  $('games-tabs').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
+  $('tab-chesscom').classList.toggle('hidden', tab !== 'chesscom');
+  $('tab-saved').classList.toggle('hidden', tab !== 'saved');
+  if (tab === 'saved') showSaved();
+  else if (state.me && !$('games-list').children.length) showGames();
+}
+
+async function showSaved() {
+  const list = $('saved-list');
+  list.innerHTML = '<p class="hint">Loading…</p>';
+  try {
+    const games = await api('/api/saved');
+    if (!games.length) {
+      list.innerHTML = '<p class="hint">Nothing saved yet. Open a game (or use “Save my last 20 games”) while online.</p>';
+      return;
+    }
+    const me = (state.me || '').toLowerCase();
+    list.innerHTML = games.map((g) => {
+      const meWhite = g.white.toLowerCase() === me, meBlack = g.black.toLowerCase() === me;
+      const won = (g.result === '1-0' && meWhite) || (g.result === '0-1' && meBlack);
+      const lost = (g.result === '1-0' && meBlack) || (g.result === '0-1' && meWhite);
+      const res = !(meWhite || meBlack) ? esc(g.result) : won ? 'Won' : lost ? 'Lost' : g.result === '*' ? '–' : 'Draw';
+      const when = new Date(g.saved_at * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+      return `<div class="game-row" data-id="${esc(g.game_id)}">
+        <span class="who">${esc(g.white)}${g.white_elo ? ` (${esc(g.white_elo)})` : ''} – ${esc(g.black)}${g.black_elo ? ` (${esc(g.black_elo)})` : ''}</span>
+        <span class="res ${won ? 'win' : lost ? 'loss' : ''}">${res}</span>
+        <span class="meta">saved ${esc(when)} · ${esc(g.opening || '')}</span>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('.game-row').forEach((el) => {
+      el.onclick = async () => {
+        $('dlg-games').close();
+        try {
+          const r = await api('/api/saved/open', { game_id: el.dataset.id, me: state.me || null });
+          setReview(r, `Opened ${r.white} vs ${r.black} from this Pi.`);
+        } catch (e) {
+          addMsg('error', esc(e.message));
+        }
+      };
+    });
+  } catch (e) {
+    list.innerHTML = `<p class="hint">${esc(e.message)}</p>`;
+  }
+}
+
+let prefetchTimer = null;
+
+async function startPrefetch() {
+  const user = $('games-user').value.trim() || state.me;
+  if (!user) { $('prefetch-status').textContent = 'Enter your chess.com username first.'; return; }
+  state.me = user;
+  store('me', user);
+  try {
+    await api('/api/prefetch', { user, n: 20 });
+  } catch (e) {
+    $('prefetch-status').textContent = e.message;
+    return;
+  }
+  pollPrefetch();
+}
+
+async function pollPrefetch() {
+  clearTimeout(prefetchTimer);
+  let st;
+  try { st = await api('/api/prefetch'); } catch { return; }
+  const btn = $('games-prefetch');
+  btn.disabled = st.status === 'running';
+  if (st.status === 'running') {
+    $('prefetch-status').textContent = st.total ? `Analysing game ${Math.min(st.done + 1, st.total)} of ${st.total}… (you can keep using the app)` : 'Fetching game list…';
+    prefetchTimer = setTimeout(pollPrefetch, 1500);
+  } else if (st.status === 'done') {
+    $('prefetch-status').textContent = `Done: ${st.total} games ready offline (${st.new} newly analysed).`;
+  } else if (st.status === 'error') {
+    $('prefetch-status').textContent = st.error;
+  }
+}
+
+async function showGames() {
+  const user = $('games-user').value.trim();
+  if (!user) return;
+  state.me = user;
+  store('me', user);
+  const list = $('games-list');
+  list.innerHTML = '<p class="hint">Loading…</p>';
+  try {
+    const games = await api(`/api/games?user=${encodeURIComponent(user)}`);
+    if (!games.length) { list.innerHTML = '<p class="hint">No recent games found.</p>'; return; }
+    list.innerHTML = games.map((g) => {
+      const meWhite = g.white.toLowerCase() === user.toLowerCase();
+      const won = (g.result === '1-0' && meWhite) || (g.result === '0-1' && !meWhite);
+      const lost = (g.result === '1-0' && !meWhite) || (g.result === '0-1' && meWhite);
+      const when = g.end_time ? new Date(g.end_time * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
+      return `<div class="game-row" data-ref="${esc(g.ref)}">
+        <span class="who">${esc(g.white)} (${g.white_rating}) – ${esc(g.black)} (${g.black_rating})</span>
+        <span class="res ${won ? 'win' : lost ? 'loss' : ''}">${won ? 'Won' : lost ? 'Lost' : 'Draw'} ${esc(g.result)}</span>
+        <span class="meta">${esc(g.time_class || '')} · ${esc(when)} · ${esc(g.opening)}</span>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('.game-row').forEach((el) => {
+      el.onclick = () => { $('dlg-games').close(); loadGame(el.dataset.ref); };
+    });
+  } catch (e) {
+    list.innerHTML = `<p class="hint">${esc(e.message)}</p>`;
+  }
+}
+
+// ---------------------------------------------------------------- "show me" demo board
+
+let demoTimer = null;
+
+function stopAutoplay() {
+  clearInterval(demoTimer);
+  demoTimer = null;
+}
+
+function openDemo(d) {
+  stopAutoplay();
+  state.demo = { ...d, moves: [...d.moves], notes: [...d.notes], step: 0, edited: false };
+  update();
+  // play the line through once, one move every ~1.2s; any interaction stops it
+  demoTimer = setInterval(() => {
+    const cur = state.demo;
+    if (!cur || cur.step >= cur.moves.length) return stopAutoplay();
+    cur.step++;
+    update();
+  }, 1200);
+}
+
+function closeDemo(render = true) {
+  stopAutoplay();
+  if (!state.demo) return;
+  state.demo = null;
+  if (render) update();
+}
+
+function demoStep(step) {
+  stopAutoplay();
+  const d = state.demo;
+  d.step = Math.max(0, Math.min(step, d.moves.length));
+  update();
+}
+
+function demoPush(san) {
+  stopAutoplay();
+  const d = state.demo;
+  if (d.moves[d.step] === san) {  // same as the coach's line: just step forward
+    d.step++;
+  } else {
+    d.moves = [...d.moves.slice(0, d.step), san];
+    d.notes = [...d.notes.slice(0, d.step), ''];
+    d.step = d.moves.length;
+    d.edited = true;
+  }
+  update();
+}
+
+function onDemoMove(orig, dest) {
+  const c = currentGame();
+  let mv;
+  try {
+    mv = c.move({ from: orig, to: dest, promotion: 'q' });
+  } catch {
+    update();
+    return;
+  }
+  demoPush(mv.san);
+}
+
+function demoLabels(d) {
+  const c = new Chess(d.start_fen);
+  return d.moves.map((san) => {
+    const label = c.turn() === 'w' ? `${c.moveNumber()}.` : `${c.moveNumber()}...`;
+    c.move(san);
+    return label;
+  });
+}
+
+function renderDemoInfo() {
+  const d = state.demo;
+  $('player-top').innerHTML = `<span class="demo-tag">Demo board</span><span class="demo-sub">your game is paused</span>
+    <button class="btn small" id="demo-exit-top">Back to my game</button>`;
+  $('demo-exit-top').onclick = () => closeDemo();
+  $('game-info').innerHTML = `${esc(d.title)}<div class="sub">${d.edited ? 'Your own line from here: keep exploring, or ask the coach about it.' : 'The coach’s line. Step through it, or move pieces to try something else.'}</div>`;
+  const note = d.step ? d.notes[d.step - 1] : '';
+  $('summary').innerHTML = `<div class="play-buttons">
+      <button class="btn small" id="demo-exit">Back to my game</button>
+      <button class="btn ghost small" id="demo-replay">Replay</button>
+    </div>${note ? `<div class="demo-note">${inline(note)}</div>` : ''}`;
+  $('demo-exit').onclick = () => closeDemo();
+  $('demo-replay').onclick = () => openDemo({ ...d, moves: d.moves, notes: d.notes });
+}
+
+function renderDemoMoves(box) {
+  const d = state.demo;
+  const labels = demoLabels(d);
+  const rows = d.moves.map((san, i) => `<div class="demo-row${i + 1 === d.step ? ' active' : ''}" data-step="${i + 1}">
+      <span class="num">${labels[i]}</span><span class="dm">${esc(san)}</span><span class="dn">${esc(d.notes[i] || '')}</span>
+    </div>`).join('');
+  box.innerHTML = `<div class="demo-row${d.step === 0 ? ' active' : ''}" data-step="0"><span class="num"></span><span class="dm">Start</span><span class="dn"></span></div>${rows}`;
+  box.querySelectorAll('.demo-row').forEach((el) => { el.onclick = () => demoStep(+el.dataset.step); });
+  box.querySelector('.demo-row.active')?.scrollIntoView({ block: 'nearest' });
+}
+
+// ---------------------------------------------------------------- position editor
+
+const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+const PRESETS = [
+  ['Queen mate (K+Q vs K)', '8/8/8/4k3/8/8/8/1Q2K3 w - - 0 1'],
+  ['Rook mate (K+R vs K)', '8/8/8/4k3/8/8/8/R3K3 w - - 0 1'],
+  ['Two bishops mate', '8/8/8/4k3/8/8/8/2B1KB2 w - - 0 1'],
+  ['King + pawn vs king', '4k3/8/8/8/8/8/4P3/4K3 w - - 0 1'],
+  ['King + pawn: key squares', '8/8/4k3/8/8/4K3/4P3/8 w - - 0 1'],
+  ['Lucena (rook endgame, win)', '1K1k4/1P6/8/8/8/8/r7/2R5 w - - 0 1'],
+  ['Philidor (rook endgame, draw)', '4k3/8/r7/4PK2/8/8/8/1R6 b - - 0 1'],
+];
+const PALETTE_ROLES = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'];
+
+function editorFen() {
+  const pieces = cg.state.pieces;
+  const letter = { king: 'k', queen: 'q', rook: 'r', bishop: 'b', knight: 'n', pawn: 'p' };
+  const rows = [];
+  for (let rank = 8; rank >= 1; rank--) {
+    let row = '', empty = 0;
+    for (const file of 'abcdefgh') {
+      const pc = pieces.get(file + rank);
+      if (!pc) { empty++; continue; }
+      if (empty) { row += empty; empty = 0; }
+      row += pc.color === 'white' ? letter[pc.role].toUpperCase() : letter[pc.role];
+    }
+    rows.push(row + (empty || ''));
+  }
+  // castling only where king and rook still stand on their home squares
+  const is = (sq, role, color) => pieces.get(sq)?.role === role && pieces.get(sq)?.color === color;
+  let castle = '';
+  if (is('e1', 'king', 'white')) { if (is('h1', 'rook', 'white')) castle += 'K'; if (is('a1', 'rook', 'white')) castle += 'Q'; }
+  if (is('e8', 'king', 'black')) { if (is('h8', 'rook', 'black')) castle += 'k'; if (is('a8', 'rook', 'black')) castle += 'q'; }
+  return `${rows.join('/')} ${state.editor.turn[0]} ${castle || '-'} - 0 1`;
+}
+
+function editorProblem(fen) {
+  const pieces = [...cg.state.pieces.values()];
+  const kings = (color) => pieces.filter((pc) => pc.role === 'king' && pc.color === color).length;
+  if (kings('white') !== 1 || kings('black') !== 1) return 'Each side needs exactly one king.';
+  try { new Chess(fen); } catch (e) { return e.message.replace(/^Invalid FEN: /, ''); }
+  return null;  // the server checks the rest (e.g. the side not to move in check)
+}
+
+function openEditor() {
+  closeDemo(false);
+  const c = state.review ? currentGame() : new Chess();
+  state.editor = { tool: 'move', turn: c.turn() === 'w' ? 'white' : 'black' };
+  cg.set({ fen: c.fen(), lastMove: undefined });
+  buildEditorPanel();
+  update();
+}
+
+function closeEditor(render = true) {
+  if (!state.editor) return;
+  state.editor = null;
+  document.body.classList.remove('editor-mode');
+  cg.set({ selected: undefined });
+  if (render) update();
+}
+
+function buildEditorPanel() {
+  const img = pieceImages();
+  const tools = ['white', 'black'].map((color) => `<div class="pal-row">${PALETTE_ROLES.map((role) =>
+    `<button class="pal" data-tool="${color}-${role}" title="Place ${color} ${role}" style="background-image:${esc(img[`${color}-${role}`])}"></button>`).join('')}</div>`).join('');
+  $('moves').innerHTML = `<div class="editor">
+    <label class="field"><span class="label">Endgame presets</span>
+      <select id="ed-preset"><option value="">Choose a position…</option>${PRESETS.map(([n, f]) => `<option value="${esc(f)}">${esc(n)}</option>`).join('')}</select></label>
+    <div class="pal-tools">
+      <button class="pal-mode" data-tool="move">✋ Move</button>
+      <button class="pal-mode" data-tool="remove">🗑 Remove</button>
+    </div>
+    ${tools}
+    <p class="hint">Pick a piece, then click squares to place it. Drag pieces to move them; drag one off the board to remove it.</p>
+    <div class="field"><span class="label">Side to move</span>
+      <div class="seg" id="ed-turn"><button data-turn="white">White</button><button data-turn="black">Black</button></div></div>
+    <div class="play-buttons">
+      <button class="btn ghost small" id="ed-clear">Clear</button>
+      <button class="btn ghost small" id="ed-start">Starting position</button>
+      <button class="btn ghost small" id="ed-kings">Kings only</button>
+    </div>
+    <label class="field"><span class="label">FEN</span><input id="ed-fen" spellcheck="false"></label>
+  </div>`;
+  $('moves').querySelectorAll('[data-tool]').forEach((b) => {
+    b.onclick = () => { state.editor.tool = b.dataset.tool; cg.set({ selected: undefined }); updateEditor(); };
+  });
+  $('ed-turn').querySelectorAll('button').forEach((b) => {
+    b.onclick = () => { state.editor.turn = b.dataset.turn; updateEditor(); };
+  });
+  const load = (fen) => {
+    const [placement, turn] = fen.split(' ');
+    cg.set({ fen: placement });
+    state.editor.turn = turn === 'b' ? 'black' : 'white';
+    updateEditor();
+  };
+  $('ed-preset').onchange = (e) => { if (e.target.value) load(e.target.value); };
+  $('ed-clear').onclick = () => load('8/8/8/8/8/8/8/8 w');
+  $('ed-start').onclick = () => load(START_FEN);
+  $('ed-kings').onclick = () => load('4k3/8/8/8/8/8/8/4K3 w');
+  $('ed-fen').onkeydown = (e) => { if (e.key === 'Enter') load($('ed-fen').value.trim()); };
+  $('ed-fen').onblur = () => { const v = $('ed-fen').value.trim(); if (v && v !== editorFen()) load(v); };
+}
+
+function onEditorSelect(key) {
+  const ed = state.editor;
+  if (!ed || ed.tool === 'move') return;
+  if (ed.tool === 'remove') {
+    cg.setPieces(new Map([[key, undefined]]));
+  } else {
+    const [color, role] = ed.tool.split('-');
+    cg.setPieces(new Map([[key, { color, role }]]));
+  }
+  cg.set({ selected: undefined });
+  updateEditor();
+}
+
+function updateEditor() {
+  renderBoard();
+  const ed = state.editor;
+  const fen = editorFen();
+  const problem = editorProblem(fen);
+  $('moves').querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === ed.tool));
+  $('ed-turn').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.turn === ed.turn));
+  if (document.activeElement !== $('ed-fen')) $('ed-fen').value = fen;
+
+  $('player-top').innerHTML = '<span class="demo-tag">Set-up board</span><span class="demo-sub">build any position, then play it or analyse it</span>';
+  $('player-bottom').innerHTML = '';
+  document.body.classList.remove('demo-mode');
+  document.body.classList.add('editor-mode');
+  $('game-info').innerHTML = 'Set up a position<div class="sub">Great for endgame practice: set it up, then play it out against the bot.</div>';
+  $('summary').innerHTML = `<div class="play-buttons">
+      <button class="btn small" id="ed-play" ${problem ? 'disabled' : ''}>Play vs bot from here</button>
+      <button class="btn ghost small" id="ed-analyse" ${problem ? 'disabled' : ''}>Analyse</button>
+      <button class="btn ghost small" id="ed-cancel">Cancel</button>
+    </div><div class="ed-status ${problem ? 'bad' : ''}" id="ed-status">${esc(problem || 'Position OK')}</div>`;
+  $('ed-play').onclick = () => { pendingFen = editorFen(); openPlayDialog(); };
+  $('ed-analyse').onclick = analyseEditorPosition;
+  $('ed-cancel').onclick = () => closeEditor();
+  $('variation').classList.add('hidden');
+  $('chat-context').textContent = 'Asking about: the set-up position (starts an analysis board)';
+
+  // live engine check: also catches positions the server refuses (e.g. side not to move in check)
+  clearTimeout(evalTimer);
+  const token = ++evalToken;
+  if (problem) {
+    $('engine-lines').innerHTML = '';
+    return;
+  }
+  evalTimer = setTimeout(async () => {
+    try {
+      const data = await api('/api/eval', { fen, lines: 3 });
+      if (token !== evalToken || !state.editor) return;
+      if (state.engineOn) showEval(data);
+    } catch (e) {
+      if (token !== evalToken || !state.editor) return;
+      $('ed-status').textContent = e.message;
+      $('ed-status').classList.add('bad');
+      $('ed-play').disabled = $('ed-analyse').disabled = true;
+      $('engine-lines').innerHTML = '';
+    }
+  }, 250);
+}
+
+async function analyseEditorPosition() {
+  const fen = editorFen();
+  try {
+    const review = await api('/api/analysis', { fen });
+    setReview(review, 'Analysis board from your set-up position. Move pieces and ask the coach anything.');
+    return true;
+  } catch (e) {
+    $('ed-status').textContent = e.message;
+    $('ed-status').classList.add('bad');
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------- playing the bot
+
+let playToken = 0;  // invalidates a pending bot reply after takeback / new game
+
+function playView(view) {
+  const p = state.play;
+  p.view = Math.max(0, Math.min(view, p.moves.length));
+  state.extra = p.moves.slice(0, p.view);
+  update();
+}
+
+function onPlayMove(orig, dest) {
+  const p = state.play;
+  const c = currentGame();
+  let mv;
+  try {
+    mv = c.move({ from: orig, to: dest, promotion: 'q' });
+  } catch {
+    update();
+    return;
+  }
+  p.moves.push(mv.san);
+  playView(p.moves.length);
+  if (!checkGameOver()) botMove();
+}
+
+async function botMove() {
+  const p = state.play;
+  const token = ++playToken;
+  p.thinking = true;
+  update();
+  const c = playChess(p);
+  const started = Date.now();
+  try {
+    const res = await api('/api/play/move', { fen: c.fen(), level: p.level });
+    await new Promise((r) => setTimeout(r, Math.max(0, 450 - (Date.now() - started))));  // feel less instant
+    if (token !== playToken || state.play !== p) return;
+    p.moves.push(res.san);
+  } catch (e) {
+    addMsg('error', `Bot error: ${esc(e.message)}`);
+  } finally {
+    if (token === playToken && state.play === p) {
+      p.thinking = false;
+      playView(p.moves.length);
+      checkGameOver();
+    }
+  }
+}
+
+function checkGameOver() {
+  const p = state.play;
+  const c = playChess(p);
+  if (!c.isGameOver()) return false;
+  if (c.isCheckmate()) {
+    const winner = c.turn() === 'w' ? 'black' : 'white';
+    endGame(winner === p.color ? 'win' : 'loss', winner === p.color ? 'Checkmate. You won!' : 'Checkmate. The bot wins.');
+  } else {
+    const why = c.isStalemate() ? 'stalemate' : c.isThreefoldRepetition() ? 'threefold repetition'
+      : c.isInsufficientMaterial() ? 'insufficient material' : 'the 50-move rule';
+    endGame('draw', `Draw by ${why}.`);
+  }
+  return true;
+}
+
+function endGame(outcome, text) {
+  const p = state.play;
+  p.over = { outcome, text };
+  update();
+  addMsg('system', `${esc(text)} Click “Review this game” to see where it was won or lost.`);
+}
+
+function takeback() {
+  const p = state.play;
+  if (!p || !p.moves.length) return;
+  playToken++;  // drop any bot reply in flight
+  p.thinking = false;
+  p.over = null;
+  const mine = p.color[0];
+  do { p.moves.pop(); } while (p.moves.length && playChess(p).turn() !== mine);
+  playView(p.moves.length);
+  if (playChess(p).turn() !== mine) botMove();  // back at a start position where the bot moves first
+}
+
+function resign() {
+  const p = state.play;
+  if (!p || p.over) return;
+  playToken++;
+  p.thinking = false;
+  endGame('loss', 'You resigned.');
+}
+
+function reviewPlayedGame() {
+  const p = state.play;
+  const c = playChess(p);
+  if (p.startFen !== START_FEN) {
+    c.setHeader('SetUp', '1');
+    c.setHeader('FEN', p.startFen);
+  }
+  const name = state.me || 'You';
+  const bot = `Bot ${p.levelName}`;
+  const result = p.over?.outcome === 'draw' ? '1/2-1/2'
+    : (p.over?.outcome === 'win') === (p.color === 'white') ? '1-0' : '0-1';
+  c.setHeader('Event', 'Practice game vs bot');
+  c.setHeader('Date', new Date().toISOString().slice(0, 10).replaceAll('-', '.'));
+  c.setHeader('White', p.color === 'white' ? name : bot);
+  c.setHeader('Black', p.color === 'black' ? name : bot);
+  c.setHeader('Result', p.over ? result : '*');
+  loadGame(c.pgn(), name);
+}
+
+function renderPlayInfo() {
+  const p = state.play;
+  $('game-info').innerHTML = `Practice game vs bot<div class="sub">${esc(p.levelName)} · you play ${p.color}</div>`;
+  let status, cls = '';
+  if (p.over) {
+    status = p.over.text;
+    cls = p.over.outcome === 'win' ? 'win' : p.over.outcome === 'loss' ? 'loss' : '';
+  } else if (p.thinking) status = 'Bot is thinking…';
+  else if (p.view < p.moves.length) status = 'Viewing an earlier position; press → or ⏭ to return';
+  else status = 'Your move';
+  const buttons = p.over
+    ? `<button class="btn small" id="pb-review">Review this game</button>
+       <button class="btn ghost small" id="pb-again">New game</button>`
+    : `<button class="btn ghost small" id="pb-takeback" ${p.moves.length ? '' : 'disabled'}>Takeback</button>
+       <button class="btn ghost small" id="pb-resign" ${p.moves.length ? '' : 'disabled'}>Resign</button>`;
+  $('summary').innerHTML = `<div class="status ${cls}">${esc(status)}</div><div class="play-buttons">${buttons}</div>`;
+  $('pb-review')?.addEventListener('click', reviewPlayedGame);
+  $('pb-again')?.addEventListener('click', openPlayDialog);
+  $('pb-takeback')?.addEventListener('click', takeback);
+  $('pb-resign')?.addEventListener('click', resign);
+}
+
+function renderPlayMoves(box) {
+  const p = state.play;
+  if (!p.moves.length) {
+    const myTurn = new Chess(p.startFen).turn() === p.color[0];
+    box.innerHTML = `<div class="empty">${myTurn ? 'Your move. Drag a piece to start.' : 'The bot is thinking about its first move…'}</div>`;
+    return;
+  }
+  // rows of full moves; a game from a set-up position may start with Black's move
+  const c = new Chess(p.startFen);
+  let html = '', row = null;
+  p.moves.forEach((san, j) => {
+    const white = c.turn() === 'w';
+    const cell = `<span class="mv${j + 1 === p.view ? ' active' : ''}" data-view="${j + 1}">${esc(san)}</span>`;
+    if (white || !row) {
+      if (row) html += row.join('') + '</div>';
+      row = [`<div class="row"><span class="num">${c.moveNumber()}.</span>`, white ? cell : '<span>…</span>', white ? '' : cell];
+    } else {
+      row[2] = cell;
+    }
+    c.move(san);
+  });
+  if (row) html += row.join('') + (row[2] ? '' : '<span></span>') + '</div>';
+  box.innerHTML = html;
+  box.querySelectorAll('.mv').forEach((el) => { el.onclick = () => playView(+el.dataset.view); });
+  box.querySelector('.mv.active')?.scrollIntoView({ block: 'nearest' });
+}
+
+let playColor = 'white';
+
+let pendingFen = null;  // set when starting a bot game from the position editor
+
+function playChess(p) {
+  const c = new Chess(p.startFen);
+  for (const san of p.moves) c.move(san);
+  return c;
+}
+
+async function openPlayDialog() {
+  const sel = $('play-level');
+  if (!sel.options.length) {
+    const levels = await api('/api/play/levels');
+    sel.innerHTML = levels.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
+    sel.value = recall('botLevel') || '3';
+  }
+  $('play-engine').checked = recall('playEngine') === '1';
+  $('dlg-play').querySelector('h2').textContent = pendingFen ? 'Play this position against the bot' : 'Play against the bot';
+  $('dlg-play').showModal();
+}
+
+async function startGame() {
+  const level = +$('play-level').value;
+  const levelName = $('play-level').selectedOptions[0].textContent;
+  const color = playColor === 'random' ? (Math.random() < 0.5 ? 'white' : 'black') : playColor;
+  store('botLevel', String(level));
+  store('playEngine', $('play-engine').checked ? '1' : '0');
+  $('dlg-play').close();
+  playToken++;
+  const fen = pendingFen;
+  pendingFen = null;
+  let review;
+  try {
+    review = await api('/api/play/new', { color, level, fen });
+  } catch (e) {
+    addMsg('error', esc(e.message));
+    return;
+  }
+  const play = { color, level, levelName, startFen: review.start_fen, moves: [], view: 0, over: null, thinking: false };
+  setEngineVisible($('play-engine').checked);
+  const from = fen ? ' from your set-up position' : '';
+  setReview(review, `New game${from}: you have the ${color} pieces against the ${levelName} bot. Ask for ideas any time.`, play);
+  if (new Chess(play.startFen).turn() !== color[0]) botMove();
+}
+
+// ---------------------------------------------------------------- wiring
+
+$('btn-play').onclick = () => { pendingFen = null; openPlayDialog(); };
+$('btn-setup').onclick = openEditor;
+$('dlg-play').addEventListener('close', () => { if (!state.editor) pendingFen = null; });
+$('play-go').onclick = startGame;
+$('play-color').querySelectorAll('button').forEach((b) => {
+  b.onclick = () => {
+    playColor = b.dataset.color;
+    $('play-color').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+  };
+});
+
+$('btn-games').onclick = () => {
+  $('games-user').value = state.me;
+  $('dlg-games').showModal();
+  showGamesTab(navigator.onLine === false ? 'saved' : 'chesscom');
+  pollPrefetch();
+};
+$('games-tabs').querySelectorAll('button').forEach((b) => { b.onclick = () => showGamesTab(b.dataset.tab); });
+$('games-prefetch').onclick = startPrefetch;
+$('games-fetch').onclick = showGames;
+$('games-user').onkeydown = (e) => { if (e.key === 'Enter') showGames(); };
+
+$('btn-load').onclick = () => $('dlg-load').showModal();
+$('load-go').onclick = () => {
+  const ref = $('load-text').value.trim();
+  if (!ref) return;
+  $('dlg-load').close();
+  $('load-text').value = '';
+  loadGame(ref);
+};
+
+$('btn-analysis').onclick = async () => {
+  const review = await api('/api/analysis', {});
+  setReview(review, 'Fresh analysis board. Play moves and ask the coach anything.');
+};
+
+$('btn-back-to-game').onclick = () => { state.extra = []; update(); };
+$('nav-start').onclick = () => goTo(0);
+$('nav-prev').onclick = back;
+$('nav-next').onclick = forward;
+$('nav-end').onclick = () => (state.demo ? demoStep(state.demo.moves.length)
+  : state.play ? playView(state.play.moves.length) : goTo(state.review.moves.length));
+$('nav-flip').onclick = () => {
+  state.orientation = state.orientation === 'white' ? 'black' : 'white';
+  update();
+};
+$('engine-toggle').onchange = (e) => setEngine(e.target.checked);
+
+$('chat-form').onsubmit = (e) => { e.preventDefault(); ask($('chat-text').value); };
+$('chat-text').onkeydown = (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask($('chat-text').value); }
+};
+$('btn-chat-reset').onclick = async () => {
+  await api('/api/chat/reset', {});
+  resetChatUi('New conversation started.');
+};
+
+document.addEventListener('keydown', (e) => {
+  if (e.target.closest('input, textarea, dialog')) return;
+  if (e.key === 'ArrowLeft') back();
+  else if (e.key === 'ArrowRight') forward();
+  else if (e.key === 'Home') goTo(0);
+  else if (e.key === 'End') $('nav-end').click();
+  else if (e.key === 'f') $('nav-flip').click();
+  else if (e.key === 'Escape' && state.demo) closeDemo();
+  else return;
+  e.preventDefault();
+});
+
+(async function init() {
+  const cfg = await api('/api/config');
+  state.coachReady = cfg.coach_ready;
+  state.me = recall('me') || cfg.me || '';
+  const engineOn = recall('engineOn') !== '0';
+  $('engine-toggle').checked = engineOn;
+  state.engineOn = engineOn;
+  $('evalbar').classList.toggle('off', !engineOn);
+  $('engine-lines').classList.toggle('hidden', !engineOn);
+  const review = await api('/api/review');
+  const linked = +(location.hash.match(/ply=(\d+)/)?.[1] || 0);
+  setReview(review, cfg.coach_ready
+    ? 'Load one of your games, or play moves on the board and ask the coach about them.'
+    : 'Coach offline: set ANTHROPIC_API_KEY and restart the server to chat. Board and engine work without it.');
+  if (linked) goTo(linked);
+})();

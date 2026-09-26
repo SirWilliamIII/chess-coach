@@ -1,0 +1,5 @@
+chess>=1.11
+anthropic>=1.8
+requests
+fastapi
+uvicorn

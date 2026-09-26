@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# One-step launcher: sets up the venv on first run, then starts the web app.
+#
+#   ./start                 web app on http://localhost:8000
+#   ./start --host 0.0.0.0  reachable from other devices on your network
+#   ./start cli review 1 --me <user>   terminal version instead
+#
+# Secrets can live in a .env file next to this script, e.g.
+#   ANTHROPIC_API_KEY=sk-ant-...
+#   CHESS_USER=yourname
+set -euo pipefail
+cd "$(dirname "$(readlink -f "$0")")"
+
+if [[ -f .env ]]; then
+  set -a; source .env; set +a
+fi
+
+if ! command -v stockfish >/dev/null && [[ ! -x /usr/games/stockfish && -z "${STOCKFISH_PATH:-}" ]]; then
+  echo "Stockfish not found. Install it with: sudo apt install stockfish" >&2
+  exit 1
+fi
+
+# (Re)install dependencies when the venv is missing or requirements.txt changed.
+stamp=.venv/.requirements.sha
+want=$(sha256sum requirements.txt | cut -d' ' -f1)
+if [[ ! -x .venv/bin/python || "$(cat "$stamp" 2>/dev/null)" != "$want" ]]; then
+  echo "Setting up Python environment…"
+  [[ -x .venv/bin/python ]] || python3 -m venv .venv
+  .venv/bin/pip install -q --upgrade pip
+  .venv/bin/pip install -q -r requirements.txt
+  echo "$want" > "$stamp"
+fi
+
+if [[ -z "${ANTHROPIC_API_KEY:-}" && -z "${ANTHROPIC_AUTH_TOKEN:-}" ]]; then
+  echo "Note: ANTHROPIC_API_KEY isn't set, so the coach chat is off (board and engine still work)."
+  echo "      Put ANTHROPIC_API_KEY=sk-ant-... in $(pwd)/.env to enable it."
+fi
+
+if [[ "${1:-}" == "cli" ]]; then
+  shift
+  exec .venv/bin/python cli.py "$@"
+fi
+exec .venv/bin/python -m frontends.web.server "$@"
