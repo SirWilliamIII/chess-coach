@@ -52,7 +52,8 @@ terminal version.
 
 The coach's instructions live in `prompts/` as Markdown: `coach.md` (ground rules, how to
 explain, answer format including the "Habit to build" line) plus one file per voice in
-`prompts/audiences/`. They're re-read on every question, so edits apply without a restart;
+`prompts/audiences/`, and `player.md` (your level, goals and style, which the coach pitches to).
+They're re-read on every question, so edits apply without a restart;
 add a new `prompts/audiences/<name>.md` and it appears as a button.
 
 ## Offline use
@@ -86,8 +87,9 @@ core/engine.py     Stockfish wrapper: lines, evals, null-move threats, win% clas
 core/features.py   verifiable facts: structure, king safety, loose pieces, outposts, move effects
 core/review.py     one engine pass over a game, cached in data/reviews/
 core/gm_moments.py sacrifice / forced-mate detector (static exchange evaluation)
-core/coach.py      Claude + tools (move_report, compare_moves, analyze_position, show_on_board,
-                   opening_explorer)
+core/tricks.py     traps and high-risk/high-reward candidates (what if they take the bait?)
+core/coach.py      Claude + tools (move_report, compare_moves, analyze_position, find_tricks,
+                   show_on_board, opening_explorer)
 frontends/         chess.com + Lichess clients (incl. opening explorer), shared game loader
 frontends/web/     FastAPI server + board/chat page (chessground, chess.js)
 cli.py             terminal front end

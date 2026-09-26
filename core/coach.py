@@ -8,7 +8,7 @@ from pathlib import Path
 import anthropic
 import chess
 
-from . import features
+from . import features, tricks
 from .engine import Engine
 
 MODEL = os.environ.get("COACH_MODEL", "claude-opus-5")
@@ -24,7 +24,8 @@ def system_prompt(audience: str = "coach") -> str:
     """prompts/coach.md + prompts/audiences/<audience>.md, re-read every call so edits apply live."""
     if audience not in audiences():
         audience = "coach"
-    parts = [(PROMPTS / "coach.md").read_text(), (PROMPTS / "audiences" / f"{audience}.md").read_text()]
+    files = [PROMPTS / "coach.md", PROMPTS / "player.md", PROMPTS / "audiences" / f"{audience}.md"]
+    parts = [f.read_text() for f in files if f.exists()]
     text = "\n\n".join(re.sub(r"<!--.*?-->", "", part, flags=re.S).strip() for part in parts)
     return text
 
@@ -80,6 +81,24 @@ TOOLS = [
                     "description": "Optional SAN moves to play from that position first",
                 },
                 "multipv": {"type": "integer", "description": "Number of engine lines, 1-5 (default 3)"},
+            },
+            "required": ["ply"],
+        },
+    },
+    {
+        "name": "find_tricks",
+        "description": (
+            "Look past the engine's top line: scans the candidate moves in a position for sacrifices, "
+            "traps (the natural greedy reply loses) and high-risk/high-reward tries. For each it gives "
+            "the eval against the best defence, the material offered, and what happens if the opponent "
+            "takes the bait. Use it whenever you discuss what to play, not just when asked for tricks."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ply": {"type": "integer", "description": "Ply whose starting position to use (as for analyze_position)"},
+                "then_moves": {"type": "array", "items": {"type": "string"},
+                               "description": "Optional SAN moves to play from that position first"},
             },
             "required": ["ply"],
         },
@@ -329,6 +348,10 @@ class Coach:
             result = self.move_report(int(args["ply"]))
         elif name == "compare_moves":
             result = self.compare_moves(int(args["ply"]), list(args["moves"]), args.get("then_moves"))
+        elif name == "find_tricks":
+            board, played = self._position(int(args["ply"]), args.get("then_moves"))
+            result = {"position": f"ply {args['ply']}" + (f" then {' '.join(played)}" if played else ""),
+                      **tricks.find(self.engine, board)}
         elif name == "show_on_board":
             result = self.show_on_board(str(args["title"]), int(args["ply"]), list(args["moves"]),
                                         args.get("then_moves"), args.get("notes"))

@@ -27,14 +27,15 @@ const state = {
 const CHIPS = {
   review: [
     ['Best move?', 'What is the best move here, and why?'],
+    ['Any tricks?', 'Any tricks, traps or high-risk, high-reward ideas here, beyond the safe engine move?'],
     ['Plan behind this move?', 'What was the plan behind this move?'],
     ['What should I have played?', 'What should have been played instead, and why?'],
-    ['Explain position', "Explain what's going on in this position."],
+    ['Step by step', "Walk me through this position step by step. Ask me what I'd play before each move."],
   ],
   play: [
     ['What idea should I aim for?', 'What idea or plan should I be formulating in this position?'],
+    ['Any tricks?', 'Any tricks, traps or high-risk, high-reward ideas for me here?'],
     ['Any threats?', 'What is my opponent threatening, and is anything of mine in danger?'],
-    ['How am I doing?', 'How is my position, and what are its strengths and weaknesses?'],
     ['Hint', "Give me a hint for this position without telling me the move outright."],
   ],
 };
@@ -322,7 +323,10 @@ function positionLabel() {
   }
   const r = state.review;
   let label = state.ply === 0 ? 'Starting position' : `After ${r.moves[state.ply - 1].label} ${r.moves[state.ply - 1].san}`;
-  if (!r.moves.length) label = state.extra.length ? 'Analysis board' : 'Starting position';
+  if (!r.moves.length) {
+    const fresh = r.start_fen === START_FEN;
+    label = state.extra.length ? (fresh ? 'Analysis board' : 'Set-up position') : (fresh ? 'Starting position' : 'Set-up position');
+  }
   if (state.extra.length) label += (r.moves.length ? ' + ' : ': ') + state.extra.join(' ');
   return label;
 }
@@ -500,6 +504,9 @@ function markdown(text) {
   const blocks = text.trim().split(/\n{2,}/);
   return blocks.map((block) => {
     const lines = block.split('\n');
+    if (lines.every((l) => /^\s*>/.test(l))) {  // quote = the coach flagging a special move
+      return `<div class="alert-red">${lines.map((l) => inline(l.replace(/^\s*>\s?/, ''))).join('<br>')}</div>`;
+    }
     if (lines.every((l) => /^\s*[-*] /.test(l))) {
       return `<ul>${lines.map((l) => `<li>${inline(l.replace(/^\s*[-*] /, ''))}</li>`).join('')}</ul>`;
     }
@@ -543,8 +550,16 @@ function addMsg(kind, html, where) {
       }
     };
   });
+  // special-move alerts go to the top of the message so they can't be missed
+  const alerts = [...div.querySelectorAll('.alert-red')];
+  const anchor = div.querySelector('.gm-label')?.nextSibling || div.querySelector('.where')?.nextSibling || div.firstChild;
+  for (const a of alerts.reverse()) div.insertBefore(a, anchor);
   $('chat-log').appendChild(div);
-  $('chat-log').scrollTop = $('chat-log').scrollHeight;
+  if (kind.startsWith('coach') && div.offsetHeight > $('chat-log').clientHeight * 0.8) {
+    div.scrollIntoView({ block: 'start' });  // long answer: start reading at the top
+  } else {
+    $('chat-log').scrollTop = $('chat-log').scrollHeight;
+  }
   return div;
 }
 
@@ -554,6 +569,8 @@ function toolLabel(t) {
   if (t.name === 'move_report') return `checked move (ply ${i.ply})`;
   if (t.name === 'compare_moves') return `compared ${(i.moves || []).join(', ')}${extra}`;
   if (t.name === 'analyze_position') return `analysed position${extra}`;
+  if (t.name === 'find_tricks') return `looked for tricks${extra}`;
+  if (t.name === 'opening_explorer') return `checked real games${extra}`;
   return t.name;
 }
 
