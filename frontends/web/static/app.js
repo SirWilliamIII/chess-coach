@@ -26,18 +26,18 @@ const state = {
 
 const CHIPS = {
   review: [
-    ['Best move?', 'What is the best move here, and why?'],
+    ['Best move?', 'What is the best move here, and why? Keep it concise — concrete effect, my plan, opponent response if relevant.'],
     ['Any tactics?', 'Any tactics here? Tricks, traps or high-risk, high-reward ideas, beyond the safe engine move?'],
-    ['Plan behind this move?', 'What was the plan behind this move?'],
-    ['What should I have played?', 'What should have been played instead, and why?'],
+    ['Why this move?', 'Why was this move played? Lead with what it does right now. Only include opponent plan or my follow-up if they add real insight.'],
+    ['What should I have played?', 'What should have been played instead? Just the concrete difference — what it achieves or what my move allowed.'],
     ['Step by step', "Walk me through this position step by step. Ask me what I'd play before each move."],
-    ['Main lines', 'Show me the main lines from this position: how to play them properly, the ideas for both sides, what to expect and the traps. Show me each line.'],
+    ['Main lines', 'Show me the main lines from this position: how to play them properly, the ideas for both sides, and the key traps.'],
   ],
   play: [
-    ['What idea should I aim for?', 'What idea or plan should I be formulating in this position?'],
+    ['My plan?', 'What plan should I be aiming for in this position? Keep it short and concrete.'],
     ['Any tactics?', 'Any tactics for me here? Tricks, traps or high-risk, high-reward ideas?'],
-    ['Any threats?', 'What is my opponent threatening, and is anything of mine in danger?'],
-    ['Hint', "Give me a hint for this position without telling me the move outright."],
+    ['Their threats?', "What is my opponent threatening right now, and is anything of mine hanging?"],
+    ['Hint', "Give me a one-line hint without telling me the move."],
   ],
 };
 
@@ -69,7 +69,26 @@ const cg = Chessground($('board'), {
     select: (key) => onEditorSelect(key),
     change: () => { if (state.editor) updateEditor(); },  // e.g. a piece dragged off the board
   },
-  drawable: { enabled: true },
+  drawable: {
+    enabled: true,
+    brushes: {
+      green:    { key: 'green',    color: '#15781B', opacity: 1,    lineWidth: 10 },
+      red:      { key: 'red',      color: '#882020', opacity: 1,    lineWidth: 10 },
+      blue:     { key: 'blue',     color: '#003088', opacity: 1,    lineWidth: 10 },
+      yellow:   { key: 'yellow',   color: '#e68f00', opacity: 1,    lineWidth: 10 },
+      paleBlue: { key: 'paleBlue', color: '#003088', opacity: 0.4,  lineWidth: 15 },
+      paleGreen:{ key: 'paleGreen',color: '#15781B', opacity: 0.4,  lineWidth: 15 },
+      paleRed:  { key: 'paleRed',  color: '#882020', opacity: 0.4,  lineWidth: 15 },
+      paleGrey: { key: 'paleGrey', color: '#4a4a4a', opacity: 0.35, lineWidth: 15 },
+      // piece-hover arrows: slim + opaque enough to read clearly
+      hvMove:       { key: 'hvMove',      color: '#81b64c', opacity: 0.78, lineWidth: 7 },
+      hvCapture:    { key: 'hvCapture',   color: '#e08030', opacity: 0.82, lineWidth: 7 },
+      hvCheck:      { key: 'hvCheck',     color: '#f7c045', opacity: 0.88, lineWidth: 7 },
+      hvOpp:        { key: 'hvOpp',       color: '#6ba3c8', opacity: 0.52, lineWidth: 6 },
+      hvOppCapture: { key: 'hvOppCapture',color: '#ca3431', opacity: 0.72, lineWidth: 6 },
+      hvOppCheck:   { key: 'hvOppCheck',  color: '#e5484d', opacity: 0.85, lineWidth: 6 },
+    },
+  },
 });
 
 function baseFen() {
@@ -256,7 +275,8 @@ function renderInfo() {
   if (state.play) return renderPlayInfo();
   if (!r.moves.length) {
     $('game-info').innerHTML = 'Analysis board<div class="sub">Move pieces freely and ask the coach about any position.</div>';
-    $('summary').innerHTML = '';
+    $('summary').innerHTML = '<div class="play-buttons"><button class="btn ghost small" id="btn-setup-inline">Set up position</button></div>';
+    $('btn-setup-inline').onclick = openEditor;
     return;
   }
   $('game-info').innerHTML = `${esc(r.white)} vs ${esc(r.black)} · ${esc(r.result)}
@@ -563,6 +583,7 @@ function showExplorer(data) {
 
 function update() {
   if (state.editor) return updateEditor();
+  hoverPieceSq = null;  // position changed; next mousemove will re-draw
   const c = renderBoard();
   try { history.replaceState(null, '', state.ply ? `#ply=${state.ply}` : location.pathname); } catch {}
   renderInfo();
@@ -879,6 +900,58 @@ function clickMove(token) {
   return playSan(t.san);
 }
 
+// ---- piece hover: show legal-move arrows for the side to move
+
+let hoverPieceSq = null;
+
+function squareFromEvent(e) {
+  const rect = $('board').getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width;
+  const y = (e.clientY - rect.top) / rect.height;
+  if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+  const fi = Math.min(7, Math.floor(x * 8));
+  const ri = Math.min(7, Math.floor(y * 8));
+  return state.orientation === 'white'
+    ? 'abcdefgh'[fi] + (8 - ri)
+    : 'abcdefgh'[7 - fi] + (ri + 1);
+}
+
+function moveBrush(move, isOpponent) {
+  const isCheck = move.san.includes('+') || move.san.includes('#');
+  const isCapture = move.flags.includes('c') || move.flags.includes('e');
+  if (isOpponent) return isCheck ? 'hvOppCheck' : isCapture ? 'hvOppCapture' : 'hvOpp';
+  return isCheck ? 'hvCheck' : isCapture ? 'hvCapture' : 'hvMove';
+}
+
+function showPieceHover(sq) {
+  if (sq === hoverPieceSq) return;
+  hoverPieceSq = sq;
+  if (!sq || state.editor || state.demo) { cg.setAutoShapes([]); return; }
+  const c = currentGame();
+  if (c.isGameOver()) { cg.setAutoShapes([]); return; }
+  const turn = c.turn() === 'w' ? 'white' : 'black';
+  // In a live bot game only show during the player's turn
+  if (state.play) {
+    const p = state.play;
+    if (p.over || p.thinking || p.view !== p.moves.length) { cg.setAutoShapes([]); return; }
+  }
+  const piece = cg.state.pieces.get(sq);
+  if (!piece) { cg.setAutoShapes([]); return; }
+  const isOpponent = piece.color !== turn;
+  let moves;
+  if (isOpponent) {
+    // Flip the turn in the FEN so chess.js returns this piece's legal moves
+    const parts = c.fen().split(' ');
+    parts[1] = parts[1] === 'w' ? 'b' : 'w';
+    try { moves = new Chess(parts.join(' ')).moves({ verbose: true, square: sq }); }
+    catch { cg.setAutoShapes([]); return; }
+  } else {
+    moves = c.moves({ verbose: true, square: sq });
+  }
+  if (!moves.length) { cg.setAutoShapes([]); return; }
+  cg.setAutoShapes(moves.map((m) => ({ orig: m.from, dest: m.to, brush: moveBrush(m, isOpponent) })));
+}
+
 function previewMove(token, on) {
   if (!on) { cg.setAutoShapes([]); return; }
   const t = resolveToken(token);
@@ -1067,7 +1140,7 @@ function renderAnswer(data, opts = {}) {
     ? `<div class="demos">${demos.map((d, i) => `<button class="demo-btn" data-i="${i}">▶ Show me: ${esc(d.title)}</button>`).join('')}</div>` : '';
   const label = opts.label ? `<div class="gm-label">${esc(opts.label)}</div>` : '';
   const star = data.entry_id
-    ? `<button class="star${data.starred ? ' on' : ''}" title="Save to favourites in your library">${data.starred ? '★' : '☆'}</button>` : '';
+    ? `<button class="star${data.starred ? ' on' : ''}" title="Save to favourites in Lessons">${data.starred ? '★' : '☆'}</button>` : '';
   const msg = addMsg(opts.label ? 'coach gm' : 'coach', star + label + markdown(data.answer) + buttons + tools, opts.where);
   msg.querySelectorAll('.demo-btn').forEach((b) => { b.onclick = () => openDemo(demos[+b.dataset.i]); });
   const starBtn = msg.querySelector('.star');
@@ -1114,7 +1187,7 @@ async function searchLibrary() {
     b.onclick = () => { libTag = libTag === b.dataset.tag ? null : b.dataset.tag; searchLibrary(); };
   });
   if (!res.entries.length) {
-    $('lib-list').innerHTML = `<p class="hint">${res.tags.length ? 'Nothing matches.' : 'Nothing saved yet: every coach answer lands here automatically.'}</p>`;
+    $('lib-list').innerHTML = `<p class="hint">${res.tags.length ? 'Nothing matches.' : 'Nothing saved yet — every coach answer lands here automatically.'}</p>`;
     return;
   }
   $('lib-list').innerHTML = res.entries.map((e) => {
@@ -1122,7 +1195,7 @@ async function searchLibrary() {
     const where = [e.position_label, e.game_label].filter(Boolean).join(' · ');
     return `<div class="lib-entry" data-id="${e.id}">
       <div class="lib-top"><span class="lib-q">${e.starred ? '★ ' : ''}${esc(e.question)}</span>
-        <button class="link lib-del" title="Delete from library">🗑</button></div>
+        <button class="link lib-del" title="Delete from Lessons">🗑</button></div>
       <div class="lib-meta">${esc(where)}${where ? ' · ' : ''}${esc(when)}</div>
       ${e.habit ? `<div class="lib-habit">🧠 ${esc(e.habit)}</div>` : `<div class="lib-snippet">${esc(e.snippet)}</div>`}
       <div class="lib-etags">${e.tags.map((t) => `<span>${esc(t)}</span>`).join('')}</div>
@@ -1132,7 +1205,7 @@ async function searchLibrary() {
     el.onclick = () => openEntry(+el.dataset.id);
     el.querySelector('.lib-del').onclick = async (ev) => {
       ev.stopPropagation();
-      if (!confirm('Delete this answer from your library?')) return;
+      if (!confirm('Delete this from Lessons?')) return;
       await api(`/api/library/${el.dataset.id}`, undefined, 'DELETE');
       searchLibrary();
     };
@@ -1150,7 +1223,7 @@ async function openEntry(id) {
     } catch { /* game no longer saved: fall back to the position itself */ }
   }
   if (review) {
-    setReview(review, `From your library (${when}).`);
+    setReview(review, `From Lessons (${when}).`);
     state.ply = Math.min(e.ply ?? 0, review.moves.length);
     state.extra = e.extra || [];
     update();
@@ -1183,7 +1256,7 @@ function setReview(review, note, play = null) {
   state.play = play;
   renderChips();
   state.review = review;
-  state.ply = 0;
+  state.ply = (!play && review.player_color && review.moves.length) ? review.moves.length : 0;
   state.extra = [];
   state.orientation = play ? play.color : (review.player_color || 'white');
   resetChatUi(note);
@@ -2073,6 +2146,10 @@ $('btn-analysis').onclick = async () => {
   const review = await api('/api/analysis', {});
   setReview(review, 'Fresh analysis board. Play moves and ask the coach anything.');
 };
+
+$('board').addEventListener('mousemove', (e) => showPieceHover(squareFromEvent(e)));
+$('board').addEventListener('mouseleave', () => { hoverPieceSq = null; cg.setAutoShapes([]); });
+$('board').addEventListener('mousedown', () => { hoverPieceSq = null; cg.setAutoShapes([]); });
 
 $('btn-back-to-game').onclick = () => { state.extra = []; update(); };
 $('nav-start').onclick = () => goTo(0);
