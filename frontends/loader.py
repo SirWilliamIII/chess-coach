@@ -1,5 +1,6 @@
 """Resolve a game reference (number, URL, file, raw PGN) to PGN text. Shared by CLI and web."""
 
+import re
 from pathlib import Path
 
 from .chesscom import client as chesscom
@@ -9,8 +10,9 @@ from .lichess import explorer
 
 def fetch_game_text(ref: str, me: str | None = None) -> str:
     ref = ref.strip()
-    if ref.startswith("[") or ref.startswith("1."):
-        return ref  # raw PGN
+    ref = ref.lstrip("\ufeff")
+    if ref.startswith(("[", "{", "%")) or re.match(r"\d+\.", ref):
+        return ref  # raw PGN text
     if len(ref) < 256 and Path(ref).is_file():
         return Path(ref).read_text()
     if ref.startswith("masters:"):  # example game from the explorer's masters database

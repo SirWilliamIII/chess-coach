@@ -1705,6 +1705,58 @@ $('games-fetch').onclick = showGames;
 $('games-user').onkeydown = (e) => { if (e.key === 'Enter') showGames(); };
 
 $('btn-load').onclick = () => $('dlg-load').showModal();
+// ---- PGN files: pick or drop; files with several games get a list to choose from
+function splitPgn(text) {
+  // every game in a PGN file starts with an [Event "..."] header; a single game may have none
+  const clean = text.replace(/^\ufeff/, '').replace(/\r\n?/g, '\n').trim();
+  const games = /^\[Event /m.test(clean) ? clean.split(/\n(?=\[Event )/) : [clean];
+  return games.map((g) => g.trim()).filter((g) => /\d+\.\s*\S/.test(g.replace(/^\[.*\]$/gm, '')));
+}
+
+function pgnHeader(pgn, key) {
+  return pgn.match(new RegExp(`\\[${key} "([^"]*)"\\]`))?.[1] ?? '';
+}
+
+async function loadPgnText(text, fileName = '') {
+  const games = splitPgn(text);
+  $('load-file-name').textContent = fileName ? `${fileName}: ${games.length} game${games.length === 1 ? '' : 's'}` : '';
+  if (!games.length) { $('load-file-name').textContent = "That file doesn't look like a PGN."; return; }
+  if (games.length === 1) {
+    $('dlg-load').close();
+    loadGame(games[0]);
+    return;
+  }
+  const box = $('pgn-games');
+  box.classList.remove('hidden');
+  box.innerHTML = games.map((g, i) => `<div class="game-row" data-i="${i}">
+      <span class="who">${esc(pgnHeader(g, 'White') || '?')} – ${esc(pgnHeader(g, 'Black') || '?')}</span>
+      <span class="res">${esc(pgnHeader(g, 'Result'))}</span>
+      <span class="meta">${esc(pgnHeader(g, 'Date'))} · ${esc(pgnHeader(g, 'Event'))}</span>
+    </div>`).join('');
+  box.querySelectorAll('.game-row').forEach((el) => {
+    el.onclick = () => { $('dlg-load').close(); loadGame(games[+el.dataset.i]); };
+  });
+}
+
+$('load-file').onchange = async (e) => {
+  const file = e.target.files[0];
+  if (file) await loadPgnText(await file.text(), file.name);
+  e.target.value = '';
+};
+$('load-text').addEventListener('dragover', (e) => { e.preventDefault(); $('load-text').classList.add('drop'); });
+$('load-text').addEventListener('dragleave', () => $('load-text').classList.remove('drop'));
+$('load-text').addEventListener('drop', async (e) => {
+  e.preventDefault();
+  $('load-text').classList.remove('drop');
+  const file = e.dataTransfer.files[0];
+  if (file) await loadPgnText(await file.text(), file.name);
+});
+$('dlg-load').addEventListener('close', () => {
+  $('pgn-games').classList.add('hidden');
+  $('pgn-games').innerHTML = '';
+  $('load-file-name').textContent = '';
+});
+
 $('load-go').onclick = () => {
   const ref = $('load-text').value.trim();
   if (!ref) return;

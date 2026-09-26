@@ -160,9 +160,15 @@
 
   <dialog id="dlg-load">
     <form method="dialog" class="dlg-head"><h2>Load a game</h2><button class="link">Close</button></form>
-    <p class="hint">Paste a chess.com or Lichess game link, or a full PGN.</p>
-    <textarea id="load-text" rows="8" placeholder="https://www.chess.com/game/live/…"></textarea>
-    <div class="row end"><button class="btn" id="load-go">Review game</button></div>
+    <p class="hint">Paste a chess.com or Lichess game link or PGN text, or upload a PGN file
+      (chess.com: game page → Share → Download PGN).</p>
+    <textarea id="load-text" rows="8" placeholder="https://www.chess.com/game/live/…  (or drop a .pgn file here)"></textarea>
+    <div id="pgn-games" class="games-list hidden"></div>
+    <div class="row">
+      <label class="btn ghost small file-btn">📄 Upload PGN file<input type="file" id="load-file" accept=".pgn,.txt,application/x-chess-pgn,text/plain" hidden></label>
+      <span class="hint" id="load-file-name"></span>
+      <button class="btn" id="load-go" style="margin-left:auto">Review game</button>
+    </div>
   </dialog>
 
   <script type="module" src="/static/app.js"></script>
