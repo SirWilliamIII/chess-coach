@@ -640,6 +640,18 @@ function moveChip(token) {
   return `<span class="san" data-token="${esc(token)}" title="${esc(title)}">${no}${shown}</span>`;
 }
 
+// squares named in the chat: hover to highlight, click to keep highlighted (click again, or Esc, to clear)
+const pinnedSquares = new Set();
+let hoverSquare = null;
+
+function paintSquares() {
+  const marks = new Map();
+  pinnedSquares.forEach((sq) => marks.set(sq, 'sq-pin'));
+  if (hoverSquare) marks.set(hoverSquare, 'sq-hover');
+  cg.set({ highlight: { custom: marks } });
+  document.querySelectorAll('.msg .sq').forEach((el) => el.classList.toggle('on', pinnedSquares.has(el.dataset.sq)));
+}
+
 function inline(text, seen = new Set()) {
   const slots = [];
   const hold = (html) => `\u0001${slots.push(html) - 1}\u0002`;
@@ -653,7 +665,16 @@ function inline(text, seen = new Set()) {
       const title = mate ? `Forced mate for ${v > 0 ? 'White' : 'Black'} in ${ev.replace(/[#-]/g, '')}`
         : `Engine evaluation (White's point of view): ${evalWords(v)}`;
       return pre + hold(`<span class="evalpill ${cls}" title="${esc(title)}">${ev}</span>`);
-    })
+    });
+  // bare pawn moves inside a sequence ("e4 c5") become chips too
+  for (let prev = null; prev !== out;) {
+    prev = out;
+    out = out.replace(/(\u0002\s+)([a-h][1-8](?:=[QRBN])?[+#]?)(?=[\s,.;:)!?]|$)/g, (_, pre, pawn) => pre + hold(moveChip(pawn)));
+  }
+  // any other square name ("the c3 knight", "f7") highlights that square on the board
+  out = out.replace(/(^|[^\w\u0001])([a-h][1-8])(?![\w\u0002])/g,
+    (_, pre, sq) => pre + hold(`<span class="sq" data-sq="${sq}" title="Show ${sq} on the board">${sq}</span>`));
+  out = out
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=[\s,.;:)!?]|$)/g, '$1<em>$2</em>')
     .replace(GLOSSARY_RE, (w) => {
@@ -662,11 +683,6 @@ function inline(text, seen = new Set()) {
       seen.add(key);
       return `<span class="term" tabindex="0" data-tip="${esc(GLOSSARY_BY_KEY[key])}">${w}</span>`;
     });
-  // bare pawn moves inside a sequence ("e4 c5") become chips too
-  for (let prev = null; prev !== out;) {
-    prev = out;
-    out = out.replace(/(\u0002\s+)([a-h][1-8](?:=[QRBN])?[+#]?)(?=[\s,.;:)!?]|$)/g, (_, pre, pawn) => pre + hold(moveChip(pawn)));
-  }
   return out.replace(/\u0001(\d+)\u0002/g, (_, i) => slots[+i]);
 }
 
@@ -772,6 +788,18 @@ function legalAt(k, san) {
   }
 }
 
+function moveDestination(token) {
+  // the square a move lands on, straight from its notation ("7...Nxd4+" -> d4, "O-O" by colour)
+  const m = token.match(/^(\d+)\.(\.\.)?\s?(.*)$/);
+  const san = (m ? m[3] : token).replace(/[+#!?]+$/, '');
+  if (/^O-O/.test(san)) {
+    if (!m) return null;  // castling without a move number: side unknown
+    const rank = m[2] ? '8' : '1';
+    return (san === 'O-O-O' ? 'c' : 'g') + rank;
+  }
+  return san.match(/([a-h][1-8])(?:=[QRBN])?$/)?.[1] || null;
+}
+
 function clickMove(token) {
   const t = resolveToken(token);
   if (!t) return false;
@@ -825,14 +853,27 @@ function addMsg(kind, html, where) {
   div.className = `msg ${kind}`;
   div.innerHTML = (where ? `<span class="where">${esc(where)}</span>` : '') + html;
   div.querySelectorAll('.san').forEach((el) => {
+    const dest = moveDestination(el.dataset.token);
     el.onclick = () => {
-      if (!clickMove(el.dataset.token)) {
-        el.classList.add('stale');
-        el.title = 'Not reachable from the current line of play';
+      const moved = clickMove(el.dataset.token);
+      if (dest) {  // mark where the piece lands (the only effect if the move isn't reachable from here)
+        pinnedSquares.clear();
+        pinnedSquares.add(dest);
+        paintSquares();
       }
+      if (!moved) el.title = `Not reachable from the current line of play; highlighted ${dest || 'nothing'} instead`;
     };
-    el.onmouseenter = () => previewMove(el.dataset.token, true);
-    el.onmouseleave = () => previewMove(el.dataset.token, false);
+    el.onmouseenter = () => { previewMove(el.dataset.token, true); if (dest) { hoverSquare = dest; paintSquares(); } };
+    el.onmouseleave = () => { previewMove(el.dataset.token, false); hoverSquare = null; paintSquares(); };
+  });
+  div.querySelectorAll('.sq').forEach((el) => {
+    const sq = el.dataset.sq;
+    el.onmouseenter = () => { hoverSquare = sq; paintSquares(); };
+    el.onmouseleave = () => { hoverSquare = null; paintSquares(); };
+    el.onclick = () => {
+      if (pinnedSquares.has(sq)) pinnedSquares.delete(sq); else pinnedSquares.add(sq);
+      paintSquares();
+    };
   });
   div.querySelectorAll('.term').forEach((el) => {
     el.onclick = (e) => { e.stopPropagation(); el.classList.toggle('open'); };
@@ -1897,6 +1938,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Home') goTo(0);
   else if (e.key === 'End') $('nav-end').click();
   else if (e.key === 'f') $('nav-flip').click();
+  else if (e.key === 'Escape' && pinnedSquares.size) { pinnedSquares.clear(); paintSquares(); }
   else if (e.key === 'Escape' && state.demo) closeDemo();
   else if (e.key === 'Escape' && state.replay) stopReplay();
   else return;
