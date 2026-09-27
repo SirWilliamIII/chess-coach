@@ -834,10 +834,21 @@ function legalAt(k, san) {
 // built from every move chip inside it (in order), whether or not they sit side by side
 
 function addLineButtons(root) {
-  root.querySelectorAll('p, li, .alert-red, .habit p').forEach((block) => {
+  root.querySelectorAll('p, li, .alert-red, .habit p, .protip p').forEach((block) => {
     const chips = [...block.querySelectorAll('.san')];
     if (!chips.length) return;
     const tokens = chips.map((c) => c.dataset.token);
+    // a numbered option card is one visual unit: make the whole card clickable instead of
+    // bolting a separate button onto it (inner chips still handle their own click first)
+    if (block.tagName === 'LI' && block.parentElement.classList.contains('points')) {
+      block.classList.add('card-play');
+      block.title = `${tokens.join(' ')}\nClick to play this on the demo board`;
+      block.onclick = (e) => {
+        if (e.target.closest('.san, .sq, .term')) return;
+        if (!playLine(tokens)) block.classList.add('stale');
+      };
+      return;
+    }
     const btn = document.createElement('button');
     btn.className = 'line-btn';
     btn.title = `${tokens.join(' ')}\nClick to play this on the demo board`;
@@ -1427,6 +1438,8 @@ function openDemo(d) {
   stopAutoplay();
   state.demo = { ...d, moves: [...d.moves], notes: [...d.notes], step: 0, edited: false };
   update();
+  // clicked from deep in the chat scroll, the board can be off-screen — bring it into view
+  $('board').scrollIntoView({ behavior: 'smooth', block: 'center' });
   // play the line through once, one move every ~1.2s; any interaction stops it
   demoTimer = setInterval(() => {
     const cur = state.demo;
