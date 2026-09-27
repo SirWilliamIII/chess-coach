@@ -64,6 +64,8 @@ main {
   aspect-ratio: 1;
 }
 #board { width: 100%; height: 100%; }
+/* knight hover arrows: hide the arrowhead on the L-shape's first (bend) leg — see knightShapes() */
+marker[id$="Mid"] path { display: none; }
 .cg-wrap { width: 100%; height: 100%; }
 .cg-wrap cg-board {
   background-image: none;

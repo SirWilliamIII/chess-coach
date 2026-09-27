@@ -84,9 +84,18 @@ const cg = Chessground($('board'), {
       hvMove:       { key: 'hvMove',      color: '#81b64c', opacity: 0.78, lineWidth: 7 },
       hvCapture:    { key: 'hvCapture',   color: '#e08030', opacity: 0.82, lineWidth: 7 },
       hvCheck:      { key: 'hvCheck',     color: '#f7c045', opacity: 0.88, lineWidth: 7 },
-      hvOpp:        { key: 'hvOpp',       color: '#6ba3c8', opacity: 0.52, lineWidth: 6 },
-      hvOppCapture: { key: 'hvOppCapture',color: '#ca3431', opacity: 0.72, lineWidth: 6 },
-      hvOppCheck:   { key: 'hvOppCheck',  color: '#e5484d', opacity: 0.85, lineWidth: 6 },
+      // threat arrows (opponent's replies): darker, so they read as a warning, not a suggestion
+      hvOpp:        { key: 'hvOpp',       color: '#2c5674', opacity: 0.72, lineWidth: 6 },
+      hvOppCapture: { key: 'hvOppCapture',color: '#8f2422', opacity: 0.85, lineWidth: 6 },
+      hvOppCheck:   { key: 'hvOppCheck',  color: '#b8262b', opacity: 0.92, lineWidth: 6 },
+      // "Mid" variants: the first leg of a knight's L-shaped arrow, same color, no arrowhead
+      // (the marker triangle is hidden in CSS — see marker[id$="Mid"] in style.css)
+      hvMoveMid:       { key: 'hvMoveMid',       color: '#81b64c', opacity: 0.78, lineWidth: 7 },
+      hvCaptureMid:    { key: 'hvCaptureMid',    color: '#e08030', opacity: 0.82, lineWidth: 7 },
+      hvCheckMid:      { key: 'hvCheckMid',      color: '#f7c045', opacity: 0.88, lineWidth: 7 },
+      hvOppMid:        { key: 'hvOppMid',        color: '#2c5674', opacity: 0.72, lineWidth: 6 },
+      hvOppCaptureMid: { key: 'hvOppCaptureMid', color: '#8f2422', opacity: 0.85, lineWidth: 6 },
+      hvOppCheckMid:   { key: 'hvOppCheckMid',   color: '#b8262b', opacity: 0.92, lineWidth: 6 },
     },
   },
 });
@@ -584,6 +593,13 @@ function showExplorer(data) {
 function update() {
   if (state.editor) return updateEditor();
   hoverPieceSq = null;  // position changed; next mousemove will re-draw
+  // a pinned/hovered square from chat text refers to the position it was clicked on — stale once
+  // the board moves on, so it would otherwise sit there highlighted with no visible explanation
+  if (pinnedSquares.size || hoverSquare) {
+    pinnedSquares.clear();
+    hoverSquare = null;
+    paintSquares();
+  }
   const c = renderBoard();
   try { history.replaceState(null, '', state.ply ? `#ply=${state.ply}` : location.pathname); } catch {}
   renderInfo();
@@ -916,6 +932,14 @@ function moveBrush(move, isOpponent) {
   return isCheck ? 'hvCheck' : isCapture ? 'hvCapture' : 'hvMove';
 }
 
+// a knight's move drawn as a real L (two straight legs through a real square) instead of the
+// diagonal-ish straight line chessground would draw between origin and destination
+function knightShapes(from, to, brush) {
+  const fileDelta = Math.abs(from.charCodeAt(0) - to.charCodeAt(0));
+  const bend = fileDelta === 2 ? to[0] + from[1] : from[0] + to[1];
+  return [{ orig: from, dest: bend, brush: `${brush}Mid` }, { orig: bend, dest: to, brush }];
+}
+
 function showPieceHover(sq) {
   if (sq === hoverPieceSq) return;
   hoverPieceSq = sq;
@@ -942,7 +966,10 @@ function showPieceHover(sq) {
     moves = c.moves({ verbose: true, square: sq });
   }
   if (!moves.length) { cg.setAutoShapes([]); return; }
-  cg.setAutoShapes(moves.map((m) => ({ orig: m.from, dest: m.to, brush: moveBrush(m, isOpponent) })));
+  cg.setAutoShapes(moves.flatMap((m) => {
+    const brush = moveBrush(m, isOpponent);
+    return m.piece === 'n' ? knightShapes(m.from, m.to, brush) : [{ orig: m.from, dest: m.to, brush }];
+  }));
 }
 
 function previewMove(token, on) {
