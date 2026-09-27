@@ -1332,7 +1332,7 @@ async function showSaved() {
   try {
     const games = await api('/api/saved');
     if (!games.length) {
-      list.innerHTML = '<p class="hint">Nothing saved yet. Open a game (or use “Save my last 20 games”) while online.</p>';
+      list.innerHTML = '<p class="hint">Nothing saved yet. Open a game (or use “Save my last 500 games”) while online.</p>';
       return;
     }
     const me = (state.me || '').toLowerCase();
@@ -1366,15 +1366,23 @@ async function showSaved() {
 
 let prefetchTimer = null;
 
-async function startPrefetch() {
-  const user = $('games-user').value.trim() || state.me;
-  if (!user) { $('prefetch-status').textContent = 'Enter your chess.com username first.'; return; }
-  state.me = user;
-  store('me', user);
+function prefetchEls() {
+  return {
+    buttons: [$('games-prefetch'), $('games-prefetch-lichess')].filter(Boolean),
+    statuses: [$('prefetch-status'), $('prefetch-status-lichess')].filter(Boolean),
+  };
+}
+
+async function startPrefetch(site) {
+  const userField = site === 'lichess' ? $('games-user-lichess') : $('games-user');
+  const statusField = site === 'lichess' ? $('prefetch-status-lichess') : $('prefetch-status');
+  const user = userField.value.trim() || (site === 'chesscom' ? state.me : '');
+  if (!user) { statusField.textContent = `Enter your ${site === 'lichess' ? 'Lichess' : 'chess.com'} username first.`; return; }
+  if (site === 'chesscom') { state.me = user; store('me', user); }
   try {
-    await api('/api/prefetch', { user, n: 20 });
+    await api('/api/prefetch', { user, n: 500, site });
   } catch (e) {
-    $('prefetch-status').textContent = e.message;
+    statusField.textContent = e.message;
     return;
   }
   pollPrefetch();
@@ -1384,16 +1392,18 @@ async function pollPrefetch() {
   clearTimeout(prefetchTimer);
   let st;
   try { st = await api('/api/prefetch'); } catch { return; }
-  const btn = $('games-prefetch');
-  btn.disabled = st.status === 'running';
+  const { buttons, statuses } = prefetchEls();
+  buttons.forEach((b) => { b.disabled = st.status === 'running'; });
+  let text = '';
   if (st.status === 'running') {
-    $('prefetch-status').textContent = st.total ? `Analysing game ${Math.min(st.done + 1, st.total)} of ${st.total}… (you can keep using the app)` : 'Fetching game list…';
+    text = st.total ? `Analysing game ${Math.min(st.done + 1, st.total)} of ${st.total}… (you can keep using the app)` : 'Fetching game list…';
     prefetchTimer = setTimeout(pollPrefetch, 1500);
   } else if (st.status === 'done') {
-    $('prefetch-status').textContent = `Done: ${st.total} games ready offline (${st.new} newly analysed).`;
+    text = `Done: ${st.total} games ready offline (${st.new} newly analysed).`;
   } else if (st.status === 'error') {
-    $('prefetch-status').textContent = st.error;
+    text = st.error;
   }
+  if (text) statuses.forEach((s) => { s.textContent = text; });
 }
 
 async function showGames() {

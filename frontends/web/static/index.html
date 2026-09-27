@@ -113,19 +113,25 @@
         <button class="btn" id="games-fetch">Show games</button>
       </div>
       <div class="offline-box">
-        <button class="btn ghost small" id="games-prefetch">Save my last 20 games for offline</button>
+        <button class="btn ghost small" id="games-prefetch">Save my last 500 games for offline</button>
         <span id="prefetch-status" class="hint"></span>
       </div>
       <div id="games-list" class="games-list"></div>
     </div>
     <div id="tab-saved" class="hidden">
       <p class="hint">Games already analysed on this Pi. These open without internet (the coach chat still needs it).</p>
+      <div class="offline-box">
+        <input id="games-user-lichess" placeholder="Lichess username" autocomplete="off">
+        <button class="btn ghost small" id="games-prefetch-lichess">Save my last 500 Lichess games</button>
+        <span id="prefetch-status-lichess" class="hint"></span>
+      </div>
       <div id="saved-list" class="games-list"></div>
     </div>
   </dialog>
 
   <dialog id="dlg-play">
-    <form method="dialog" class="dlg-head"><h2>Play against the bot</h2><button class="link">Close</button></form>
+    <form method="dialog" class="dlg-head"><h2>Play a game</h2><button class="link">Close</button></form>
+    <div class="field" id="play-continue-row"></div>
     <div class="field">
       <span class="label">Play as</span>
       <div class="seg" id="play-color">

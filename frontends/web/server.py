@@ -25,6 +25,7 @@ from core.coach import Coach, audiences
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
 from core.review import CACHE_DIR, load_pgn, review_game
 from frontends.chesscom import client as chesscom
+from frontends.lichess import client as lichess
 from frontends.lichess import explorer
 from frontends.loader import fetch_game_text
 
@@ -164,14 +165,20 @@ PREFETCH = {"status": "idle", "done": 0, "total": 0, "new": 0, "error": None}
 class PrefetchReq(BaseModel):
     user: str
     n: int = 20
+    site: str = "chesscom"
 
 
-def _prefetch_job(user: str, n: int):
+def _prefetch_job(site: str, user: str, n: int):
     try:
-        games = chesscom.recent_games(user, n)
-        PREFETCH.update(total=len(games))
-        for i, g in enumerate(games, 1):
-            game = load_pgn(g["pgn"])
+        if site == "lichess":
+            items = lichess.recent_games(user, n)
+            fetch_pgn = lambda g: lichess.game_pgn(g["id"])  # a separate request per game
+        else:
+            items = chesscom.recent_games(user, n, max_months=1000)  # walk the full archive if needed
+            fetch_pgn = lambda g: g["pgn"]  # already included in the archive
+        PREFETCH.update(total=len(items))
+        for i, g in enumerate(items, 1):
+            game = load_pgn(fetch_pgn(g))
             before = len(list(CACHE_DIR.glob("*.json")))
             review_game(game, S.engine)  # returns straight away if it's already saved
             PREFETCH["new"] += len(list(CACHE_DIR.glob("*.json"))) - before
@@ -183,10 +190,12 @@ def _prefetch_job(user: str, n: int):
 
 @app.post("/api/prefetch")
 def prefetch(req: PrefetchReq):
+    if req.site not in ("chesscom", "lichess"):
+        raise HTTPException(400, "site must be 'chesscom' or 'lichess'")
     if PREFETCH["status"] == "running":
         raise HTTPException(409, "already saving games")
     PREFETCH.update(status="running", done=0, total=0, new=0, error=None)
-    threading.Thread(target=_prefetch_job, args=(req.user, max(1, min(50, req.n))), daemon=True).start()
+    threading.Thread(target=_prefetch_job, args=(req.site, req.user, max(1, min(500, req.n))), daemon=True).start()
     return {"ok": True}
 
 

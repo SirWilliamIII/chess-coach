@@ -66,8 +66,10 @@ the coach's voice is `prompts/audiences/coach.md`; add another file there and a 
 
 Everything except the coach chat (Claude API) and fetching new games from chess.com works
 without internet: board, Stockfish, bot games, set-up board, and any game already analysed.
-Before a trip, open **Search games → Save my last 20 games for offline**; saved games are under
-**Search games → Saved on this Pi**. The browser libraries live in `frontends/web/static/vendor/`.
+Before a trip, open **Search games → Save my last 500 games for offline** (each game gets a full
+engine pass, so a big batch takes a while — you can keep using the app while it runs); saved games
+are under **Search games → Saved on this Pi**. The browser libraries live in
+`frontends/web/static/vendor/`.
 
 ## Terminal
 
