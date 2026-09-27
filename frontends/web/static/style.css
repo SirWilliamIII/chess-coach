@@ -109,6 +109,13 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .capgroup i + i { margin-left: -10px; }
 .lead { color: var(--muted); font-size: 13px; font-weight: 600; margin-left: 2px; }
 .player .elo { color: var(--muted); font-weight: 400; }
+.clock {
+  font-family: ui-monospace, monospace; font-weight: 700; font-size: 13px; margin-left: 8px;
+  padding: 1px 7px; border-radius: 4px; background: #2a2926; color: var(--muted);
+}
+.clock.running { background: var(--accent); color: #111; }
+.clock.low { background: var(--blunder); color: #fff; }
+.clock.low.running { background: var(--blunder); color: #fff; }
 
 .overlay {
   position: absolute; inset: 0; background: rgba(0,0,0,.55); z-index: 10;

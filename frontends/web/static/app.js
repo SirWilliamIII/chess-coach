@@ -224,9 +224,20 @@ function forward() {
 
 // ---------------------------------------------------------------- panels
 
+function clockText(seconds) {
+  seconds = Math.max(0, Math.ceil(seconds));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
 function playerLine(color) {
   const p = state.play;
-  if (p) return color === p.color ? (state.me ? `${esc(state.me)} (you)` : 'You') : `Bot <span class="elo">${esc(p.levelName)}</span>`;
+  if (p) {
+    const label = color === p.color ? (state.me ? `${esc(state.me)} (you)` : 'You') : `Bot <span class="elo">${esc(p.levelName)}</span>`;
+    if (!p.clock) return label;
+    const running = !p.over && playChess(p).turn() === color[0];
+    const low = p.clock[color] < 30 ? ' low' : '';
+    return `${label}<span class="clock${running ? ' running' : ''}${low}">${clockText(p.clock[color])}</span>`;
+  }
   const r = state.review;
   if (!r.moves.length) return '';
   const name = r[color], elo = r[`${color}_elo`];
@@ -279,6 +290,37 @@ function capturedHtml(color, mat) {
   if (lead > 0) html += `<span class="lead">+${lead}</span>`;
   return html ? `<span class="captured">${html}</span>` : '';
 }
+
+// ---- clock: update the two .clock spans in place every tick, without a full re-render
+function renderClocks() {
+  const p = state.play;
+  if (!p?.clock) return;
+  const turn = playChess(p).turn() === 'w' ? 'white' : 'black';
+  const top = state.orientation === 'white' ? 'black' : 'white';
+  for (const [color, el] of [[top, $('player-top')], [state.orientation, $('player-bottom')]]) {
+    const span = el.querySelector('.clock');
+    if (!span) continue;
+    span.textContent = clockText(p.clock[color]);
+    span.classList.toggle('running', !p.over && color === turn);
+    span.classList.toggle('low', p.clock[color] < 30);
+  }
+}
+
+setInterval(() => {
+  const p = state.play;
+  if (!p?.clock || p.over) return;
+  const c = playChess(p);
+  if (c.isGameOver()) return;
+  const turn = c.turn() === 'w' ? 'white' : 'black';
+  const now = Date.now();
+  p.clock[turn] = Math.max(0, p.clock[turn] - (now - p.clock.lastTick) / 1000);
+  p.clock.lastTick = now;
+  renderClocks();
+  if (p.clock[turn] <= 0) {
+    const winner = turn === 'white' ? 'black' : 'white';
+    endGame(winner === p.color ? 'win' : 'loss', `${turn === p.color ? 'You' : 'The bot'} ran out of time.`);
+  }
+}, 250);
 
 function renderInfo() {
   const r = state.review;
@@ -1980,6 +2022,7 @@ function onPlayMove(orig, dest) {
     return;
   }
   p.moves.push(mv.san);
+  if (p.clock) { p.clock[p.color] += p.clock.increment; p.clock.lastTick = Date.now(); }
   playView(p.moves.length);
   if (!checkGameOver()) botMove();
 }
@@ -1996,6 +2039,11 @@ async function botMove() {
     await new Promise((r) => setTimeout(r, Math.max(0, 450 - (Date.now() - started))));  // feel less instant
     if (token !== playToken || state.play !== p) return;
     p.moves.push(res.san);
+    if (p.clock) {
+      const botColor = p.color === 'white' ? 'black' : 'white';
+      p.clock[botColor] += p.clock.increment;
+      p.clock.lastTick = Date.now();
+    }
   } catch (e) {
     addMsg('error', `Bot error: ${esc(e.message)}`);
   } finally {
@@ -2037,6 +2085,7 @@ function takeback() {
   p.over = null;
   const mine = p.color[0];
   do { p.moves.pop(); } while (p.moves.length && playChess(p).turn() !== mine);
+  if (p.clock) p.clock.lastTick = Date.now();  // don't charge takeback time to whoever's now to move
   playView(p.moves.length);
   if (playChess(p).turn() !== mine) botMove();  // back at a start position where the bot moves first
 }
@@ -2135,6 +2184,10 @@ async function openPlayDialog() {
     sel.value = recall('botLevel') || '3';
   }
   $('play-engine').checked = recall('playEngine') === '1';
+  $('play-clock-on').checked = recall('clockOn') === '1';
+  $('play-clock-minutes').value = recall('clockMinutes') || '10';
+  $('play-clock-increment').value = recall('clockIncrement') || '0';
+  $('play-clock-fields').classList.toggle('hidden', !$('play-clock-on').checked);
   $('dlg-play').querySelector('h2').textContent = pendingFen ? 'Play this position against the bot' : 'Play a game';
   const r = state.review;
   $('play-continue-row').innerHTML = (!pendingFen && r?.moves?.length)
@@ -2157,6 +2210,12 @@ async function startGame() {
   const color = playColor === 'random' ? (Math.random() < 0.5 ? 'white' : 'black') : playColor;
   store('botLevel', String(level));
   store('playEngine', $('play-engine').checked ? '1' : '0');
+  const clockOn = $('play-clock-on').checked;
+  const clockMinutes = Math.min(180, Math.max(1, +$('play-clock-minutes').value || 10));
+  const clockIncrement = Math.min(60, Math.max(0, +$('play-clock-increment').value || 0));
+  store('clockOn', clockOn ? '1' : '0');
+  store('clockMinutes', String(clockMinutes));
+  store('clockIncrement', String(clockIncrement));
   $('dlg-play').close();
   playToken++;
   const fen = pendingFen;
@@ -2168,7 +2227,10 @@ async function startGame() {
     addMsg('error', esc(e.message));
     return;
   }
-  const play = { color, level, levelName, startFen: review.start_fen, moves: [], view: 0, over: null, thinking: false };
+  const clock = clockOn
+    ? { white: clockMinutes * 60, black: clockMinutes * 60, increment: clockIncrement, lastTick: Date.now() }
+    : null;
+  const play = { color, level, levelName, startFen: review.start_fen, moves: [], view: 0, over: null, thinking: false, clock };
   setEngineVisible($('play-engine').checked);
   const from = fen ? ' from your set-up position' : '';
   setReview(review, `New game${from}: you have the ${color} pieces against the ${levelName} bot. Ask for ideas any time.`, play);
@@ -2205,6 +2267,7 @@ function renderAudience(list) {
 }
 $('dlg-play').addEventListener('close', () => { if (!state.editor) pendingFen = null; });
 $('play-go').onclick = startGame;
+$('play-clock-on').onchange = (e) => $('play-clock-fields').classList.toggle('hidden', !e.target.checked);
 $('play-color').querySelectorAll('button').forEach((b) => {
   b.onclick = () => {
     playColor = b.dataset.color;

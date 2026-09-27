@@ -140,6 +140,16 @@
       </div>
     </div>
     <label class="field"><span class="label">Bot strength</span><select id="play-level"></select></label>
+    <label class="toggle"><input type="checkbox" id="play-clock-on"> Use a clock</label>
+    <div class="field hidden" id="play-clock-fields">
+      <span class="label">Time control</span>
+      <div class="row">
+        <input type="number" id="play-clock-minutes" min="1" max="180" value="10" style="max-width:70px">
+        <span class="hint" style="margin:0">min, +</span>
+        <input type="number" id="play-clock-increment" min="0" max="60" value="0" style="max-width:70px">
+        <span class="hint" style="margin:0">sec/move</span>
+      </div>
+    </div>
     <label class="toggle"><input type="checkbox" id="play-engine"> Show engine eval during the game</label>
     <p class="hint">Ask the coach for ideas and plans at any point. It will teach the idea rather than just give away the move, unless you ask for the move.</p>
     <div class="row end"><button class="btn" id="play-go">Start game</button></div>
