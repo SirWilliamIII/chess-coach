@@ -2348,7 +2348,9 @@ document.addEventListener('keydown', (e) => {
   const aud = cfg.audiences || ['coach'];
   state.audience = aud.includes(recall('audience')) ? recall('audience') : (aud.includes('coach') ? 'coach' : aud[0]);
   renderAudience(aud);
-  for (const id of ['x-db', 'x-band', 'x-speed']) { const v = recall(id); if (v !== null) $(id).value = v; }
+  // default to master-level games unless the player has picked their own explorer filters before
+  $('x-db').value = recall('x-db') || 'masters';
+  for (const id of ['x-band', 'x-speed']) { const v = recall(id); if (v !== null) $(id).value = v; }
   updateLinesButton();
   setEtab(recall('etab') === 'explorer' ? 'explorer' : 'engine');
   state.me = recall('me') || cfg.me || '';
