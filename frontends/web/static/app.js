@@ -24,15 +24,13 @@ const state = {
 const CHIPS = {
   review: [
     ['Best move', 'What is the best move here, and why? Keep it concise — concrete effect, my plan, opponent response if relevant.'],
-    ['Show me tactics', 'Any tactics here? Tricks, traps or high-risk, high-reward ideas, beyond the safe engine move?'],
-    ['Why this move?', 'Why was this move played? Lead with what it does right now. Only include opponent plan or my follow-up if they add real insight.'],
+    ['Quiz me', "Quiz me on why this move was played — ask me first what its point was, wait for my answer, then tell me if I've got it and fill in whatever I'm missing."],
     ['What should I have played?', 'What should have been played instead? Just the concrete difference — what it achieves or what my move allowed.'],
     ['Show me', "Walk me through this position step by step. Ask me what I'd play before each move."],
     ['Show main lines', 'Show me the main lines from this position: how to play them properly, the ideas for both sides, and the key traps.'],
   ],
   play: [
     ['My plan?', 'What plan should I be aiming for in this position? Keep it short and concrete.'],
-    ['Show me tactics', 'Any tactics for me here? Tricks, traps or high-risk, high-reward ideas?'],
     ['Their threats?', "What is my opponent threatening right now, and is anything of mine hanging?"],
     ['Hint', "Give me a one-line hint without telling me the move."],
   ],
