@@ -12,11 +12,10 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
 - **The coach has no cross-game memory.** `S.coach` is recreated from scratch
   (`make_coach()`) every time you load a different game, start a fresh analysis board, or
   start a new bot game — empty `messages` each time. The conversation is server-side state
-  (not browser state), so it survives as long as `S.review` isn't replaced — but a browser
-  page load always calls `/api/analysis` first (see `init()` in `app.js`), so a page reload
-  now always lands back on a fresh analysis board, not whatever was last loaded. There's no
-  "Analysis board" nav button any more for the same reason — reloading the page *is* that
-  action.
+  (not browser state), so it survives across browser page reloads (`init()` in `app.js`
+  resumes via `/api/review`, the current server state — a reload does not reset anything)
+  until you switch to something else, e.g. by clicking the header's "Analysis board" button
+  (`/api/analysis`), which is a deliberate, explicit reset.
 - **Prompt caching is already wired up** (`core/coach.py`, the `messages.create()` call) via
   top-level `cache_control: {"type": "ephemeral"}`. This auto-caches the whole prefix
   (tools → system → messages) up to the last block, so repeat questions *within one active

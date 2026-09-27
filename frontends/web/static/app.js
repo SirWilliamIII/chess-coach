@@ -2344,6 +2344,11 @@ $('load-go').onclick = () => {
   loadGame(ref);
 };
 
+$('btn-analysis').onclick = async () => {
+  const review = await api('/api/analysis', {});
+  setReview(review, 'Fresh analysis board. Play moves and ask the coach anything.');
+};
+
 $('board').addEventListener('mousemove', (e) => showPieceHover(squareFromEvent(e)));
 $('board').addEventListener('mouseleave', () => { hoverPieceSq = null; renderShapes(); });
 $('board').addEventListener('mousedown', () => { hoverPieceSq = null; renderShapes(); });
@@ -2428,9 +2433,10 @@ document.addEventListener('keydown', (e) => {
   state.engineOn = engineOn;
   $('evalbar').classList.toggle('off', !engineOn);
   $('engine-lines').classList.toggle('hidden', !engineOn);
-  // every fresh page load starts clean on the analysis board, not whatever was last loaded
-  const review = await api('/api/analysis', {});
+  const review = await api('/api/review');
+  const linked = +(location.hash.match(/ply=(\d+)/)?.[1] || 0);
   setReview(review, cfg.coach_ready
-    ? 'Move pieces on the board and ask the coach about any position, or load one of your games.'
+    ? 'Load one of your games, or play moves on the board and ask the coach about them.'
     : 'Coach offline: set ANTHROPIC_API_KEY and restart the server to chat. Board and engine work without it.');
+  if (linked) goTo(linked);
 })();
