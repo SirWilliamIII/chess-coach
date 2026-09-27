@@ -300,8 +300,10 @@ function renderInfo() {
   $('summary').innerHTML = (parts.length
     ? `<span style="color:var(--muted)">${whose ? 'Your' : 'Flagged'} moves:</span> ${parts.join('')}`
     : `<span style="color:var(--muted)">No inaccuracies, mistakes or blunders${whose ? ' by you' : ''}.</span>`)
-    + `<div class="play-buttons"><button class="btn small" id="btn-from-here">▶ Play from here</button></div>`;
+    + `<div class="play-buttons"><button class="btn small" id="btn-from-here">▶ Play from here</button>`
+    + `<button class="btn ghost small" id="btn-setup-from-here">Set up position</button></div>`;
   $('btn-from-here').onclick = openFromDialog;
+  $('btn-setup-from-here').onclick = openEditor;
   $('summary').querySelectorAll('.tag').forEach((el) => {
     el.onclick = () => {
       const plies = counts[el.dataset.cls];
@@ -1600,7 +1602,8 @@ function buildEditorPanel() {
   const tools = ['white', 'black'].map((color) => `<div class="pal-row">${PALETTE_ROLES.map((role) =>
     `<button class="pal" data-tool="${color}-${role}" title="Place ${color} ${role}" style="background-image:${esc(img[`${color}-${role}`])}"></button>`).join('')}</div>`).join('');
   $('moves').innerHTML = `<div class="editor">
-    <label class="field"><span class="label">Endgame presets</span>
+    <button class="btn ghost small" id="ed-preset-toggle">Endgame presets…</button>
+    <label class="field hidden" id="ed-preset-field"><span class="label">Endgame presets</span>
       <select id="ed-preset"><option value="">Choose a position…</option>${PRESETS.map(([n, f]) => `<option value="${esc(f)}">${esc(n)}</option>`).join('')}</select></label>
     <div class="pal-tools">
       <button class="pal-mode" data-tool="move">✋ Move</button>
@@ -1630,6 +1633,11 @@ function buildEditorPanel() {
     updateEditor();
   };
   $('ed-preset').onchange = (e) => { if (e.target.value) load(e.target.value); };
+  $('ed-preset-toggle').onclick = () => {
+    $('ed-preset-toggle').classList.add('hidden');
+    $('ed-preset-field').classList.remove('hidden');
+    $('ed-preset').focus();
+  };
   $('ed-clear').onclick = () => load('8/8/8/8/8/8/8/8 w');
   $('ed-start').onclick = () => load(START_FEN);
   $('ed-kings').onclick = () => load('4k3/8/8/8/8/8/8/4K3 w');
@@ -2084,7 +2092,19 @@ async function openPlayDialog() {
     sel.value = recall('botLevel') || '3';
   }
   $('play-engine').checked = recall('playEngine') === '1';
-  $('dlg-play').querySelector('h2').textContent = pendingFen ? 'Play this position against the bot' : 'Play against the bot';
+  $('dlg-play').querySelector('h2').textContent = pendingFen ? 'Play this position against the bot' : 'Play a game';
+  const r = state.review;
+  $('play-continue-row').innerHTML = (!pendingFen && r?.moves?.length)
+    ? `<button class="btn ghost small" id="play-continue-btn">▶ Continue ${esc(r.white)} vs ${esc(r.black)} from here instead</button>`
+    : (!pendingFen ? '<button class="btn ghost small" id="play-continue-btn">Or continue one of your own games from a chosen move…</button>' : '');
+  const continueBtn = $('play-continue-btn');
+  if (continueBtn) {
+    continueBtn.onclick = () => {
+      $('dlg-play').close();
+      if (!pendingFen && r?.moves?.length) openFromDialog();
+      else openGamesDialog();
+    };
+  }
   $('dlg-play').showModal();
 }
 
@@ -2140,7 +2160,6 @@ function renderAudience(list) {
     };
   });
 }
-$('btn-setup').onclick = openEditor;
 $('dlg-play').addEventListener('close', () => { if (!state.editor) pendingFen = null; });
 $('play-go').onclick = startGame;
 $('play-color').querySelectorAll('button').forEach((b) => {
@@ -2150,14 +2169,16 @@ $('play-color').querySelectorAll('button').forEach((b) => {
   };
 });
 
-$('btn-games').onclick = () => {
+function openGamesDialog() {
   $('games-user').value = state.me;
   $('dlg-games').showModal();
   showGamesTab(navigator.onLine === false ? 'saved' : 'chesscom');
   pollPrefetch();
-};
+}
+$('btn-games').onclick = openGamesDialog;
 $('games-tabs').querySelectorAll('button').forEach((b) => { b.onclick = () => showGamesTab(b.dataset.tab); });
-$('games-prefetch').onclick = startPrefetch;
+$('games-prefetch').onclick = () => startPrefetch('chesscom');
+$('games-prefetch-lichess').onclick = () => startPrefetch('lichess');
 $('games-fetch').onclick = showGames;
 $('games-user').onkeydown = (e) => { if (e.key === 'Enter') showGames(); };
 
