@@ -16,7 +16,6 @@ const state = {
   explorerReady: false,
   etab: 'engine',   // bottom panel: 'engine' lines or opening 'explorer'
   audience: 'coach',
-  gmAlerts: true,
   replay: null,     // replaying a loaded game: {color, hint}; the opponent follows the PGN
   chatBusy: false,
   play: null,       // practice game vs the bot: {color, level, levelName, moves, view, over, thinking}
@@ -1274,6 +1273,7 @@ function setReview(review, note, play = null) {
   closeEditor(false);
   if (state.play && !play) setEngineVisible(recall('engineOn') !== '0');  // leaving a game
   state.play = play;
+  lastOpeningEco = null;
   renderChips();
   state.review = review;
   state.ply = (!play && review.player_color && review.moves.length) ? review.moves.length : 0;
@@ -1799,13 +1799,51 @@ function renderReplayInfo() {
   $('replay-exit').onclick = stopReplay;
 }
 
+// ---- instant "I see you're playing X" quip whenever a new named opening is reached —
+// a database lookup, not a coach call: free, instant, and quiet again once you're out of book
+
+const OPENING_QUIPS = [
+  (nick) => `${/^[aeiou]/i.test(nick) ? 'An' : 'A'} ${nick} player, I see...`,
+  (nick) => `Ah, the ${nick}. Nice.`,
+  (nick) => `${nick}? Bold choice.`,
+  (nick) => `Going for the ${nick}, are we?`,
+];
+
+function openingNickname(name) {
+  // "Sicilian Defense: Najdorf Variation" -> "Najdorf"; "English Opening" -> "English"
+  const part = name.includes(':') ? name.split(':')[1].trim() : name;
+  return part.replace(/\s+(Defense|Defence|Opening|Variation|System)$/i, '').trim() || name;
+}
+
+let lastOpeningEco = null;
+let quipToken = 0;
+
+async function openingQuip(c) {
+  if (!state.explorerReady || c.isGameOver()) return;
+  const token = ++quipToken;
+  let res;
+  try {
+    res = await api('/api/explorer', { fen: c.fen(), db: 'masters' });
+  } catch {
+    return;
+  }
+  if (token !== quipToken) return;  // the game moved on before this lookup came back
+  const opening = res.opening;
+  if (!opening || opening.eco === lastOpeningEco) return;
+  lastOpeningEco = opening.eco;
+  const nick = openingNickname(opening.name);
+  const phrase = OPENING_QUIPS[Math.floor(Math.random() * OPENING_QUIPS.length)](nick);
+  addMsg('coach', markdown(phrase), positionLabel());
+}
+
 // ---- "only a GM would see this": engine check each time it's the player's turn
 
 let gmToken = 0;
 const gmSeen = new Set();
 
 async function gmCheck(c, gameMove = null, side = 'player') {
-  if (!state.gmAlerts || !state.coachReady || c.isGameOver()) return;
+  openingQuip(c);
+  if (!state.coachReady || c.isGameOver()) return;
   const fen = c.fen();
   if (gmSeen.has(fen)) return;
   const token = ++gmToken;
@@ -2066,7 +2104,6 @@ $('from-color').querySelectorAll('button').forEach((b) => {
     $('from-color').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
   };
 });
-$('gm-toggle').onchange = (e) => { state.gmAlerts = e.target.checked; store('gmAlerts', e.target.checked ? '1' : '0'); };
 
 function renderAudience(list) {
   $('audience').classList.toggle('hidden', list.length < 2);  // one voice: no switch needed
@@ -2224,8 +2261,6 @@ document.addEventListener('keydown', (e) => {
   const aud = cfg.audiences || ['coach'];
   state.audience = aud.includes(recall('audience')) ? recall('audience') : (aud.includes('coach') ? 'coach' : aud[0]);
   renderAudience(aud);
-  state.gmAlerts = recall('gmAlerts') !== '0';
-  $('gm-toggle').checked = state.gmAlerts;
   for (const id of ['x-db', 'x-band', 'x-speed']) { const v = recall(id); if (v !== null) $(id).value = v; }
   updateLinesButton();
   setEtab(recall('etab') === 'explorer' ? 'explorer' : 'engine');
