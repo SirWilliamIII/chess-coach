@@ -416,6 +416,7 @@ class ChatReq(BaseModel):
     where: str | None = None   # the page's label for the position ("After 35. Nf5")
     mode: str | None = None    # review / replay / play / analysis / demo
     label: str | None = None   # set for automatic GM alerts ("⚡ GM moment")
+    ambient: bool = False      # opponent-move commentary: real answer, but not a library-worthy Q&A
 
 
 @app.post("/api/chat")
@@ -439,18 +440,19 @@ def chat(req: ChatReq):
         raise HTTPException(502, f"Claude API error: {e}")
     tools = [t for t in tools if t["name"] != "show_on_board"]  # shown as buttons instead
     entry_id = None
-    try:  # save to the library (a failure here must never cost the player their answer)
-        r = coach.review
-        board, _ = coach._position(req.ply + 1, req.extra)
-        entry_id = library.add(
-            question=req.label or req.question, answer=answer,
-            kind="gm alert" if req.label else "question", mode=req.mode, fen=board.fen(),
-            game_id=r.get("game_id") if r["moves"] else None,
-            game_label=f"{r['white']} vs {r['black']}" if r["moves"] else None,
-            position_label=req.where, ply=req.ply, extra=req.extra, opening=r.get("opening"),
-            demos=coach.last_demos, tools=tools)
-    except Exception as e:  # noqa: BLE001
-        print(f"library: could not save answer: {e}")
+    if not req.ambient:  # opponent-move color commentary isn't a Q&A worth surfacing in Lessons
+        try:  # save to the library (a failure here must never cost the player their answer)
+            r = coach.review
+            board, _ = coach._position(req.ply + 1, req.extra)
+            entry_id = library.add(
+                question=req.label or req.question, answer=answer,
+                kind="gm alert" if req.label else "question", mode=req.mode, fen=board.fen(),
+                game_id=r.get("game_id") if r["moves"] else None,
+                game_label=f"{r['white']} vs {r['black']}" if r["moves"] else None,
+                position_label=req.where, ply=req.ply, extra=req.extra, opening=r.get("opening"),
+                demos=coach.last_demos, tools=tools)
+        except Exception as e:  # noqa: BLE001
+            print(f"library: could not save answer: {e}")
     return {"answer": answer, "tools": tools, "demos": coach.last_demos, "entry_id": entry_id}
 
 

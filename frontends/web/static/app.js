@@ -1215,11 +1215,13 @@ async function ask(question, opts = {}) {
       data = await api('/api/chat', {
         question, ...where, audience: state.audience,
         where: opts.where || positionLabel(), mode: currentMode(), label: opts.silent ? opts.label : null,
+        ambient: !!opts.ambient,
       });
     } finally {
       polling = false;
     }
     pending.remove();
+    if (opts.skipEmpty && /^\(nothing\)\.?$/i.test(data.answer.trim())) return;
     renderAnswer(data, opts);
   } catch (e) {
     pending.remove();
@@ -1361,7 +1363,6 @@ function setReview(review, note, play = null) {
   closeEditor(false);
   if (state.play && !play) setEngineVisible(recall('engineOn') !== '0');  // leaving a game
   state.play = play;
-  lastOpeningEco = null;
   renderChips();
   state.review = review;
   state.ply = (!play && review.player_color && review.moves.length) ? review.moves.length : 0;
@@ -1867,6 +1868,7 @@ function replayStep() {
         if (state.replay !== rp) return;
         state.ply++;
         update();
+        commentOnOpponentMove(currentGame(), next.san);
         replayStep();
       }, Math.max(300, 700 - (Date.now() - started)));
     });
@@ -1905,41 +1907,14 @@ function renderReplayInfo() {
   $('replay-exit').onclick = stopReplay;
 }
 
-// ---- instant "I see you're playing X" quip whenever a new named opening is reached —
-// a database lookup, not a coach call: free, instant, and quiet again once you're out of book
+// ---- knowledgeable-player color commentary after (almost) every opponent move — a real coach
+// call like any question, just triggered automatically and rendered plainly (no GM-alert styling,
+// not saved to the Lessons library); the coach can say `(nothing)` to skip a forced/generic move
 
-const OPENING_QUIPS = [
-  (nick) => `${/^[aeiou]/i.test(nick) ? 'An' : 'A'} ${nick} player, I see...`,
-  (nick) => `Ah, the ${nick}. Nice.`,
-  (nick) => `${nick}? Bold choice.`,
-  (nick) => `Going for the ${nick}, are we?`,
-];
-
-function openingNickname(name) {
-  // "Sicilian Defense: Najdorf Variation" -> "Najdorf"; "English Opening" -> "English"
-  const part = name.includes(':') ? name.split(':')[1].trim() : name;
-  return part.replace(/\s+(Defense|Defence|Opening|Variation|System)$/i, '').trim() || name;
-}
-
-let lastOpeningEco = null;
-let quipToken = 0;
-
-async function openingQuip(c) {
-  if (!state.explorerReady || c.isGameOver()) return;
-  const token = ++quipToken;
-  let res;
-  try {
-    res = await api('/api/explorer', { fen: c.fen(), db: 'masters' });
-  } catch {
-    return;
-  }
-  if (token !== quipToken) return;  // the game moved on before this lookup came back
-  const opening = res.opening;
-  if (!opening || opening.eco === lastOpeningEco) return;
-  lastOpeningEco = opening.eco;
-  const nick = openingNickname(opening.name);
-  const phrase = OPENING_QUIPS[Math.floor(Math.random() * OPENING_QUIPS.length)](nick);
-  addMsg('coach', markdown(phrase), positionLabel());
+async function commentOnOpponentMove(c, san) {
+  if (!state.coachReady || c.isGameOver()) return;
+  await ask(`[The opponent just played ${san}. Give your one-line reaction, or say (nothing) if there's really nothing worth saying.]`,
+    { silent: true, skipEmpty: true, ambient: true, where: positionLabel() });
 }
 
 // ---- "only a GM would see this": engine check each time it's the player's turn
@@ -1948,7 +1923,6 @@ let gmToken = 0;
 const gmSeen = new Set();
 
 async function gmCheck(c, gameMove = null, side = 'player') {
-  openingQuip(c);
   if (!state.coachReady || c.isGameOver()) return;
   const fen = c.fen();
   if (gmSeen.has(fen)) return;
@@ -2040,7 +2014,10 @@ async function botMove() {
     if (token === playToken && state.play === p) {
       p.thinking = false;
       playView(p.moves.length);
-      if (!checkGameOver()) gmCheck(playChess(p));
+      if (!checkGameOver()) {
+        commentOnOpponentMove(playChess(p), p.moves.at(-1));
+        gmCheck(playChess(p));
+      }
     }
   }
 }
