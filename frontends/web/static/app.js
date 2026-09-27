@@ -740,6 +740,9 @@ function markdown(text) {
     } else if (/^\s*\**habit to build:?\**:?/i.test(block)) {
       const body = block.replace(/^\s*\**habit to build:?\**:?\s*/i, '');
       html.push(`<div class="habit"><div class="habit-h">🧠 Habit to build</div><p>${lines.length > 1 ? body.split('\n').map((l) => inline(l, seen)).join('<br>') : inline(body, seen)}</p></div>`);
+    } else if (/^\s*\**pro tip:?\**:?/i.test(block)) {
+      const body = block.replace(/^\s*\**pro tip:?\**:?\s*/i, '');
+      html.push(`<div class="protip"><div class="protip-h">💡 Pro tip</div><p>${lines.length > 1 ? body.split('\n').map((l) => inline(l, seen)).join('<br>') : inline(body, seen)}</p></div>`);
     } else if (lines.every((l) => /^\s*[-*] /.test(l))) {
       html.push(`<ul>${lines.map((l) => `<li>${inline(l.replace(/^\s*[-*] /, ''), seen)}</li>`).join('')}</ul>`);
     } else {
