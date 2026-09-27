@@ -453,4 +453,4 @@ dialog.wide { width: min(720px, calc(100vw - 32px)); }
 .line-btn:hover { background: #3d5a26; border-color: #81b64c; color: #eafddc; }
 .line-btn .line-play { font-weight: 800; }
 .line-btn .line-preview { font-size: 11px; color: #a9d67a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.line-btn.stale { opacity: .4; }
+.chat-log button.stale { display: none; }
