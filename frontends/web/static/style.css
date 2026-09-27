@@ -180,11 +180,8 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .msg .tools summary::-webkit-details-marker { display: none; }
 .msg .tools[open] summary { margin-bottom: 4px; }
 .msg .tools div { padding: 1px 4px; }
-.san { display: inline-flex; align-items: baseline; gap: 3px; font-weight: 700; color: #d9f2b8; background: #2f4020;
-       border: 1px solid #45602c; border-radius: 5px; padding: 0 5px; cursor: pointer; white-space: nowrap; line-height: 1.35; }
-.san:hover { background: #3d5a26; border-color: #6c9a40; }
-.san .fig { font-style: normal; font-size: 1.05em; font-variant-emoji: text; }
-.san .mvno { font-size: 10px; font-weight: 800; color: #9fc27a; letter-spacing: .02em; }
+.san { font-weight: 700; color: #d9f2b8; border-bottom: 2px solid #6c9a40; cursor: pointer; padding: 0 1px; border-radius: 2px; white-space: nowrap; }
+.san:hover { background: #4a7030; color: #eafddc; }
 .thinking { color: var(--muted); font-style: italic; }
 .thinking::after { content: "…"; animation: dots 1.2s steps(4) infinite; display: inline-block; width: 1.2em; overflow: hidden; vertical-align: bottom; }
 @keyframes dots { from { width: 0; } to { width: 1.2em; } }
@@ -362,7 +359,12 @@ ol.points li:nth-child(3n+3) { --pt: #e6b450; background: #332c1a; }
 ol.points li:nth-child(3n+1):hover { background: #2b3a22; }
 ol.points li:nth-child(3n+2):hover { background: #22323f; }
 ol.points li:nth-child(3n+3):hover { background: #3d3420; }
-.pt-title { display: block; font-weight: 800; color: var(--pt, var(--accent)); margin-bottom: 3px; letter-spacing: .01em; font-size: 14px; }
+.pt-title { display: flex; align-items: center; gap: 6px; font-weight: 800; color: var(--pt, var(--accent)); margin-bottom: 5px; letter-spacing: .01em; font-size: 14px; }
+.pt-title::before { content: '▶'; font-size: 10px; opacity: 0.7; flex-shrink: 0; }
+/* card-title move mention: styled in the card's accent colour so it reads as "the move to play" */
+ol.points li:nth-child(3n+1) .pt-title .san { color: #81b64c; border-color: #4a7030; }
+ol.points li:nth-child(3n+2) .pt-title .san { color: #5aa9e6; border-color: #3a6a90; }
+ol.points li:nth-child(3n+3) .pt-title .san { color: #e6b450; border-color: #906e28; }
 .habit { background: #22301a; border: 1px solid #4b6b2f; border-radius: 8px; padding: 8px 11px; margin: 4px 0 8px; }
 .habit-h { font-size: 12px; font-weight: 800; color: #a9d67a; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 3px; }
 .habit p { margin: 0; }
@@ -428,5 +430,5 @@ dialog.wide { width: min(720px, calc(100vw - 32px)); }
 .line-btn .line-play { font-weight: 700; }
 .line-btn .line-preview { font-size: 10px; color: #607848; }
 .line-btn.stale { opacity: .4; }
-/* inside a numbered point card: push to its own line at the bottom */
-ol.points li .line-btn { display: block; margin-top: 8px; width: fit-content; }
+/* inside a card or callout: push to its own line at the bottom */
+ol.points li .line-btn, .habit .line-btn, .alert-red .line-btn { display: block; margin-top: 8px; width: fit-content; }

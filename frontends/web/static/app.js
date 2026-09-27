@@ -604,7 +604,6 @@ const SAN_RE = /\b((?:\d+\.(?:\.\.)?\s?)?(?:[KQRBN][a-h]?[1-8]?x?[a-h][1-8]|[a-h
 
 // ---- chat rendering: moves as chips, evals as badges, chess terms with definitions
 
-const FIGURINE = { K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞' };
 const GLOSSARY = {
   'tempo': 'A move\'s worth of time. Gaining a tempo means forcing your opponent to spend a move reacting (e.g. moving an attacked queen) while you improve.',
   'pin': 'A piece can\'t move (or shouldn\'t) because a more valuable piece or the king stands behind it on the same line.',
@@ -654,11 +653,8 @@ function evalWords(v) {
 function moveChip(token) {
   const m = token.match(/^(\d+)\.(\.\.)?\s?(.*)$/);
   const san = m ? m[3] : token;
-  const shown = esc(san).replace(/^([KQRBN])/, (p) => `<i class="fig">${FIGURINE[p]}</i>`)
-    .replace(/=([QRBN])/, (_, p) => `=<i class="fig">${FIGURINE[p]}</i>`);
-  const no = m ? `<span class="mvno">${m[2] ? 'B' : 'W'}${m[1]}</span>` : '';
   const title = m ? `${m[2] ? 'Black' : 'White'}, move ${m[1]}: ${san}. Click to see it on the board.` : `${san}: click to play it on the board`;
-  return `<span class="san" data-token="${esc(token)}" title="${esc(title)}">${no}${shown}</span>`;
+  return `<span class="san" data-token="${esc(token)}" title="${esc(title)}">${esc(san)}</span>`;
 }
 
 // squares named in the chat: hover to highlight, click to keep highlighted (click again, or Esc, to clear)
@@ -809,36 +805,22 @@ function legalAt(k, san) {
   }
 }
 
-// ---- runs of 3+ moves in an answer collapse into one "▶ Move order" button that plays the line
+// ---- every point/callout that mentions a move gets its own "▶ Show on board" button,
+// built from every move chip inside it (in order), whether or not they sit side by side
 
-function groupMoveRuns(root) {
-  const SEP = /^[\s:;,–—-]*$/;  // only punctuation between chips ("If 17. Kf1: 17...fxe4 18. Kg2")
+function addLineButtons(root) {
   root.querySelectorAll('p, li, .alert-red, .habit p').forEach((block) => {
-    const runs = [];
-    let cur = [];
-    const close = () => {
-      while (cur.length && cur.at(-1).nodeType === Node.TEXT_NODE) cur.pop();  // trailing separators
-      if (cur.filter((n) => n.nodeType === Node.ELEMENT_NODE).length >= 3) runs.push(cur);
-      cur = [];
-    };
-    for (const node of [...block.childNodes]) {
-      if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('san')) cur.push(node);
-      else if (node.nodeType === Node.TEXT_NODE && cur.length && SEP.test(node.textContent)) cur.push(node);
-      else close();
-    }
-    close();
-    for (const run of runs) {
-      const chips = run.filter((n) => n.nodeType === Node.ELEMENT_NODE);
-      const tokens = chips.map((c) => c.dataset.token);
-      const btn = document.createElement('button');
-      btn.className = 'line-btn';
-      btn.title = `${tokens.join(' ')}\nClick to play this line on the demo board`;
-      const preview = `${tokens[0]} … ${tokens.at(-1).replace(/^\d+\.(\.\.)?\s?/, '')}`;
-      btn.innerHTML = `<span class="line-play">▶ Move order</span><span class="line-preview">${esc(preview)} · ${tokens.length} moves</span>`;
-      btn.onclick = () => { if (!playLine(tokens)) btn.classList.add('stale'); };
-      block.insertBefore(btn, run[0]);
-      run.forEach((n) => n.remove());
-    }
+    const chips = [...block.querySelectorAll('.san')];
+    if (!chips.length) return;
+    const tokens = chips.map((c) => c.dataset.token);
+    const btn = document.createElement('button');
+    btn.className = 'line-btn';
+    btn.title = `${tokens.join(' ')}\nClick to play this on the demo board`;
+    const last = tokens.at(-1).replace(/^\d+\.(\.\.)?\s?/, '');
+    const preview = tokens.length > 1 ? `${tokens[0]} … ${last} · ${tokens.length} moves` : tokens[0];
+    btn.innerHTML = `<span class="line-play">▶ Show on board</span><span class="line-preview">${esc(preview)}</span>`;
+    btn.onclick = () => { if (!playLine(tokens)) btn.classList.add('stale'); };
+    block.appendChild(btn);
   });
 }
 
@@ -868,7 +850,8 @@ function playLine(tokens) {
     while (p < first.k && p < game.length && line.sans[p] === game[p]) p++;
     origin = { ply: p + 1, then_moves: line.sans.slice(p, first.k) };
   }
-  openDemo({ title: `Move order: ${tokens[0]}`, start_fen: startFen, moves, notes: [], ...origin });
+  const title = tokens.length > 1 ? `Move order: ${tokens[0]}` : `On the board: ${tokens[0]}`;
+  openDemo({ title, start_fen: startFen, moves, notes: [], ...origin });
   return true;
 }
 
@@ -988,7 +971,7 @@ function addMsg(kind, html, where) {
   const div = document.createElement('div');
   div.className = `msg ${kind}`;
   div.innerHTML = (where ? `<span class="where">${esc(where)}</span>` : '') + html;
-  groupMoveRuns(div);
+  addLineButtons(div);
   div.querySelectorAll('.san').forEach((el) => {
     const dest = moveDestination(el.dataset.token);
     el.onclick = () => {
