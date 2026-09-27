@@ -3,7 +3,6 @@ import { Chess } from './vendor/chess-1.4.0.js';
 
 const $ = (id) => document.getElementById(id);
 const FLAG = { inaccuracy: '?!', mistake: '?', blunder: '??' };
-const PLURAL = { inaccuracy: 'inaccuracies', mistake: 'mistakes', blunder: 'blunders' };
 
 const state = {
   review: null,     // game (or empty analysis board) from the server
@@ -14,7 +13,6 @@ const state = {
   me: '',
   coachReady: false,
   explorerReady: false,
-  etab: 'engine',   // bottom panel: 'engine' lines or opening 'explorer'
   audience: 'coach',
   replay: null,     // replaying a loaded game: {color, hint}; the opponent follows the PGN
   chatBusy: false,
@@ -333,35 +331,17 @@ function renderInfo() {
 
   if (state.play) return renderPlayInfo();
   if (!r.moves.length) {
-    $('game-info').innerHTML = 'Analysis board<div class="sub">Move pieces freely and ask the coach about any position.</div>';
-    $('summary').innerHTML = '<div class="play-buttons"><button class="btn ghost small" id="btn-setup-inline">Set up position</button></div>';
-    $('btn-setup-inline').onclick = openEditor;
+    $('game-info').textContent = 'Analysis board';
+    $('board-sub').textContent = 'Move pieces freely and ask the coach about any position.';
+    $('summary').innerHTML = '';
     return;
   }
-  $('game-info').innerHTML = `${esc(r.white)} vs ${esc(r.black)} · ${esc(r.result)}
-    <div class="sub">${esc(r.opening || '')}</div>`;
+  $('game-info').innerHTML = `${esc(r.white)} vs ${esc(r.black)} · ${esc(r.result)}`;
+  $('board-sub').textContent = r.opening || '';
 
-  const whose = r.player_color;
-  const counts = {};
-  for (const m of r.moves) if (m.class && (!whose || m.color === whose)) (counts[m.class] ||= []).push(m.ply);
-  const parts = ['blunder', 'mistake', 'inaccuracy']
-    .filter((k) => counts[k])
-    .map((k) => `<span class="tag ${k}" data-cls="${k}" title="Jump to next ${k}">${counts[k].length} ${counts[k].length > 1 ? PLURAL[k] : k}</span>`);
   if (state.replay) return renderReplayInfo();
-  $('summary').innerHTML = (parts.length
-    ? `<span style="color:var(--muted)">${whose ? 'Your' : 'Flagged'} moves:</span> ${parts.join('')}`
-    : `<span style="color:var(--muted)">No inaccuracies, mistakes or blunders${whose ? ' by you' : ''}.</span>`)
-    + `<div class="play-buttons"><button class="btn small" id="btn-from-here">▶ Play from here</button>`
-    + `<button class="btn ghost small" id="btn-setup-from-here">Set up position</button></div>`;
+  $('summary').innerHTML = '<div class="play-buttons"><button class="btn small" id="btn-from-here">▶ Play from here</button></div>';
   $('btn-from-here').onclick = openFromDialog;
-  $('btn-setup-from-here').onclick = openEditor;
-  $('summary').querySelectorAll('.tag').forEach((el) => {
-    el.onclick = () => {
-      const plies = counts[el.dataset.cls];
-      const next = plies.find((p) => p > state.ply) ?? plies[0];
-      goTo(next);
-    };
-  });
 }
 
 function renderMoves() {
@@ -503,21 +483,11 @@ function explorerFilters() {
   };
 }
 
-function setEtab(tab) {
-  state.etab = tab;
-  store('etab', tab);
-  $('etabs').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.etab === tab));
-  $('engine-pane').classList.toggle('hidden', tab !== 'engine');
-  $('explorer-pane').classList.toggle('hidden', tab !== 'explorer');
-  document.body.classList.toggle('etab-explorer', tab === 'explorer');
-  if (tab === 'explorer' && !state.editor) requestExplorer(currentGame());
-}
-
 function requestExplorer(c) {
   clearTimeout(xTimer);
   if (linesFor && !state.demo && c && c.fen() !== linesFor) { $('x-lines-box').classList.add('hidden'); linesFor = null; }
   const token = ++xToken;
-  if (state.etab !== 'explorer' || !c) return;
+  if (!c) return;
   const f = explorerFilters();
   $('x-band').disabled = $('x-speed').disabled = f.db === 'masters';
   if (!state.explorerReady) {
@@ -658,6 +628,7 @@ function update() {
   renderInfo();
   renderMoves();
   renderVariation();
+  syncLineButtons();
   requestEval(c);
   requestExplorer(c);
 }
@@ -892,29 +863,50 @@ function addLineButtons(root) {
     const chips = [...block.querySelectorAll('.san')];
     if (!chips.length) return;
     const tokens = chips.map((c) => c.dataset.token);
+    const key = tokens.join('|');
     // a numbered option card is one visual unit: make the whole card clickable instead of
     // bolting a separate button onto it (inner chips still handle their own click first)
     if (block.tagName === 'LI' && block.parentElement.classList.contains('points')) {
       block.classList.add('card-play');
-      block.title = `${tokens.join(' ')}\nClick to play this on the demo board`;
+      block.dataset.key = key;
+      block.title = `${tokens.join(' ')}\nClick to play this on the demo board, click again to return`;
       block.onclick = (e) => {
         if (e.target.closest('.san, .sq, .term')) return;
-        if (!playLine(tokens)) block.classList.add('stale');
+        if (!toggleLine(tokens, key)) block.classList.add('stale');
       };
       return;
     }
     const btn = document.createElement('button');
     btn.className = 'line-btn';
-    btn.title = `${tokens.join(' ')}\nClick to play this on the demo board`;
+    btn.dataset.key = key;
+    btn.title = `${tokens.join(' ')}\nClick to play this on the demo board, click again to return`;
     const last = tokens.at(-1).replace(/^\d+\.(\.\.)?\s?/, '');
     const preview = tokens.length > 1 ? `${tokens[0]} … ${last} · ${tokens.length} moves` : tokens[0];
     btn.innerHTML = `<span class="line-play">▶ Show on board</span><span class="line-preview">${esc(preview)}</span>`;
-    btn.onclick = () => { if (!playLine(tokens)) btn.classList.add('stale'); };
+    btn.onclick = () => { if (!toggleLine(tokens, key)) btn.classList.add('stale'); };
     block.appendChild(btn);
   });
 }
 
-function playLine(tokens) {
+function syncLineButtons() {
+  const activeKey = state.demo?.sourceKey;
+  document.querySelectorAll('.line-btn').forEach((btn) => {
+    const active = !!activeKey && btn.dataset.key === activeKey;
+    btn.classList.toggle('active', active);
+    btn.querySelector('.line-play').textContent = active ? '◀ Back to board' : '▶ Show on board';
+  });
+  document.querySelectorAll('.card-play').forEach((card) => {
+    card.classList.toggle('active', !!activeKey && card.dataset.key === activeKey);
+  });
+}
+
+function toggleLine(tokens, key) {
+  // clicking the button that's currently showing its line just closes the demo again
+  if (state.demo && state.demo.sourceKey === key) { closeDemo(); return true; }
+  return playLine(tokens, key);
+}
+
+function playLine(tokens, sourceKey) {
   // start from the position before the line's first move (found via its move number), play it as a demo
   const line = currentLine();
   const first = resolveToken(tokens[0]);
@@ -941,7 +933,7 @@ function playLine(tokens) {
     origin = { ply: p + 1, then_moves: line.sans.slice(p, first.k) };
   }
   const title = tokens.length > 1 ? `Move order: ${tokens[0]}` : `On the board: ${tokens[0]}`;
-  openDemo({ title, start_fen: startFen, moves, notes: [], ...origin });
+  openDemo({ title, start_fen: startFen, moves, notes: [], sourceKey: sourceKey ?? tokens.join('|'), ...origin });
   return true;
 }
 
@@ -1600,13 +1592,12 @@ function renderDemoInfo() {
   $('player-top').innerHTML = `<span class="demo-tag">Demo board</span><span class="demo-sub">your game is paused</span>
     <button class="btn small" id="demo-exit-top">Back to my game</button>`;
   $('demo-exit-top').onclick = () => closeDemo();
-  $('game-info').innerHTML = `${esc(d.title)}<div class="sub">${d.edited ? 'Your own line from here: keep exploring, or ask the coach about it.' : 'The coach’s line. Step through it, or move pieces to try something else.'}</div>`;
+  $('game-info').textContent = d.title;
+  $('board-sub').textContent = d.edited ? 'Your own line from here: keep exploring, or ask the coach about it.' : 'The coach’s line. Step through it, or move pieces to try something else.';
   const note = d.step ? d.notes[d.step - 1] : '';
   $('summary').innerHTML = `<div class="play-buttons">
-      <button class="btn small" id="demo-exit">Back to my game</button>
       <button class="btn ghost small" id="demo-replay">Replay</button>
     </div>${note ? `<div class="demo-note">${inline(note)}</div>` : ''}`;
-  $('demo-exit').onclick = () => closeDemo();
   $('demo-replay').onclick = () => openDemo({ ...d, moves: d.moves, notes: d.notes });
 }
 
@@ -1756,7 +1747,8 @@ function updateEditor() {
   $('player-bottom').innerHTML = '';
   document.body.classList.remove('demo-mode');
   document.body.classList.add('editor-mode');
-  $('game-info').innerHTML = 'Set up a position<div class="sub">Great for endgame practice: set it up, then play it out against the bot.</div>';
+  $('game-info').textContent = 'Set up a position';
+  $('board-sub').textContent = 'Great for endgame practice: set it up, then play it out against the bot.';
   $('summary').innerHTML = `<div class="play-buttons">
       <button class="btn small" id="ed-play" ${problem ? 'disabled' : ''}>Play vs bot from here</button>
       <button class="btn ghost small" id="ed-analyse" ${problem ? 'disabled' : ''}>Analyse</button>
@@ -2090,12 +2082,14 @@ function takeback() {
   if (playChess(p).turn() !== mine) botMove();  // back at a start position where the bot moves first
 }
 
-function resign() {
+function stopBotThinking() {
+  // for a misclick/typo: drop the bot's in-flight reply without undoing your own move, so you
+  // get a moment to look before it lands (Takeback is still there if the move itself was wrong)
   const p = state.play;
-  if (!p || p.over) return;
+  if (!p || !p.thinking) return;
   playToken++;
   p.thinking = false;
-  endGame('loss', 'You resigned.');
+  playView(p.moves.length);
 }
 
 function reviewPlayedGame() {
@@ -2119,7 +2113,8 @@ function reviewPlayedGame() {
 
 function renderPlayInfo() {
   const p = state.play;
-  $('game-info').innerHTML = `Practice game vs bot<div class="sub">${esc(p.levelName)} · you play ${p.color}</div>`;
+  $('game-info').textContent = 'Practice game vs bot';
+  $('board-sub').textContent = `${p.levelName} · you play ${p.color}`;
   let status, cls = '';
   if (p.over) {
     status = p.over.text;
@@ -2127,16 +2122,18 @@ function renderPlayInfo() {
   } else if (p.thinking) status = 'Bot is thinking…';
   else if (p.view < p.moves.length) status = 'Viewing an earlier position; press → or ⏭ to return';
   else status = 'Your move';
+  const takebackBtn = `<button class="btn ghost small" id="pb-takeback" ${p.moves.length ? '' : 'disabled'}>Takeback</button>`;
   const buttons = p.over
     ? `<button class="btn small" id="pb-review">Review this game</button>
-       <button class="btn ghost small" id="pb-again">New game</button>`
-    : `<button class="btn ghost small" id="pb-takeback" ${p.moves.length ? '' : 'disabled'}>Takeback</button>
-       <button class="btn ghost small" id="pb-resign" ${p.moves.length ? '' : 'disabled'}>Resign</button>`;
+       <button class="btn ghost small" id="pb-again">New game</button>
+       ${takebackBtn}`
+    : `${p.thinking ? '<button class="btn ghost small" id="pb-stop">Stop bot</button>' : ''}
+       ${takebackBtn}`;
   $('summary').innerHTML = `<div class="status ${cls}">${esc(status)}</div><div class="play-buttons">${buttons}</div>`;
   $('pb-review')?.addEventListener('click', reviewPlayedGame);
   $('pb-again')?.addEventListener('click', openPlayDialog);
+  $('pb-stop')?.addEventListener('click', stopBotThinking);
   $('pb-takeback')?.addEventListener('click', takeback);
-  $('pb-resign')?.addEventListener('click', resign);
 }
 
 function renderPlayMoves(box) {
@@ -2349,11 +2346,6 @@ $('load-go').onclick = () => {
   loadGame(ref);
 };
 
-$('btn-analysis').onclick = async () => {
-  const review = await api('/api/analysis', {});
-  setReview(review, 'Fresh analysis board. Play moves and ask the coach anything.');
-};
-
 $('board').addEventListener('mousemove', (e) => showPieceHover(squareFromEvent(e)));
 $('board').addEventListener('mouseleave', () => { hoverPieceSq = null; renderShapes(); });
 $('board').addEventListener('mousedown', () => { hoverPieceSq = null; renderShapes(); });
@@ -2368,8 +2360,24 @@ $('nav-flip').onclick = () => {
   state.orientation = state.orientation === 'white' ? 'black' : 'white';
   update();
 };
+// moves/engine/explorer live in a dropdown off the game panel, closed by default; board + chat
+// stay the main event and never resize when it opens
+function closeGpDropdown() {
+  $('gp-details').classList.add('hidden');
+  $('gp-toggle').classList.add('collapsed');
+}
+$('gp-toggle').onclick = (e) => {
+  e.stopPropagation();
+  const isOpen = !$('gp-toggle').classList.contains('collapsed');
+  if (isOpen) closeGpDropdown();
+  else { $('gp-details').classList.remove('hidden'); $('gp-toggle').classList.remove('collapsed'); }
+};
+document.addEventListener('click', (e) => {
+  if (!$('gp-details').classList.contains('hidden') && !e.target.closest('.game-panel')) closeGpDropdown();
+});
+closeGpDropdown();
+
 $('engine-toggle').onchange = (e) => setEngine(e.target.checked);
-$('etabs').querySelectorAll('button').forEach((b) => { b.onclick = () => setEtab(b.dataset.etab); });
 $('x-lines').onclick = showLines;
 for (const id of ['x-db', 'x-band', 'x-speed']) {
   $(id).onchange = () => {
@@ -2397,6 +2405,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Home') goTo(0);
   else if (e.key === 'End') $('nav-end').click();
   else if (e.key === 'f') $('nav-flip').click();
+  else if (e.key === 'Escape' && !$('gp-details').classList.contains('hidden')) closeGpDropdown();
   else if (e.key === 'Escape' && pinnedSquares.size) { pinnedSquares.clear(); paintSquares(); }
   else if (e.key === 'Escape' && state.demo) closeDemo();
   else if (e.key === 'Escape' && state.replay) stopReplay();
@@ -2415,17 +2424,15 @@ document.addEventListener('keydown', (e) => {
   $('x-db').value = recall('x-db') || 'masters';
   for (const id of ['x-band', 'x-speed']) { const v = recall(id); if (v !== null) $(id).value = v; }
   updateLinesButton();
-  setEtab(recall('etab') === 'explorer' ? 'explorer' : 'engine');
   state.me = recall('me') || cfg.me || '';
   const engineOn = recall('engineOn') !== '0';
   $('engine-toggle').checked = engineOn;
   state.engineOn = engineOn;
   $('evalbar').classList.toggle('off', !engineOn);
   $('engine-lines').classList.toggle('hidden', !engineOn);
-  const review = await api('/api/review');
-  const linked = +(location.hash.match(/ply=(\d+)/)?.[1] || 0);
+  // every fresh page load starts clean on the analysis board, not whatever was last loaded
+  const review = await api('/api/analysis', {});
   setReview(review, cfg.coach_ready
-    ? 'Load one of your games, or play moves on the board and ask the coach about them.'
+    ? 'Move pieces on the board and ask the coach about any position, or load one of your games.'
     : 'Coach offline: set ANTHROPIC_API_KEY and restart the server to chat. Board and engine work without it.');
-  if (linked) goTo(linked);
 })();

@@ -51,7 +51,9 @@ header {
 
 main {
   display: grid;
-  grid-template-columns: auto minmax(260px, 320px) minmax(300px, 1fr);
+  /* board + chat are the main event; the game panel is a slim strip whose moves/engine/explorer
+     content only appears as a dropdown (#gp-details), so it never has to compete for width */
+  grid-template-columns: auto minmax(190px, 230px) minmax(340px, 1fr);
   gap: 16px; padding: 16px; align-items: start; max-width: 1500px; margin: 0 auto;
 }
 
@@ -135,12 +137,33 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
   background: var(--panel); border-radius: 8px; display: flex; flex-direction: column;
   height: calc(min(640px, calc(100vh - 170px)) + 56px); min-height: 420px; overflow: hidden;
 }
+/* the game panel itself is just the always-visible status strip; its height follows its
+   content instead of matching the board, since the rest of it lives in the #gp-details dropdown */
+.game-panel { position: relative; height: auto; min-height: 0; overflow: visible; }
 .game-info { padding: 12px 14px 4px; font-weight: 600; }
-.game-info .sub { color: var(--muted); font-weight: 400; font-size: 13px; }
+.board-sub { color: var(--muted); font-size: 13px; padding-left: 34px; min-height: 18px; }
 .summary { padding: 4px 14px 8px; display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; }
-.summary .tag { border-radius: 10px; padding: 1px 8px; font-weight: 600; color: #1c1b19; cursor: pointer; }
 
-.moves { flex: 1; overflow-y: auto; border-top: 1px solid var(--line); font-size: 14px; }
+.gp-toggle {
+  background: none; border: 0; border-top: 1px solid var(--line); color: var(--muted);
+  text-align: left; padding: 8px 14px; font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .03em; width: 100%;
+}
+.gp-toggle:hover { color: var(--text); }
+.gp-toggle::before { content: "▾ "; }
+.gp-toggle.collapsed::before { content: "▸ "; }
+
+/* dropdown: floats over whatever's below/beside it instead of pushing the grid around; wider than
+   its narrow trigger column so the explorer filters aren't cramped */
+#gp-details {
+  position: absolute; top: 100%; left: 0; z-index: 15; margin-top: 2px;
+  width: min(320px, calc(100vw - 48px));
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 14px 32px rgba(0,0,0,.5);
+  max-height: min(520px, calc(100vh - 220px)); overflow-y: auto;
+}
+
+.moves { overflow-y: auto; border-top: 1px solid var(--line); font-size: 14px; }
 .moves .row { display: grid; grid-template-columns: 44px 1fr 1fr; }
 .moves .row:nth-child(even) { background: #2b2a27; }
 .moves .num { color: var(--muted); padding: 4px 8px; text-align: right; }
@@ -149,9 +172,9 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .moves .mv.active { background: #4b4845; font-weight: 700; }
 .moves .empty { color: var(--muted); padding: 16px; font-size: 13px; }
 .flag { font-size: 11px; font-weight: 800; border-radius: 8px; padding: 0 5px; color: #1c1b19; }
-.flag.inaccuracy, .tag.inaccuracy { background: var(--inaccuracy); }
-.flag.mistake, .tag.mistake { background: var(--mistake); }
-.flag.blunder, .tag.blunder { background: var(--blunder); color: #fff; }
+.flag.inaccuracy { background: var(--inaccuracy); }
+.flag.mistake { background: var(--mistake); }
+.flag.blunder { background: var(--blunder); color: #fff; }
 
 .variation {
   border-top: 1px solid var(--line); padding: 8px 14px; font-size: 13px;
@@ -234,7 +257,7 @@ dialog textarea { width: 100%; resize: vertical; }
 
 /* ---------- small screens ---------- */
 @media (max-width: 1150px) {
-  main { grid-template-columns: auto 1fr; }
+  main { grid-template-columns: auto minmax(190px, 230px); }
   .chat-panel { grid-column: 1 / -1; height: 520px; }
 }
 @media (max-width: 760px) {
@@ -300,11 +323,9 @@ body.editor-mode .nav { display: none; }
 .offline-box { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 10px; }
 .offline-box .hint { margin: 0; }
 
-/* ---------- engine / explorer tabs ---------- */
-.engine { max-height: 46%; overflow-y: auto; }
-.etabs { display: flex; gap: 4px; margin-bottom: 6px; }
-.etabs button { background: none; border: 0; color: var(--muted); font-weight: 700; font-size: 13px; padding: 2px 8px; border-radius: 4px; }
-.etabs button.on { background: #3c3a37; color: var(--text); }
+/* ---------- engine + explorer, both shown at once ---------- */
+#explorer-pane { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; }
+.eng-h { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin-bottom: 6px; }
 .xfilters { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
 .xfilters select { padding: 3px 6px; font-size: 12px; flex: 1; min-width: 0; }
 .xfilters select:disabled { opacity: .45; }
@@ -322,8 +343,6 @@ body.editor-mode .nav { display: none; }
 .x-games-h { color: var(--muted); font-size: 12px; margin: 8px 0 2px; }
 .x-game { font-size: 12px; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
 .x-game:hover { background: #3a3835; }
-body.etab-explorer .engine { max-height: 64%; min-height: 45%; }
-
 /* ---------- audience, GM moments, play from here ---------- */
 .chat-head { gap: 10px; }
 .seg.small { padding: 2px; }
@@ -453,4 +472,7 @@ dialog.wide { width: min(720px, calc(100vw - 32px)); }
 .line-btn:hover { background: #3d5a26; border-color: #81b64c; color: #eafddc; }
 .line-btn .line-play { font-weight: 800; }
 .line-btn .line-preview { font-size: 11px; color: #a9d67a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.line-btn.active { background: #81b64c; border-color: #81b64c; color: #1c1b19; }
+.line-btn.active .line-preview { color: #274016; }
+ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px rgba(0,0,0,.4); }
 .chat-log button.stale { display: none; }

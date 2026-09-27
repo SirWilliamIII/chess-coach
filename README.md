@@ -28,7 +28,8 @@ terminal version.
   Moves in its answers are clickable and play on the board.
 - **Play bot**: practice games against Stockfish at 9 strength levels (~600 to full strength).
   Ask the coach for ideas mid-game ("what idea should I aim for?"); it teaches the plan rather
-  than giving away the move unless you ask. Takeback/resign, then **Review this game**.
+  than giving away the move unless you ask. Takeback is always available, even after the game
+  ends; then **Review this game**.
 - **Play from here** (in a reviewed game): **Best moves only** takes over the position against a
   full-strength bot; **Replay exactly as it went** has you replay your own moves while the opponent
   plays theirs, and the coach steps in at GM moments (and warns you before the opponent's).
