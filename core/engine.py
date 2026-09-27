@@ -165,6 +165,7 @@ BOT_LEVELS = [
     {"id": 3, "name": "Casual (~1000)", "skill": 3, "depth": 4},
     {"id": 4, "name": "Improving (~1200)", "skill": 6, "depth": 6},
     {"id": 5, "name": "Club (~1400)", "elo": 1400},
+    {"id": 10, "name": "Intermediate (~1500)", "elo": 1500},
     {"id": 6, "name": "Strong club (~1700)", "elo": 1700},
     {"id": 7, "name": "Expert (~2000)", "elo": 2000},
     {"id": 8, "name": "Master (~2400)", "elo": 2400},

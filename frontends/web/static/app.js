@@ -1828,15 +1828,15 @@ async function startFromBest() {
   playToken++;
   let review;
   try {
-    review = await api('/api/play/new', { color: fromColor, level: 9, fen: c.fen(), origin });
+    review = await api('/api/play/new', { color: fromColor, level: 10, fen: c.fen(), origin });
   } catch (e) {
     addMsg('error', esc(e.message));
     return;
   }
-  const play = { color: fromColor, level: 9, levelName: 'Full strength', startFen: review.start_fen,
+  const play = { color: fromColor, level: 10, levelName: 'Intermediate (~1500)', startFen: review.start_fen,
     moves: [], view: 0, over: null, thinking: false };
   setEngineVisible(false);
-  setReview(review, `Playing on from ${origin} against a full-strength bot. You have ${fromColor}.`, play);
+  setReview(review, `Playing on from ${origin} against a ~1500-rated bot. You have ${fromColor}.`, play);
   if (c.turn() !== fromColor[0]) botMove();
   else gmCheck(c);
 }
