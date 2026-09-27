@@ -743,7 +743,14 @@ function markdown(text) {
     } else if (lines.every((l) => /^\s*[-*] /.test(l))) {
       html.push(`<ul>${lines.map((l) => `<li>${inline(l.replace(/^\s*[-*] /, ''), seen)}</li>`).join('')}</ul>`);
     } else {
-      html.push(`<p>${lines.map((l) => inline(l, seen)).join('<br>')}</p>`);
+      // "**What e5 actually does:** it opens…" -> a standout label line instead of a few bolded words
+      const lbl = lines[0].match(/^\*\*([^*]{3,60}?)\*\*:\s*(.+)$/) || lines[0].match(/^\*\*([^*]{3,60}?):\*\*\s*(.+)$/);
+      if (lbl) {
+        const rest = [inline(lbl[2], seen), ...lines.slice(1).map((l) => inline(l, seen))].join('<br>');
+        html.push(`<p><span class="lbl">${inline(lbl[1], seen)}</span>${rest}</p>`);
+      } else {
+        html.push(`<p>${lines.map((l) => inline(l, seen)).join('<br>')}</p>`);
+      }
     }
   }
   flush();
