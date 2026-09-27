@@ -25,16 +25,16 @@ const state = {
 
 const CHIPS = {
   review: [
-    ['Best move?', 'What is the best move here, and why? Keep it concise — concrete effect, my plan, opponent response if relevant.'],
-    ['Any tactics?', 'Any tactics here? Tricks, traps or high-risk, high-reward ideas, beyond the safe engine move?'],
+    ['Best move', 'What is the best move here, and why? Keep it concise — concrete effect, my plan, opponent response if relevant.'],
+    ['Show me tactics', 'Any tactics here? Tricks, traps or high-risk, high-reward ideas, beyond the safe engine move?'],
     ['Why this move?', 'Why was this move played? Lead with what it does right now. Only include opponent plan or my follow-up if they add real insight.'],
     ['What should I have played?', 'What should have been played instead? Just the concrete difference — what it achieves or what my move allowed.'],
-    ['Step by step', "Walk me through this position step by step. Ask me what I'd play before each move."],
-    ['Main lines', 'Show me the main lines from this position: how to play them properly, the ideas for both sides, and the key traps.'],
+    ['Show me', "Walk me through this position step by step. Ask me what I'd play before each move."],
+    ['Show main lines', 'Show me the main lines from this position: how to play them properly, the ideas for both sides, and the key traps.'],
   ],
   play: [
     ['My plan?', 'What plan should I be aiming for in this position? Keep it short and concrete.'],
-    ['Any tactics?', 'Any tactics for me here? Tricks, traps or high-risk, high-reward ideas?'],
+    ['Show me tactics', 'Any tactics for me here? Tricks, traps or high-risk, high-reward ideas?'],
     ['Their threats?', "What is my opponent threatening right now, and is anything of mine hanging?"],
     ['Hint', "Give me a one-line hint without telling me the move."],
   ],
@@ -319,7 +319,7 @@ function renderMoves() {
   if (state.demo) return renderDemoMoves(box);
   if (state.play) return renderPlayMoves(box);
   if (!r.moves.length) {
-    box.innerHTML = '<div class="empty">No game loaded. Use “Search games” or “Load game”, or just play moves on the board.</div>';
+    box.innerHTML = '<div class="empty">No game loaded. Use “Find game by username” or “Load game”, or just play moves on the board.</div>';
     return;
   }
   let html = '';
@@ -500,7 +500,7 @@ function linesOrigin() {
 
 function updateLinesButton() {
   const masters = $('x-db').value === 'masters';
-  $('x-lines').textContent = masters ? '▶ Most studied lines' : '▶ Most played lines at this level';
+  $('x-lines').textContent = masters ? '▶ Common lines' : '▶ Most played lines at this level';
   $('x-lines').title = masters ? 'The lines masters play most from this position, as demos'
     : 'The lines Lichess players in this rating band play most, as demos';
 }
@@ -548,7 +548,7 @@ async function showLines() {
     moves: l.moves,
     notes: l.steps.map((s) => `Played in ${s.share}% of ${src} here · White wins ${s.white}%, draws ${s.draws}%, Black wins ${s.black}%`),
   }));
-  box.innerHTML = `<div class="x-lines-h"><span>${data.source === 'masters' ? 'Most studied' : 'Most played'} lines`
+  box.innerHTML = `<div class="x-lines-h"><span>${data.source === 'masters' ? 'Common' : 'Most played'} lines`
       + `${data.start_opening ? ` · ${esc(data.start_opening)}` : ''}</span><button class="link" id="x-lines-close">×</button></div>`
     + data.main_lines.map((l, i) => {
       const r = l.results_pct || {};

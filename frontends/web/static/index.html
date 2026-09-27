@@ -13,7 +13,7 @@
     <div class="brand">♞ Chess Coach</div>
     <div class="actions">
       <button id="btn-play" class="btn">Play game</button>
-      <button id="btn-games" class="btn">Search games</button>
+      <button id="btn-games" class="btn">Find game by username</button>
       <button id="btn-library" class="btn ghost">📚 Lessons</button>
       <button id="btn-load" class="btn">Load game</button>
       <button id="btn-analysis" class="btn ghost">Analysis board</button>
@@ -78,7 +78,7 @@
               <option value="classical">Classical</option>
             </select>
           </div>
-          <button class="btn ghost small x-lines-btn" id="x-lines">▶ Most studied lines</button>
+          <button class="btn ghost small x-lines-btn" id="x-lines">▶ Common lines</button>
           <div id="x-lines-box" class="hidden"></div>
           <div id="x-body"></div>
         </div>
@@ -101,7 +101,7 @@
   </main>
 
   <dialog id="dlg-games">
-    <form method="dialog" class="dlg-head"><h2>Search games</h2><button class="link">Close</button></form>
+    <form method="dialog" class="dlg-head"><h2>Find game by username</h2><button class="link">Close</button></form>
     <div class="seg" id="games-tabs">
       <button data-tab="chesscom" class="on">From chess.com</button>
       <button data-tab="saved">Saved on this Pi (offline)</button>
