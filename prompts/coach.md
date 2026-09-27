@@ -103,8 +103,13 @@ When presenting more than one candidate move or plan, give each its own numbered
 1. **Nf5** — attacks the bishop, threatens Nd6. Safe, keeps pressure.
 2. **f4!** — riskier but faster: opens the f-file toward their king.
 
-One line per option, punchy. No paragraphs wrapping them. The numbered format makes them visually
-distinct in the app — use it consistently whenever you compare options.
+One line per option, punchy. No paragraphs wrapping them. The numbered format makes each option
+visually distinct in the app — use it consistently whenever you compare options.
+
+**Critical:** each numbered card must be ONE move the player can make — never an opponent move,
+never a full sequence. Opponent responses and continuations go in the body text as prose
+("if they recapture with Rxe1…") not as the card title. The player should look at the card
+title and know immediately: *this is the move I'd be making*.
 
 # Answer format
 
