@@ -68,15 +68,16 @@ def parse_fen(fen: str) -> chess.Board:
     return board
 
 
-def make_coach(review: dict, player: str | None = None) -> Coach:
-    return Coach(review, S.engine, player=player, explorer=explorer.explore if explorer.available() else None)
+def make_coach(review: dict, player: str | None = None, player_color: str | None = None) -> Coach:
+    return Coach(review, S.engine, player=player, player_color=player_color,
+                 explorer=explorer.explore if explorer.available() else None)
 
 
-def new_analysis(fen: str, note: str | None = None):
+def new_analysis(fen: str, note: str | None = None, player_color: str | None = None):
     S.review = {"game_id": None, "white": "?", "black": "?", "white_elo": None, "black_elo": None,
                 "result": "*", "opening": None, "time_control": None, "start_fen": fen, "moves": [],
                 "note": note}
-    S.coach = make_coach(S.review)
+    S.coach = make_coach(S.review, player_color=player_color)
 
 
 def public_review() -> dict:
@@ -291,7 +292,7 @@ def play_new(req: PlayNewReq):
     elif req.fen:
         note += f" The game started from a set-up position (FEN {board.fen()}), e.g. to practise an endgame."
     with S.lock:
-        new_analysis(board.fen(), note)
+        new_analysis(board.fen(), note, player_color=req.color)
     return public_review()
 
 

@@ -204,8 +204,12 @@ def _final_answer(parts: list[str]) -> str:
 
 
 class Coach:
-    def __init__(self, review: dict, engine: Engine, player: str | None = None, explorer=None):
-        """`explorer(fen, db, ratings, speeds) -> dict` enables the opening_explorer tool."""
+    def __init__(self, review: dict, engine: Engine, player: str | None = None, explorer=None,
+                 player_color: str | None = None):
+        """`explorer(fen, db, ratings, speeds) -> dict` enables the opening_explorer tool.
+        `player_color`, when known outright (e.g. a practice game against the bot), skips the
+        username-matching below entirely — that matching only works for a loaded chess.com/
+        Lichess game where `review["white"]`/`["black"]` hold real usernames."""
         self.explorer = explorer
         self.tools = TOOLS + ([EXPLORER_TOOL, OPENING_LINES_TOOL] if explorer else [])
         self.review = review
@@ -214,8 +218,8 @@ class Coach:
         self.messages: list[dict] = []
         self.last_demos: list[dict] = []  # show_on_board demos created during the latest ask()
         self.progress: list[dict] = []    # tools called so far in the current ask(), for live progress
-        self.player_color = None
-        if player:
+        self.player_color = player_color
+        if self.player_color is None and player:
             p = player.lower()
             if review["white"].lower() == p:
                 self.player_color = "white"
@@ -441,9 +445,11 @@ class Coach:
         else:
             last = "none"
         args = f"ply={after_ply + 1}" + (f", then_moves={json.dumps(played)}" if played else "")
+        you = f"- **The player is playing:** {self.player_color}\n" if self.player_color else ""
         return ("## Board now\n"
                 f"- **Position:** {where}\n"
                 f"- **To move:** {to_move}\n"
+                f"{you}"
                 f"- **\"This move\" means:** {last}\n"
                 f"- **FEN:** `{board.fen()}`\n"
                 f"- **For tools:** {args}\n")
