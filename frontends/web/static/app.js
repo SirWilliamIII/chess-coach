@@ -96,6 +96,15 @@ const cg = Chessground($('board'), {
       hvOppCaptureMid: { key: 'hvOppCaptureMid', color: '#8f2422', opacity: 0.85, lineWidth: 6 },
       hvOppCheckMid:   { key: 'hvOppCheckMid',   color: '#b8262b', opacity: 0.92, lineWidth: 6 },
     },
+    // right-click a piece to hold its threat arrows (instead of drawing a circle); left click
+    // resets them all (chessground's own eraseOnClick already clears its shapes on a left click,
+    // which is what fires this with an empty array)
+    onChange: (shapes) => {
+      if (!shapes.length) { clearHeldThreats(); return; }
+      for (const s of shapes.slice(nativeShapesSeen)) holdThreatSquare(s.orig);
+      nativeShapesSeen = shapes.length;
+      cg.setShapes([]);  // don't let the native circle/arrow render — ours replaces it
+    },
   },
 });
 
@@ -594,6 +603,7 @@ function showExplorer(data) {
 function update() {
   if (state.editor) return updateEditor();
   hoverPieceSq = null;  // position changed; next mousemove will re-draw
+  clearHeldThreats();  // right-clicked threat arrows are stale once the position moves on
   // a pinned/hovered square from chat text refers to the position it was clicked on — stale once
   // the board moves on, so it would otherwise sit there highlighted with no visible explanation
   if (pinnedSquares.size || hoverSquare) {
@@ -952,20 +962,20 @@ function knightShapes(from, to, brush) {
   return [{ orig: from, dest: bend, brush: `${brush}Mid` }, { orig: bend, dest: to, brush }];
 }
 
-function showPieceHover(sq) {
-  if (sq === hoverPieceSq) return;
-  hoverPieceSq = sq;
-  if (!sq || state.editor || state.demo) { cg.setAutoShapes([]); return; }
+// legal-move arrows for the piece on `sq` — [] if none apply right now (empty square, game
+// over, editor/demo mode, or not the player's turn in a live bot game)
+function movesShapesFor(sq) {
+  if (!sq || state.editor || state.demo) return [];
   const c = currentGame();
-  if (c.isGameOver()) { cg.setAutoShapes([]); return; }
+  if (c.isGameOver()) return [];
   const turn = c.turn() === 'w' ? 'white' : 'black';
   // In a live bot game only show during the player's turn
   if (state.play) {
     const p = state.play;
-    if (p.over || p.thinking || p.view !== p.moves.length) { cg.setAutoShapes([]); return; }
+    if (p.over || p.thinking || p.view !== p.moves.length) return [];
   }
   const piece = cg.state.pieces.get(sq);
-  if (!piece) { cg.setAutoShapes([]); return; }
+  if (!piece) return [];
   const isOpponent = piece.color !== turn;
   let moves;
   if (isOpponent) {
@@ -973,15 +983,48 @@ function showPieceHover(sq) {
     const parts = c.fen().split(' ');
     parts[1] = parts[1] === 'w' ? 'b' : 'w';
     try { moves = new Chess(parts.join(' ')).moves({ verbose: true, square: sq }); }
-    catch { cg.setAutoShapes([]); return; }
+    catch { return []; }
   } else {
     moves = c.moves({ verbose: true, square: sq });
   }
-  if (!moves.length) { cg.setAutoShapes([]); return; }
-  cg.setAutoShapes(moves.flatMap((m) => {
+  return moves.flatMap((m) => {
     const brush = moveBrush(m, isOpponent);
     return m.piece === 'n' ? knightShapes(m.from, m.to, brush) : [{ orig: m.from, dest: m.to, brush }];
-  }));
+  });
+}
+
+function renderShapes() {
+  cg.setAutoShapes([...heldThreats, ...(hoverPieceSq ? movesShapesFor(hoverPieceSq) : [])]);
+}
+
+function showPieceHover(sq) {
+  if (sq === hoverPieceSq) return;
+  hoverPieceSq = sq;
+  renderShapes();
+}
+
+// ---- right-click a piece to hold its threat arrows (accumulates across pieces);
+// left click resets them all — see the drawable.onChange hook above
+
+let heldThreats = [];
+let heldSquares = new Set();
+let nativeShapesSeen = 0;
+
+function holdThreatSquare(sq) {
+  if (heldSquares.has(sq)) return;
+  const shapes = movesShapesFor(sq);
+  if (!shapes.length) return;
+  heldSquares.add(sq);
+  heldThreats.push(...shapes);
+  renderShapes();
+}
+
+function clearHeldThreats() {
+  nativeShapesSeen = 0;
+  if (!heldSquares.size) return;
+  heldSquares.clear();
+  heldThreats = [];
+  renderShapes();
 }
 
 function previewMove(token, on) {
@@ -2249,8 +2292,8 @@ $('btn-analysis').onclick = async () => {
 };
 
 $('board').addEventListener('mousemove', (e) => showPieceHover(squareFromEvent(e)));
-$('board').addEventListener('mouseleave', () => { hoverPieceSq = null; cg.setAutoShapes([]); });
-$('board').addEventListener('mousedown', () => { hoverPieceSq = null; cg.setAutoShapes([]); });
+$('board').addEventListener('mouseleave', () => { hoverPieceSq = null; renderShapes(); });
+$('board').addEventListener('mousedown', () => { hoverPieceSq = null; renderShapes(); });
 
 $('btn-back-to-game').onclick = () => { state.extra = []; update(); };
 $('nav-start').onclick = () => goTo(0);
