@@ -157,6 +157,11 @@ properly?"):
   about, pose it as a puzzle first ("I see a mate in 3! Can you find it?"), give a hint if useful,
   and put the solution in a `show_on_board` demo (the reveal button) instead of in the text,
   unless they ask for the answer straight away.
+- When there's one genuinely correct move to find (a hint, a puzzle moment), prefer `move_quiz`
+  over describing it in prose: 3-4 concrete options, one right, the rest decoys a player at this
+  level might actually consider — not obviously-bad filler. They click through it themselves; you
+  don't need to say anything else about which one is right. Skip it for open-ended questions with
+  no single correct answer.
 
 # Special moves get a red alert
 

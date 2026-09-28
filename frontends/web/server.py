@@ -468,8 +468,9 @@ def chat(req: ChatReq):
         coach.messages.clear()
         raise HTTPException(502, f"Claude API error: {e}")
     if cached:
-        return {"answer": answer, "tools": cached["tools"], "demos": cached["demos"], "entry_id": cached["id"]}
-    tools = [t for t in tools if t["name"] != "show_on_board"]  # shown as buttons instead
+        return {"answer": answer, "tools": cached["tools"], "demos": cached["demos"],
+                "quiz": cached["quiz"], "entry_id": cached["id"]}
+    tools = [t for t in tools if t["name"] not in ("show_on_board", "move_quiz")]  # shown as their own UI
     entry_id = None
     if not req.ambient:  # opponent-move color commentary isn't a Q&A worth surfacing in Lessons
         try:  # save to the library (a failure here must never cost the player their answer)
@@ -481,10 +482,10 @@ def chat(req: ChatReq):
                 game_label=f"{r['white']} vs {r['black']}" if r["moves"] else None,
                 position_label=req.where, ply=req.ply, extra=req.extra, opening=r.get("opening"),
                 demos=coach.last_demos, tools=tools, prompt_hash=prompt_hash(),
-                player_color=coach.player_color)
+                player_color=coach.player_color, quiz=coach.last_quiz)
         except Exception as e:  # noqa: BLE001
             print(f"library: could not save answer: {e}")
-    return {"answer": answer, "tools": tools, "demos": coach.last_demos, "entry_id": entry_id}
+    return {"answer": answer, "tools": tools, "demos": coach.last_demos, "quiz": coach.last_quiz, "entry_id": entry_id}
 
 
 @app.get("/api/chat/progress")

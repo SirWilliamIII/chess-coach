@@ -134,6 +134,36 @@ TOOLS = [
             "required": ["title", "ply", "moves"],
         },
     },
+    {
+        "name": "move_quiz",
+        "description": (
+            "Turn 'find the move yourself' into a clickable multiple-choice guess instead of "
+            "describing it in prose. Gives the player 3-4 concrete move options (one correct, the "
+            "rest plausible decoys — moves a player at this level might actually consider, not "
+            "obviously-bad filler); they click one, wrong picks are marked and they can try again, "
+            "the right pick reveals `reward`. Use it whenever you're making the player find a "
+            "specific move rather than just telling them, e.g. for the 'Hint' quick question or a "
+            "puzzle moment — but only when there's one genuinely correct move to guess; skip it for "
+            "open-ended 'what's the plan' questions. Check the correct answer and decoys with "
+            "`compare_moves` or `find_tricks` first — never guess which one is actually right. "
+            "Moves are checked for legality; fix and retry if you get an error."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ply": {"type": "integer", "description": "Ply whose starting position to use (as for analyze_position)"},
+                "then_moves": {"type": "array", "items": {"type": "string"},
+                               "description": "Optional SAN moves to play from that position first"},
+                "options": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 4,
+                            "description": "3-4 candidate moves in SAN, decoys plus the correct one, any order"},
+                "correct": {"type": "string", "description": "Which of `options` is actually correct (exact SAN)"},
+                "reward": {"type": "string",
+                           "description": "One short line shown when the player picks correctly, e.g. "
+                                          "'Exactly — now you can fianchetto that bishop.'"},
+            },
+            "required": ["ply", "options", "correct", "reward"],
+        },
+    },
 ]
 
 
@@ -219,6 +249,7 @@ class Coach:
         self._client = None
         self.messages: list[dict] = []
         self.last_demos: list[dict] = []  # show_on_board demos created during the latest ask()
+        self.last_quiz: dict | None = None  # move_quiz created during the latest ask(), if any
         self.progress: list[dict] = []    # tools called so far in the current ask(), for live progress
         self.player_color = player_color
         if self.player_color is None and player:
@@ -372,6 +403,27 @@ class Coach:
                                 "start_fen": start_fen, "moves": line, "notes": notes})
         return {"ok": True, "demo": len(self.last_demos), "moves": line}
 
+    def move_quiz(self, ply: int, options: list[str], correct: str, reward: str,
+                  then_moves: list[str] | None = None) -> dict:
+        board, setup = self._position(ply, then_moves)
+        legal = []
+        for san in options[:4]:
+            try:
+                mv = board.parse_san(san)
+            except ValueError:
+                raise ValueError(f"option {san!r} is illegal after {' '.join(setup) or 'the starting position'}")
+            legal.append(board.san(mv))
+        if len(legal) < 2:
+            raise ValueError("a quiz needs at least 2 options")
+        try:
+            correct_san = board.san(board.parse_san(correct))
+        except ValueError:
+            raise ValueError(f"the correct answer {correct!r} is illegal in this position")
+        if correct_san not in legal:
+            raise ValueError("`correct` must be one of `options`")
+        self.last_quiz = {"options": legal, "correct": correct_san, "reward": str(reward)[:200]}
+        return {"ok": True, "options": legal}
+
     def opening_explorer(self, ply: int, then_moves: list[str] | None = None, db: str = "lichess",
                          ratings: list[int] | None = None, speeds: list[str] | None = None) -> dict:
         board, played = self._position(ply, then_moves)
@@ -419,6 +471,9 @@ class Coach:
         elif name == "show_on_board":
             result = self.show_on_board(str(args["title"]), int(args["ply"]), list(args["moves"]),
                                         args.get("then_moves"), args.get("notes"))
+        elif name == "move_quiz":
+            result = self.move_quiz(int(args["ply"]), list(args["options"]), str(args["correct"]),
+                                    str(args["reward"]), args.get("then_moves"))
         elif name == "opening_lines" and self.explorer:
             result = self.opening_lines(int(args["ply"]), args.get("then_moves"), int(args.get("depth", 6)),
                                         args.get("db", "masters"), args.get("ratings"))
@@ -479,12 +534,14 @@ class Coach:
         same bug class fixed in 84e28bc). The player still gets the instant answer; the coach just
         has no memory of it for a follow-up, same as if the question had never been asked."""
         self.last_demos = []
+        self.last_quiz = None
         self.progress = []
 
     def ask(self, question: str, focus_ply: int | None = None, on_tool=None, context: str | None = None) -> str:
         text = self._user_turn_text(question, focus_ply, context)
         self.messages.append({"role": "user", "content": text})
         self.last_demos = []
+        self.last_quiz = None
         self.progress = []
 
         parts: list[str] = []  # text written between tool calls counts as part of the answer

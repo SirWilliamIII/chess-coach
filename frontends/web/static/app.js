@@ -34,7 +34,8 @@ const CHIPS = {
       + "if they play X, I play Y; if they try Z, I play W; anything else, I just play <default move>. "
       + 'Keep it short and concrete.'],
     ['Their threats?', "What is my opponent threatening right now, and is anything of mine hanging?"],
-    ['Hint', "Give me a one-line hint without telling me the move."],
+    ['Hint', "Give me a hint without telling me the move. If there's one genuinely correct move here, "
+      + "use move_quiz so I can guess from a few options instead of just describing it."],
   ],
 };
 
@@ -1263,7 +1264,7 @@ async function ask(question, opts = {}) {
         if (!polling) break;
         try {
           const { steps } = await api('/api/chat/progress');
-          const shown = steps.filter((t) => t.name !== 'show_on_board');
+          const shown = steps.filter((t) => t.name !== 'show_on_board' && t.name !== 'move_quiz');
           if (polling && shown.length) {
             pending.innerHTML = `<span class="thinking">${opts.silent ? 'Spotted something' : 'Analysing'}</span>`
               + `<div class="steps">${shown.map((t) => `<div>✓ ${esc(toolLabel(t))}</div>`).join('')}</div>`;
@@ -1300,8 +1301,14 @@ function currentMode() {
   return state.review.moves.length ? 'review' : 'analysis';
 }
 
+function renderQuiz(quiz) {
+  if (!quiz) return '';
+  const opts = quiz.options.map((o) => `<button class="quiz-opt" data-san="${esc(o)}">${esc(o)}</button>`).join('');
+  return `<div class="quiz" data-correct="${esc(quiz.correct)}" data-reward="${esc(quiz.reward)}">${opts}<div class="quiz-reward hidden"></div></div>`;
+}
+
 function renderAnswer(data, opts = {}) {
-  // a coach answer bubble: text, Show me buttons, the checks bubble and a ☆ for the library
+  // a coach answer bubble: text, a move_quiz, Show me buttons, the checks bubble and a ☆ for the library
   const n = (data.tools || []).length;
   const tools = n
     ? `<details class="tools"><summary>🔍 ${n} check${n > 1 ? 's' : ''}</summary>${data.tools.map((t) => `<div title="${esc(toolTitle(t))}">✓ ${esc(toolLabel(t))}</div>`).join('')}</details>` : '';
@@ -1311,8 +1318,27 @@ function renderAnswer(data, opts = {}) {
   const label = opts.label ? `<div class="gm-label">${esc(opts.label)}</div>` : '';
   const star = data.entry_id
     ? `<button class="star${data.starred ? ' on' : ''}" title="Save to favourites in Lessons">${data.starred ? '★' : '☆'}</button>` : '';
-  const msg = addMsg(opts.label ? 'coach gm' : 'coach', star + label + markdown(data.answer) + buttons + tools, opts.where);
+  const msg = addMsg(opts.label ? 'coach gm' : 'coach',
+    star + label + markdown(data.answer) + renderQuiz(data.quiz) + buttons + tools, opts.where);
   msg.querySelectorAll('.demo-btn').forEach((b) => { b.onclick = () => openDemo(demos[+b.dataset.i]); });
+  msg.querySelectorAll('.quiz-opt').forEach((btn) => {
+    const dest = moveDestination(btn.dataset.san);
+    btn.onclick = () => {
+      const box = btn.closest('.quiz');
+      if (btn.dataset.san === box.dataset.correct) {
+        btn.classList.add('correct');
+        box.querySelectorAll('.quiz-opt').forEach((b) => { b.disabled = true; });
+        const reward = box.querySelector('.quiz-reward');
+        reward.textContent = box.dataset.reward;
+        reward.classList.remove('hidden');
+      } else {
+        btn.disabled = true;
+        btn.classList.add('wrong');
+      }
+    };
+    btn.onmouseenter = () => { previewMove(btn.dataset.san, true); if (dest) { hoverSquare = dest; paintSquares(); } };
+    btn.onmouseleave = () => { previewMove(btn.dataset.san, false); hoverSquare = null; paintSquares(); };
+  });
   const starBtn = msg.querySelector('.star');
   if (starBtn) {
     starBtn.onclick = async () => {
