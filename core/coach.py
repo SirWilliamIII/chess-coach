@@ -138,14 +138,20 @@ TOOLS = [
         "name": "move_quiz",
         "description": (
             "Turn 'find the move yourself' into a clickable multiple-choice guess instead of "
-            "describing it in prose. Gives the player 3-4 concrete move options (one correct, the "
+            "describing it in prose. Gives the player 2-4 concrete move options (one correct, the "
             "rest plausible decoys — moves a player at this level might actually consider, not "
-            "obviously-bad filler); they click one, wrong picks are marked and they can try again, "
-            "the right pick reveals `reward`. Use it whenever you're making the player find a "
-            "specific move rather than just telling them, e.g. for the 'Hint' quick question or a "
-            "puzzle moment — but only when there's one genuinely correct move to guess; skip it for "
-            "open-ended 'what's the plan' questions. Check the correct answer and decoys with "
-            "`compare_moves` or `find_tricks` first — never guess which one is actually right. "
+            "obviously-bad filler) — use however many genuinely fit the position, don't pad to a "
+            "fixed count; they click one, wrong picks are marked and they can try again, the right "
+            "pick reveals `reward`. For testing a claim rather than a move choice — 'is this piece "
+            "actually safe', 'does this really win a pawn' — pass options: ['True', 'False'] instead "
+            "of moves. Use it whenever you're making the player find or verify something rather than "
+            "just telling them, e.g. for the 'Hint' quick question or a puzzle moment — but only when "
+            "there's one genuinely correct answer; skip it for open-ended 'what's the plan' "
+            "questions. Check the correct answer and decoys with `compare_moves` or `find_tricks` "
+            "first — never guess which one is actually right. The text you write alongside this call "
+            "should point at a specific tension on the board (what's attacked, what looks safe but "
+            "isn't, what doesn't add up) and let the player arrive at it — 'their bishop is staring "
+            "down your knight, but you have something better...' beats 'compare these three tries.' "
             "Moves are checked for legality; fix and retry if you get an error."
         ),
         "input_schema": {
@@ -155,8 +161,10 @@ TOOLS = [
                 "then_moves": {"type": "array", "items": {"type": "string"},
                                "description": "Optional SAN moves to play from that position first"},
                 "options": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 4,
-                            "description": "3-4 candidate moves in SAN, decoys plus the correct one, any order"},
-                "correct": {"type": "string", "description": "Which of `options` is actually correct (exact SAN)"},
+                            "description": "2-4 candidate moves in SAN (decoys plus the correct one, any "
+                                          "order, however many genuinely fit) — or exactly ['True', 'False'] "
+                                          "for a claim to verify instead of a move to find"},
+                "correct": {"type": "string", "description": "Which of `options` is actually correct (exact SAN, or 'True'/'False')"},
                 "reward": {"type": "string",
                            "description": "One short line shown when the player picks correctly, e.g. "
                                           "'Exactly — now you can fianchetto that bishop.'"},
@@ -405,6 +413,15 @@ class Coach:
 
     def move_quiz(self, ply: int, options: list[str], correct: str, reward: str,
                   then_moves: list[str] | None = None) -> dict:
+        # a claim to verify ("is this piece safe?") rather than a move to find — no board position
+        # to validate options against, since 'True'/'False' aren't moves
+        if {o.strip().lower() for o in options} <= {"true", "false"}:
+            legal = [o.strip().capitalize() for o in options[:2]]
+            correct_norm = correct.strip().capitalize()
+            if correct_norm not in legal:
+                raise ValueError("`correct` must be one of `options`")
+            self.last_quiz = {"options": legal, "correct": correct_norm, "reward": str(reward)[:200]}
+            return {"ok": True, "options": legal}
         board, setup = self._position(ply, then_moves)
         legal = []
         for san in options[:4]:
@@ -498,11 +515,19 @@ class Coach:
         else:
             m = moves[after_ply - 1]
             where = f"the game position after {m['label']} {m['san']} (ply {after_ply})"
+        diverges = ""
         if played:
             how = "these moves were played in the practice game" if self.review.get("note") else \
                 "the player tried these moves on the board"
             where += f", then {how}: {' '.join(played)}"
             last = f"the last move tried ({played[-1]})"
+            # a real game (not a practice session) that actually continues here: say plainly what
+            # really happened next, so the coach can contrast it instead of guessing from memory
+            if not self.review.get("note") and after_ply < len(moves) and moves[after_ply]["san"] != played[0]:
+                actual = moves[after_ply]
+                diverges = (f"- **Diverges from the real game:** it actually continued {actual['label']} "
+                           f"{actual['san']} here; the player tried {played[0]} instead. Everything "
+                           "from here on is a hypothetical branch, not what really happened.\n")
         elif after_ply:
             last = f"{moves[after_ply - 1]['label']} {moves[after_ply - 1]['san']} (move_report ply {after_ply})"
         else:
@@ -513,6 +538,7 @@ class Coach:
                 f"- **Position:** {where}\n"
                 f"- **To move:** {to_move}\n"
                 f"{you}"
+                f"{diverges}"
                 f"- **\"This move\" means:** {last}\n"
                 f"- **FEN:** `{board.fen()}`\n"
                 f"- **For tools:** {args}\n")
