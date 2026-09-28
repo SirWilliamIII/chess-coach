@@ -13,7 +13,6 @@ const state = {
   me: '',
   coachReady: false,
   explorerReady: false,
-  audience: 'coach',
   replay: null,     // replaying a loaded game: {color, hint}; the opponent follows the PGN
   chatBusy: false,
   play: null,       // practice game vs the bot: {color, level, levelName, moves, view, over, thinking}
@@ -341,8 +340,20 @@ function renderInfo() {
   $('board-sub').textContent = r.opening || '';
 
   if (state.replay) return renderReplayInfo();
-  $('summary').innerHTML = '<div class="play-buttons"><button class="btn small" id="btn-from-here">▶ Play from here</button></div>';
-  $('btn-from-here').onclick = openFromDialog;
+  $('summary').innerHTML = '<div class="play-buttons"><button class="btn small" id="btn-from-here">▶ Play from position ▾</button></div>'
+    + '<div id="from-moves" class="hidden moves"></div>';
+  $('btn-from-here').onclick = (e) => { e.stopPropagation(); toggleFromMoves(); };
+}
+
+function movesRows(moves, cellFn) {
+  let html = '';
+  for (let i = 0; i < moves.length;) {
+    const w = moves[i].color === 'white' ? moves[i++] : null;  // a set-up game may start with Black
+    const b = moves[i]?.color === 'black' ? moves[i++] : null;
+    const num = parseInt((w || b).label, 10);
+    html += `<div class="row"><span class="num">${num}.</span>${w ? cellFn(w) : '<span>…</span>'}${b ? cellFn(b) : '<span></span>'}</div>`;
+  }
+  return html;
 }
 
 function renderMoves() {
@@ -354,17 +365,27 @@ function renderMoves() {
     box.innerHTML = '<div class="empty">No game loaded. Use “Find game by username” or “Load game”, or just play moves on the board.</div>';
     return;
   }
-  let html = '';
-  for (let i = 0; i < r.moves.length;) {
-    const w = r.moves[i].color === 'white' ? r.moves[i++] : null;  // a set-up game may start with Black
-    const b = r.moves[i]?.color === 'black' ? r.moves[i++] : null;
-    const num = parseInt((w || b).label, 10);
-    html += `<div class="row"><span class="num">${num}.</span>${w ? cell(w) : '<span>…</span>'}${b ? cell(b) : '<span></span>'}</div>`;
-  }
-  box.innerHTML = html;
+  box.innerHTML = movesRows(r.moves, cell);
   box.querySelectorAll('.mv').forEach((el) => { el.onclick = () => goTo(+el.dataset.ply); });
   const active = box.querySelector('.mv.active');
   if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+// ---- "Play from position": pick a move right from the button instead of navigating the board first
+function toggleFromMoves() {
+  const box = $('from-moves');
+  if (!box.classList.contains('hidden')) { closeFromMoves(); return; }
+  closeGpDropdown();
+  const r = state.review;
+  box.innerHTML = movesRows(r.moves, cell) || '<div class="empty">No moves yet.</div>';
+  box.querySelectorAll('.mv').forEach((el) => {
+    el.onclick = () => { closeFromMoves(); goTo(+el.dataset.ply); openFromDialog(); };
+  });
+  box.classList.remove('hidden');
+}
+
+function closeFromMoves() {
+  $('from-moves')?.classList.add('hidden');
 }
 
 function cell(m) {
@@ -1241,7 +1262,7 @@ async function ask(question, opts = {}) {
     let data;
     try {
       data = await api('/api/chat', {
-        question, ...where, audience: state.audience,
+        question, ...where,
         where: opts.where || positionLabel(), mode: currentMode(), label: opts.silent ? opts.label : null,
         ambient: !!opts.ambient,
       });
@@ -2280,18 +2301,6 @@ $('from-color').querySelectorAll('button').forEach((b) => {
   };
 });
 
-function renderAudience(list) {
-  $('audience').classList.toggle('hidden', list.length < 2);  // one voice: no switch needed
-  $('audience').innerHTML = list.map((a) => `<button data-a="${esc(a)}">${esc(a[0].toUpperCase() + a.slice(1))}</button>`).join('');
-  $('audience').querySelectorAll('button').forEach((b) => {
-    b.classList.toggle('on', b.dataset.a === state.audience);
-    b.onclick = () => {
-      state.audience = b.dataset.a;
-      store('audience', state.audience);
-      $('audience').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
-    };
-  });
-}
 $('dlg-play').addEventListener('close', () => { if (!state.editor) pendingFen = null; });
 $('play-go').onclick = startGame;
 $('play-clock-on').onchange = (e) => $('play-clock-fields').classList.toggle('hidden', !e.target.checked);
@@ -2405,10 +2414,11 @@ $('gp-toggle').onclick = (e) => {
   e.stopPropagation();
   const isOpen = !$('gp-toggle').classList.contains('collapsed');
   if (isOpen) closeGpDropdown();
-  else { $('gp-details').classList.remove('hidden'); $('gp-toggle').classList.remove('collapsed'); }
+  else { closeFromMoves(); $('gp-details').classList.remove('hidden'); $('gp-toggle').classList.remove('collapsed'); }
 };
 document.addEventListener('click', (e) => {
   if (!$('gp-details').classList.contains('hidden') && !e.target.closest('.game-panel')) closeGpDropdown();
+  if (!$('from-moves')?.classList.contains('hidden') && !e.target.closest('.game-panel')) closeFromMoves();
 });
 closeGpDropdown();
 
@@ -2441,6 +2451,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'End') $('nav-end').click();
   else if (e.key === 'f') $('nav-flip').click();
   else if (e.key === 'Escape' && !$('gp-details').classList.contains('hidden')) closeGpDropdown();
+  else if (e.key === 'Escape' && !$('from-moves')?.classList.contains('hidden')) closeFromMoves();
   else if (e.key === 'Escape' && pinnedSquares.size) { pinnedSquares.clear(); paintSquares(); }
   else if (e.key === 'Escape' && state.demo) closeDemo();
   else if (e.key === 'Escape' && state.replay) stopReplay();
@@ -2452,9 +2463,6 @@ document.addEventListener('keydown', (e) => {
   const cfg = await api('/api/config');
   state.coachReady = cfg.coach_ready;
   state.explorerReady = cfg.explorer_ready;
-  const aud = cfg.audiences || ['coach'];
-  state.audience = aud.includes(recall('audience')) ? recall('audience') : (aud.includes('coach') ? 'coach' : aud[0]);
-  renderAudience(aud);
   // default to master-level games unless the player has picked their own explorer filters before
   $('x-db').value = recall('x-db') || 'masters';
   for (const id of ['x-band', 'x-speed']) { const v = recall(id); if (v !== null) $(id).value = v; }
