@@ -503,7 +503,10 @@ class Coach:
                 try:
                     results.append({"type": "tool_result", "tool_use_id": block.id,
                                     "content": self._run_tool(block.name, block.input)})
-                except (ValueError, KeyError, TypeError) as e:
+                except Exception as e:  # noqa: BLE001 — every tool_use needs a tool_result right
+                    # after it or the next API call is rejected outright; a tool blowing up in some
+                    # way we didn't anticipate (a Lichess 5xx, a Stockfish hiccup) must never corrupt
+                    # the conversation for every question after it in this game
                     results.append({"type": "tool_result", "tool_use_id": block.id,
                                     "content": f"Error: {e}", "is_error": True})
             self.messages.append({"role": "user", "content": results})
