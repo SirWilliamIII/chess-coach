@@ -229,6 +229,12 @@ class Coach:
                 self.player_color = "black"
         self._intro = self._game_context()
 
+    def set_player_color(self, color: str) -> None:
+        """Explicit override, for when the username match failed or picked the wrong side (no
+        username set, a pasted PGN, a typo) — bypasses the matching above entirely."""
+        self.player_color = color
+        self._intro = self._game_context()
+
     # ---------- context ----------
 
     def _game_context(self) -> str:

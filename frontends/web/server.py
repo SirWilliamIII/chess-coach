@@ -391,6 +391,23 @@ def current_review():
     return public_review()
 
 
+class MeColorReq(BaseModel):
+    color: str  # "white" or "black"
+
+
+@app.post("/api/me-color")
+def set_me_color(req: MeColorReq):
+    """Explicit override for which side the player is on — the automatic username match (no
+    username set, a pasted PGN, a typo) can silently miss, leaving the coach with no idea."""
+    if req.color not in ("white", "black"):
+        raise HTTPException(400, "color must be 'white' or 'black'")
+    if not S.coach:
+        raise HTTPException(400, "no game loaded")
+    S.coach.set_player_color(req.color)
+    S.me = S.review.get(req.color) or S.me
+    return public_review()
+
+
 class EvalReq(BaseModel):
     fen: str
     lines: int = 1
@@ -431,11 +448,11 @@ def chat(req: ChatReq):
         if not req.ambient:  # ambient commentary is never saved, so there's nothing to match either
             board, _ = coach._position(req.ply + 1, req.extra)
             fen = board.fen()
-            cached = library.find_cached(question_key, fen, prompt_hash())
+            cached = library.find_cached(question_key, fen, prompt_hash(), coach.player_color)
         if cached:
-            # exact same question, position, and prompt files as when this was last answered —
-            # genuinely what the coach would say again, so skip the API call. Doesn't touch the
-            # real conversation history (see Coach.record_cached).
+            # exact same question, position, prompt files, and understood player color as when
+            # this was last answered — genuinely what the coach would say again, so skip the API
+            # call. Doesn't touch the real conversation history (see Coach.record_cached).
             coach.record_cached()
             answer = cached["answer"]
         else:
@@ -463,7 +480,8 @@ def chat(req: ChatReq):
                 game_id=r.get("game_id") if r["moves"] else None,
                 game_label=f"{r['white']} vs {r['black']}" if r["moves"] else None,
                 position_label=req.where, ply=req.ply, extra=req.extra, opening=r.get("opening"),
-                demos=coach.last_demos, tools=tools, prompt_hash=prompt_hash())
+                demos=coach.last_demos, tools=tools, prompt_hash=prompt_hash(),
+                player_color=coach.player_color)
         except Exception as e:  # noqa: BLE001
             print(f"library: could not save answer: {e}")
     return {"answer": answer, "tools": tools, "demos": coach.last_demos, "entry_id": entry_id}

@@ -239,8 +239,19 @@ function playerLine(color) {
   const r = state.review;
   if (!r.moves.length) return '';
   const name = r[color], elo = r[`${color}_elo`];
-  const you = r.player_color === color ? ' (you)' : '';
-  return `${esc(name)}${you} <span class="elo">${elo ? `(${esc(elo)})` : ''}</span>`;
+  const isYou = r.player_color === color;
+  const title = isYou ? 'This is you' : 'Click if this is you — the coach may have guessed wrong or not know at all';
+  const nameHtml = `<span class="you-pick${isYou ? ' on' : ''}" data-color="${color}" title="${title}">`
+    + `${esc(name)}${isYou ? ' (you)' : ''}</span>`;
+  return `${nameHtml} <span class="elo">${elo ? `(${esc(elo)})` : ''}</span>`;
+}
+
+async function setYou(color) {
+  if (state.play || state.demo || !state.review.moves.length || state.review.player_color === color) return;
+  const review = await api('/api/me-color', { color });
+  state.review.player_color = review.player_color;
+  state.orientation = review.player_color;
+  update();
 }
 
 // ---- captured pieces + material balance (chess.com style)
@@ -326,6 +337,7 @@ function renderInfo() {
   const mat = material(currentGame());
   $('player-top').innerHTML = playerLine(top) + capturedHtml(top, mat);
   $('player-bottom').innerHTML = playerLine(state.orientation) + capturedHtml(state.orientation, mat);
+  document.querySelectorAll('.you-pick').forEach((el) => { el.onclick = () => setYou(el.dataset.color); });
   document.body.classList.toggle('demo-mode', !!state.demo);
   if (state.demo) return renderDemoInfo();
 

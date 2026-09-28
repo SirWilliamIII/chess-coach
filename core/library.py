@@ -48,7 +48,10 @@ CREATE TABLE IF NOT EXISTS entries (
     audience TEXT,            -- legacy: coach voice this was answered under, back when voices were
                               -- separate selectable personas; unused now the coach reads the
                               -- question itself instead, kept only so old rows stay readable
-    prompt_hash TEXT          -- hash of the prompt files in effect when answered (cache invalidation)
+    prompt_hash TEXT,         -- hash of the prompt files in effect when answered (cache invalidation)
+    player_color TEXT        -- white/black/NULL as the coach understood it when answered (cache key:
+                              -- the phrasing throughout leans on "your plan" vs "their threat", so a
+                              -- wrong or unknown color at answer time makes it a genuinely different answer
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
     question, answer, habit, tags, opening, game_label,
@@ -71,7 +74,7 @@ def _connect() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(entries)")}
-    for col in ("audience", "prompt_hash"):
+    for col in ("audience", "prompt_hash", "player_color"):
         if col not in cols:
             conn.execute(f"ALTER TABLE entries ADD COLUMN {col} TEXT")
     conn.commit()
@@ -125,7 +128,7 @@ def add(*, question: str, answer: str, kind: str = "question", mode: str | None 
         fen: str | None = None, game_id: str | None = None, game_label: str | None = None,
         position_label: str | None = None, ply: int | None = None, extra: list[str] | None = None,
         opening: str | None = None, demos: list | None = None, tools: list | None = None,
-        prompt_hash: str | None = None) -> int:
+        prompt_hash: str | None = None, player_color: str | None = None) -> int:
     tools = tools or []
     habit, special = extract_habit(answer), extract_special(answer)
     tags = auto_tags(question, answer, tools, kind, opening)
@@ -133,24 +136,25 @@ def add(*, question: str, answer: str, kind: str = "question", mode: str | None 
         cur = db().execute(
             """INSERT INTO entries (created_at, question, answer, kind, mode, fen, game_id, game_label,
                    position_label, ply, extra, opening, habit, special, tags, demos, tools,
-                   prompt_hash)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   prompt_hash, player_color)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (time.time(), question, answer, kind, mode, fen, game_id, game_label, position_label, ply,
              json.dumps(extra or []), opening, habit, special, " ".join(tags),
-             json.dumps(demos or []), json.dumps(tools), prompt_hash))
+             json.dumps(demos or []), json.dumps(tools), prompt_hash, player_color))
         db().commit()
         return cur.lastrowid
 
 
-def find_cached(question: str, fen: str, prompt_hash: str) -> dict | None:
-    """An exact-match reuse of a past answer: same question text, same position, and the prompt
-    files haven't changed since — so this is genuinely what the coach would say again right now,
-    not just something close enough."""
+def find_cached(question: str, fen: str, prompt_hash: str, player_color: str | None) -> dict | None:
+    """An exact-match reuse of a past answer: same question text, same position, the prompt files
+    haven't changed since, and the coach understood the player's color the same way — the coach's
+    phrasing leans on "your plan" vs "their threat" throughout, so a wrong or unknown color at
+    answer time makes it a genuinely different answer, not just a stale one."""
     with _lock:
         r = db().execute(
             """SELECT * FROM entries WHERE question = ? AND fen = ? AND prompt_hash = ?
-               ORDER BY created_at DESC LIMIT 1""",
-            (question, fen, prompt_hash)).fetchone()
+               AND player_color IS ? ORDER BY created_at DESC LIMIT 1""",
+            (question, fen, prompt_hash, player_color)).fetchone()
     if not r:
         return None
     return {"id": r["id"], "answer": r["answer"],

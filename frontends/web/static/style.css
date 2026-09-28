@@ -118,6 +118,9 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .capgroup i + i { margin-left: -10px; }
 .lead { color: var(--muted); font-size: 13px; font-weight: 600; margin-left: 2px; }
 .player .elo { color: var(--muted); font-weight: 400; }
+.you-pick { border-bottom: 1px dashed transparent; cursor: pointer; }
+.you-pick:hover { border-bottom-color: var(--muted); }
+.you-pick.on { cursor: default; font-weight: 700; }
 .clock {
   font-family: ui-monospace, monospace; font-weight: 700; font-size: 13px; margin-left: 8px;
   padding: 1px 7px; border-radius: 4px; background: #2a2926; color: var(--muted);
