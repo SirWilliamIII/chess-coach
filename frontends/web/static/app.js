@@ -29,13 +29,16 @@ const CHIPS = {
     ['Show main lines', 'Show me the main lines from this position: how to play them properly, the ideas for both sides, and the key traps.'],
   ],
   play: [
-    ['My plan?', "What plan should I be aiming for in this position? Give me: the move to play and why; "
-      + "my opponent's realistic tries here, with a counter for each; then spell it out as if-then — "
-      + "if they play X, I play Y; if they try Z, I play W; anything else, I just play <default move>. "
-      + 'Keep it short and concrete.'],
-    ['Their threats?', "What is my opponent threatening right now, and is anything of mine hanging?"],
+    ['My plan?', "What plan should I be aiming for in this position? Start with a one-line opponent "
+      + "check labeled 'Opponent:' — anything hanging or threatening right now, or that nothing is if "
+      + "it's quiet. Then give me: the move to play and why; my opponent's realistic tries here, with a "
+      + "counter for each; then spell it out as if-then — if they play X, I play Y; if they try Z, I "
+      + "play W; anything else, I just play <default move>. Keep it short and concrete."],
     ['Hint', "Give me a hint without telling me the move. If there's one genuinely correct move here, "
       + "use move_quiz so I can guess from a few options instead of just describing it."],
+    ['Test me', "Quiz me on this position with move_quiz — a few move options, let me guess, no hint text "
+      + "first. If there really isn't one correct move to find here, skip the quiz and say why "
+      + "(e.g. an open position with more than one reasonable plan)."],
   ],
 };
 
@@ -888,6 +891,26 @@ function legalAt(k, san) {
   }
 }
 
+// a threat mentioned before it's actually playable ("...Nxe4" while it's still your move) isn't
+// legal at the current position — try it with the side to move flipped, same trick movesShapesFor
+// uses to preview an opponent piece's options
+function legalAtFlipped(k, san) {
+  const line = currentLine();
+  const c = new Chess(line.startFen);
+  try {
+    for (const x of line.sans.slice(0, k)) c.move(x);
+  } catch {
+    return null;
+  }
+  const parts = c.fen().split(' ');
+  parts[1] = parts[1] === 'w' ? 'b' : 'w';
+  try {
+    return new Chess(parts.join(' ')).move(san);
+  } catch {
+    return null;
+  }
+}
+
 // ---- every point/callout that mentions a move gets its own "▶ Show on board" button,
 // built from every move chip inside it (in order), whether or not they sit side by side
 
@@ -909,27 +932,22 @@ function addLineButtons(root) {
       };
       return;
     }
-    const btn = document.createElement('button');
-    btn.className = 'line-btn';
-    btn.dataset.key = key;
-    btn.title = `${tokens.join(' ')}\nClick to play this on the demo board, click again to return`;
-    const last = tokens.at(-1).replace(/^\d+\.(\.\.)?\s?/, '');
-    const preview = tokens.length > 1 ? `${tokens[0]} … ${last} · ${tokens.length} moves` : tokens[0];
-    btn.innerHTML = `<span class="line-play">▶ Show on board</span><span class="line-preview">${esc(preview)}</span>`;
-    btn.onclick = () => { if (!toggleLine(tokens, key)) btn.classList.add('stale'); };
-    // the button below is now the one way to replay this line — the chips inside the sentence
-    // just read as plain (styled) prose instead of each being its own separate click target
-    chips.forEach((c) => { c.classList.add('inert'); c.removeAttribute('title'); });
-    block.appendChild(btn);
+    // no separate button: the chips themselves are the demo trigger — hover any one to preview
+    // just that move, click any one to show the whole line (every chip in this block, in order)
+    // on the demo board. One click target per line instead of a chip *and* a button doing the
+    // same thing right next to it.
+    chips.forEach((c) => {
+      c.dataset.lineKey = key;
+      c.dataset.lineTokens = JSON.stringify(tokens);
+      c.title = `${tokens.join(' ')}\nClick to show this on the demo board, click again to return`;
+    });
   });
 }
 
 function syncLineButtons() {
   const activeKey = state.demo?.sourceKey;
-  document.querySelectorAll('.line-btn').forEach((btn) => {
-    const active = !!activeKey && btn.dataset.key === activeKey;
-    btn.classList.toggle('active', active);
-    btn.querySelector('.line-play').textContent = active ? '◀ Back to board' : '▶ Show on board';
+  document.querySelectorAll('.san[data-line-key]').forEach((chip) => {
+    chip.classList.toggle('active', !!activeKey && chip.dataset.lineKey === activeKey);
   });
   document.querySelectorAll('.card-play').forEach((card) => {
     card.classList.toggle('active', !!activeKey && card.dataset.key === activeKey);
@@ -1121,12 +1139,20 @@ function clearHeldThreats() {
   renderShapes();
 }
 
+function myColor() {
+  return state.play ? state.play.color : state.review.player_color;
+}
+
 function previewMove(token, on) {
   if (!on) { cg.setAutoShapes([]); return; }
   const t = resolveToken(token);
   if (!t || t.k !== currentLine().at) return;
-  const mv = legalAt(t.k, t.san);
-  if (mv) cg.setAutoShapes([{ orig: mv.from, dest: mv.to, brush: 'paleBlue' }]);
+  const mv = legalAt(t.k, t.san) || legalAtFlipped(t.k, t.san);
+  if (!mv) return;
+  const mine = myColor();
+  const isOpponent = !!mine && mv.color !== mine[0];
+  const brush = moveBrush(mv, isOpponent);
+  cg.setAutoShapes(mv.piece === 'n' ? knightShapes(mv.from, mv.to, brush) : [{ orig: mv.from, dest: mv.to, brush }]);
 }
 
 function playSan(token) {
@@ -1158,9 +1184,14 @@ function addMsg(kind, html, where) {
   div.className = `msg ${kind}`;
   div.innerHTML = (where ? `<span class="where">${esc(where)}</span>` : '') + html;
   addLineButtons(div);
-  div.querySelectorAll('.san:not(.inert)').forEach((el) => {
+  div.querySelectorAll('.san').forEach((el) => {
     const dest = moveDestination(el.dataset.token);
     el.onclick = () => {
+      if (el.dataset.lineKey) {  // part of a mentioned line: show it on the demo board
+        if (el.classList.contains('stale')) return;
+        if (!toggleLine(JSON.parse(el.dataset.lineTokens), el.dataset.lineKey)) el.classList.add('stale');
+        return;
+      }
       const moved = clickMove(el.dataset.token);
       if (dest) {  // mark where the piece lands (the only effect if the move isn't reachable from here)
         pinnedSquares.clear();

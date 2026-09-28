@@ -250,8 +250,9 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .msg .tools[open] summary { margin-bottom: 4px; }
 .msg .tools div { padding: 1px 4px; }
 .san { font-weight: 700; color: #d9f2b8; border-bottom: 2px solid #6c9a40; cursor: pointer; padding: 0 1px; border-radius: 2px; white-space: nowrap; }
-.san:not(.inert):hover { background: #4a7030; color: #eafddc; }
-.san.inert { cursor: text; }
+.san:hover { background: #4a7030; color: #eafddc; }
+.san.active { background: #81b64c; color: #1c1b19; border-color: #81b64c; }
+.san.stale { cursor: default; opacity: .6; border-bottom-style: dashed; }
 .thinking { color: var(--muted); font-style: italic; }
 .thinking::after { content: "…"; animation: dots 1.2s steps(4) infinite; display: inline-block; width: 1.2em; overflow: hidden; vertical-align: bottom; }
 @keyframes dots { from { width: 0; } to { width: 1.2em; } }
@@ -508,18 +509,6 @@ dialog.wide { width: min(720px, calc(100vw - 32px)); }
 .msg .star { float: right; background: none; border: 0; color: #9d9c98; font-size: 17px; line-height: 1; padding: 0 0 0 6px; }
 .msg .star:hover, .msg .star.on { color: #f2c14e; }
 
-/* ---------- board-link buttons: always prominent, always their own line ---------- */
-.line-btn {
-  display: flex; align-items: baseline; gap: 7px;
-  background: #2f4020; border: 1px solid #5d8a33;
-  color: #d9f2b8; border-radius: 6px; padding: 4px 10px; margin: 6px 0 2px;
-  cursor: pointer; font-size: 13px; width: fit-content; max-width: 100%;
-}
-.line-btn:hover { background: #3d5a26; border-color: #81b64c; color: #eafddc; }
-.line-btn .line-play { font-weight: 800; }
-.line-btn .line-preview { font-size: 11px; color: #a9d67a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.line-btn.active { background: #81b64c; border-color: #81b64c; color: #1c1b19; }
-.line-btn.active .line-preview { color: #274016; }
 ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px rgba(0,0,0,.4); }
 .chat-log button.stale { display: none; }
 
