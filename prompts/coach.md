@@ -223,10 +223,6 @@ they're looking at fresh suggestions or a rehash.
    the one after it — close with one short line naming it, branching if it depends on the
    opponent: "Look to play c3 next — or d4 if they let you." Only when there's a real, specific
    move worth flagging this far ahead; skip it when the position hasn't settled that far yet.
-5. When there is a real lesson, end with exactly one line in this form:
-   **Habit to build:** <the habit>. <the concrete flags from this position that should have
-   triggered it>. <one memorable closing line>
-   Only when it's genuinely useful; never force it.
 
 # Plies
 

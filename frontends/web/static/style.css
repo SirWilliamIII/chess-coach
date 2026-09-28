@@ -13,6 +13,12 @@
   --mistake: #e58f2a;
   --blunder: #ca3431;
   --best: #81b64c;
+  --confetti-1: #81b64c;
+  --confetti-2: #5d8a33;
+  --confetti-3: #e68f00;
+  --confetti-4: #f7c045;
+  --confetti-5: #ffffff;
+  --confetti-6: #2c5674;
 }
 
 * { box-sizing: border-box; }
@@ -65,7 +71,8 @@ main {
   width: min(640px, calc(100vh - 170px), calc(100vw - 32px - 34px));
   aspect-ratio: 1;
 }
-#board { width: 100%; height: 100%; }
+#board { width: 100%; height: 100%; transition: filter .5s ease; }
+.board-wrap.game-over #board { filter: brightness(.55) saturate(.7); }
 /* knight hover arrows: hide the arrowhead on the L-shape's first (bend) leg — see knightShapes() */
 marker[id$="Mid"] path { display: none; }
 .cg-wrap { width: 100%; height: 100%; }
@@ -205,7 +212,7 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .chat-log { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 .msg { max-width: 92%; padding: 9px 12px; border-radius: 10px; word-wrap: break-word; }
 .msg p { margin: 0 0 16px; }
-.msg p:last-child, .msg ul:last-child, .msg ol.points:last-child, .msg .habit:last-child, .msg .alert-red:last-child, .msg .protip:last-child { margin-bottom: 0; }
+.msg p:last-child, .msg ul:last-child, .msg ol.points:last-child, .msg .alert-red:last-child, .msg .protip:last-child { margin-bottom: 0; }
 .msg ul { margin: 0 0 16px; padding-left: 20px; }
 .msg.user { align-self: flex-end; background: #3d5a26; }
 .msg.coach { align-self: flex-start; background: #363431; }
@@ -218,7 +225,8 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .msg .tools[open] summary { margin-bottom: 4px; }
 .msg .tools div { padding: 1px 4px; }
 .san { font-weight: 700; color: #d9f2b8; border-bottom: 2px solid #6c9a40; cursor: pointer; padding: 0 1px; border-radius: 2px; white-space: nowrap; }
-.san:hover { background: #4a7030; color: #eafddc; }
+.san:not(.inert):hover { background: #4a7030; color: #eafddc; }
+.san.inert { cursor: text; }
 .thinking { color: var(--muted); font-style: italic; }
 .thinking::after { content: "…"; animation: dots 1.2s steps(4) infinite; display: inline-block; width: 1.2em; overflow: hidden; vertical-align: bottom; }
 @keyframes dots { from { width: 0; } to { width: 1.2em; } }
@@ -400,9 +408,6 @@ ol.points li:nth-child(3n+3):hover { background: #3d3420; }
 ol.points li:nth-child(3n+1) .pt-title .san { color: #81b64c; border-color: #4a7030; }
 ol.points li:nth-child(3n+2) .pt-title .san { color: #5aa9e6; border-color: #3a6a90; }
 ol.points li:nth-child(3n+3) .pt-title .san { color: #e6b450; border-color: #906e28; }
-.habit { background: #22301a; border: 1px solid #4b6b2f; border-radius: 8px; padding: 8px 11px; margin: 4px 0 16px; }
-.habit-h { font-size: 12px; font-weight: 800; color: #a9d67a; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 3px; }
-.habit p { margin: 0; }
 .protip { background: #1d2540; border: 1px solid #3a4a7a; border-radius: 8px; padding: 8px 11px; margin: 4px 0 16px; }
 .protip-h { font-size: 12px; font-weight: 800; color: #8aa8e6; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 3px; }
 .protip p { margin: 0; }
@@ -428,7 +433,7 @@ ol.points li:nth-child(3n+3) .pt-title .san { color: #e6b450; border-color: #906
 .x-line .x-bar { grid-column: 1 / -1; height: 5px; }
 .msg.coach strong { color: #1c1b19; background: linear-gradient(transparent 12%, #f2d06b 12%, #f2d06b 88%, transparent 88%);
   padding: 0 3px; border-radius: 2px; }
-.msg.coach .alert-red strong, .msg.coach .habit strong, .msg.coach .protip strong { background: none; color: inherit; padding: 0; }
+.msg.coach .alert-red strong, .msg.coach .protip strong { background: none; color: inherit; padding: 0; }
 /* a bolded move or square ("attack with **e5**") stays a plain underlined chip, not a
    highlighted-highlight — also fixes bare pawn moves like "f4" that get tagged as a mere square
    reference (gold text) instead of a move: without this, gold-on-yellow was unreadable */
@@ -476,3 +481,15 @@ dialog.wide { width: min(720px, calc(100vw - 32px)); }
 .line-btn.active .line-preview { color: #274016; }
 ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px rgba(0,0,0,.4); }
 .chat-log button.stale { display: none; }
+
+/* ---- checkmate confetti ---- */
+.confetti-overlay { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 9999; }
+.confetti-piece {
+  position: absolute; top: -12px; width: 8px; height: 14px;
+  opacity: 0.95; animation: confetti-fall linear forwards;
+}
+.confetti-piece.round { border-radius: 50%; }
+@keyframes confetti-fall {
+  0%   { transform: translateY(-5vh) translateX(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(105vh) translateX(var(--dx)) rotate(var(--spin)); opacity: 0.85; }
+}

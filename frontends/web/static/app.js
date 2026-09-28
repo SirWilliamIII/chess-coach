@@ -30,7 +30,10 @@ const CHIPS = {
     ['Show main lines', 'Show me the main lines from this position: how to play them properly, the ideas for both sides, and the key traps.'],
   ],
   play: [
-    ['My plan?', 'What plan should I be aiming for in this position? Keep it short and concrete.'],
+    ['My plan?', "What plan should I be aiming for in this position? Give me: the move to play and why; "
+      + "my opponent's realistic tries here, with a counter for each; then spell it out as if-then — "
+      + "if they play X, I play Y; if they try Z, I play W; anything else, I just play <default move>. "
+      + 'Keep it short and concrete.'],
     ['Their threats?', "What is my opponent threatening right now, and is anything of mine hanging?"],
     ['Hint', "Give me a one-line hint without telling me the move."],
   ],
@@ -611,6 +614,7 @@ function showExplorer(data) {
 // ---------------------------------------------------------------- update
 
 function update() {
+  $('board-wrap').classList.toggle('game-over', !!state.play?.over);
   if (state.editor) return updateEditor();
   hoverPieceSq = null;  // position changed; next mousemove will re-draw
   clearHeldThreats();  // right-clicked threat arrows are stale once the position moves on
@@ -775,9 +779,6 @@ function markdown(text) {
     }
     if (lines.every((l) => /^\s*>/.test(l))) {  // quote = the coach flagging a special move
       html.push(`<div class="alert-red"><span class="alert-ico">⚡</span>${lines.map((l) => inline(l.replace(/^\s*>\s?/, ''), seen)).join('<br>')}</div>`);
-    } else if (/^\s*\**habit to build:?\**:?/i.test(block)) {
-      const body = block.replace(/^\s*\**habit to build:?\**:?\s*/i, '');
-      html.push(`<div class="habit"><div class="habit-h">🧠 Habit to build</div><p>${lines.length > 1 ? body.split('\n').map((l) => inline(l, seen)).join('<br>') : inline(body, seen)}</p></div>`);
     } else if (/^\s*\**pro tip:?\**:?/i.test(block)) {
       const body = block.replace(/^\s*\**pro tip:?\**:?\s*/i, '');
       html.push(`<div class="protip"><div class="protip-h">💡 Pro tip</div><p>${lines.length > 1 ? body.split('\n').map((l) => inline(l, seen)).join('<br>') : inline(body, seen)}</p></div>`);
@@ -857,7 +858,7 @@ function legalAt(k, san) {
 // built from every move chip inside it (in order), whether or not they sit side by side
 
 function addLineButtons(root) {
-  root.querySelectorAll('p, li, .alert-red, .habit p, .protip p').forEach((block) => {
+  root.querySelectorAll('p, li, .alert-red, .protip p').forEach((block) => {
     const chips = [...block.querySelectorAll('.san')];
     if (!chips.length) return;
     const tokens = chips.map((c) => c.dataset.token);
@@ -882,6 +883,9 @@ function addLineButtons(root) {
     const preview = tokens.length > 1 ? `${tokens[0]} … ${last} · ${tokens.length} moves` : tokens[0];
     btn.innerHTML = `<span class="line-play">▶ Show on board</span><span class="line-preview">${esc(preview)}</span>`;
     btn.onclick = () => { if (!toggleLine(tokens, key)) btn.classList.add('stale'); };
+    // the button below is now the one way to replay this line — the chips inside the sentence
+    // just read as plain (styled) prose instead of each being its own separate click target
+    chips.forEach((c) => { c.classList.add('inert'); c.removeAttribute('title'); });
     block.appendChild(btn);
   });
 }
@@ -922,13 +926,25 @@ function playLine(tokens, sourceKey) {
     return moves.length ? { k, startFen, moves } : null;
   };
 
-  // the line's own move number is the right place to start it from — but if that no longer lines
-  // up with what's on the board (navigated on, a takeback, a demo nested in a demo), the line
-  // itself is probably still fine: just play it from wherever we are now, or failing that from
-  // the very start of whatever's loaded. A line worth showing is worth showing somewhere.
-  const result = attempt(resolveToken(tokens[0])?.k) || attempt(line.at) || attempt(0);
-  if (!result) return false;
-  const { k, startFen, moves } = result;
+  // The line's own move number and the current view are usually the right place to start from —
+  // but if that's drifted (navigated on, a takeback, a demo nested in a demo), the line itself is
+  // probably still fine: search every position in the line, nearest to the current view first,
+  // and keep whichever start plays out the fullest sequence (stop early on a full match). A line
+  // worth showing is worth showing somewhere.
+  const byDistance = Array.from({ length: line.sans.length + 1 }, (_, k) => k)
+    .sort((a, b) => Math.abs(a - line.at) - Math.abs(b - line.at));
+  const tried = new Set();
+  let best = null;
+  for (const k of [resolveToken(tokens[0])?.k, line.at, ...byDistance]) {
+    if (k == null || tried.has(k)) continue;
+    tried.add(k);
+    const r = attempt(k);
+    if (!r) continue;
+    if (r.moves.length === tokens.length) { best = r; break; }
+    if (!best || r.moves.length > best.moves.length) best = r;
+  }
+  if (!best) return false;
+  const { k, startFen, moves } = best;
 
   // where this sits in coach-tool terms, so questions inside the demo still work
   let origin;
@@ -1108,7 +1124,7 @@ function addMsg(kind, html, where) {
   div.className = `msg ${kind}`;
   div.innerHTML = (where ? `<span class="where">${esc(where)}</span>` : '') + html;
   addLineButtons(div);
-  div.querySelectorAll('.san').forEach((el) => {
+  div.querySelectorAll('.san:not(.inert)').forEach((el) => {
     const dest = moveDestination(el.dataset.token);
     el.onclick = () => {
       const moved = clickMove(el.dataset.token);
@@ -1199,7 +1215,7 @@ async function ask(question, opts = {}) {
   state.chatBusy = true;
   $('chat-send').disabled = true;
   if (!opts.silent) {
-    addMsg('user', esc(question), positionLabel());
+    if (!opts.hideQuestion) addMsg('user', esc(question), positionLabel());
     $('chat-text').value = '';
   }
   const pending = addMsg('coach', `<span class="thinking">${opts.silent ? 'Spotted something' : 'Analysing'}</span>`);
@@ -1359,7 +1375,7 @@ async function openEntry(id) {
 function renderChips() {
   const chips = CHIPS[state.play ? 'play' : 'review'];
   $('chips').innerHTML = chips.map(([label, q]) => `<button class="chip" data-q="${esc(q)}">${esc(label)}</button>`).join('');
-  $('chips').querySelectorAll('.chip').forEach((el) => { el.onclick = () => ask(el.dataset.q); });
+  $('chips').querySelectorAll('.chip').forEach((el) => { el.onclick = () => ask(el.dataset.q, { hideQuestion: true }); });
 }
 
 function resetChatUi(note) {
@@ -2040,12 +2056,33 @@ async function botMove() {
   }
 }
 
+const CONFETTI_COLORS = ['--confetti-1', '--confetti-2', '--confetti-3', '--confetti-4', '--confetti-5', '--confetti-6'];
+
+function fireConfetti(count = 140) {
+  const overlay = document.createElement('div');
+  overlay.className = 'confetti-overlay';
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('div');
+    el.className = 'confetti-piece' + (Math.random() < 0.5 ? ' round' : '');
+    el.style.left = `${Math.random() * 100}%`;
+    el.style.setProperty('--dx', `${(Math.random() - 0.5) * 220}px`);
+    el.style.setProperty('--spin', `${360 + Math.random() * 720}deg`);
+    el.style.animationDuration = `${2.2 + Math.random() * 1.4}s`;
+    el.style.animationDelay = `${Math.random() * 0.4}s`;
+    el.style.background = `var(${CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)]})`;
+    overlay.appendChild(el);
+  }
+  document.body.appendChild(overlay);
+  setTimeout(() => overlay.remove(), 4000);
+}
+
 function checkGameOver() {
   const p = state.play;
   const c = playChess(p);
   if (!c.isGameOver()) return false;
   if (c.isCheckmate()) {
     const winner = c.turn() === 'w' ? 'black' : 'white';
+    if (winner === p.color) fireConfetti();
     endGame(winner === p.color ? 'win' : 'loss', winner === p.color ? 'Checkmate. You won!' : 'Checkmate. The bot wins.');
   } else {
     const why = c.isStalemate() ? 'stalemate' : c.isThreefoldRepetition() ? 'threefold repetition'
