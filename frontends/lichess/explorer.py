@@ -64,9 +64,10 @@ def masters_pgn(game_id: str) -> str:
     try:
         r = requests.get(f"{API}/masters/pgn/{game_id}", timeout=20,
                          headers={"Authorization": f"Bearer {token}"} if token else {})
-    except requests.ConnectionError:
-        raise RuntimeError("Can't reach the Lichess opening explorer - are you offline?")
-    r.raise_for_status()
+        r.raise_for_status()
+    except (requests.ConnectionError, requests.Timeout, requests.HTTPError):
+        raise RuntimeError("Can't reach the Lichess opening explorer - are you offline, or is "
+                           "Lichess having trouble?")
     return r.text
 
 
@@ -108,15 +109,15 @@ def explore(fen: str, db: str = "lichess", ratings: list[int] | None = None,
         if r.status_code == 429:
             raise RuntimeError("The opening explorer is rate limiting us; try again in a minute.")
         r.raise_for_status()
-    except (requests.ConnectionError, requests.Timeout, RuntimeError) as e:
+    except (requests.ConnectionError, requests.Timeout, requests.HTTPError, RuntimeError) as e:
         if cached.exists():  # offline (or a hiccup): use what we saw last time
             result = json.loads(cached.read_text())
             result["from_cache"] = True
             return result
         if isinstance(e, RuntimeError):
             raise
-        raise RuntimeError("Can't reach the Lichess opening explorer - are you offline? "
-                           "Positions you've explored before still work.")
+        raise RuntimeError("Can't reach the Lichess opening explorer - are you offline, or is "
+                           "Lichess having trouble? Positions you've explored before still work.")
 
     result = _summarise(r.json(), db)
     result["filters"] = {"ratings": params.get("ratings"), "speeds": params.get("speeds")}
