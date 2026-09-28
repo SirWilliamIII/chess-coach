@@ -488,15 +488,18 @@ class Coach:
             if text_now:
                 parts.append(text_now)
 
-            if response.stop_reason == "refusal":
-                return "(The model declined to answer that.)"
-            if response.stop_reason != "tool_use":
+            # decide from the content itself, not stop_reason alone: a refusal or a max_tokens cutoff
+            # can still leave tool_use blocks in this response, and every one of them needs a
+            # tool_result appended right after it no matter why the turn ended, or the next API call
+            # for this whole conversation gets flatly rejected ("tool_use ids ... without tool_result")
+            tool_uses = [b for b in response.content if b.type == "tool_use"]
+            if not tool_uses:
+                if response.stop_reason == "refusal":
+                    return "(The model declined to answer that.)"
                 return _final_answer(parts)
 
             results = []
-            for block in response.content:
-                if block.type != "tool_use":
-                    continue
+            for block in tool_uses:
                 self.progress.append({"name": block.name, "input": block.input})
                 if on_tool:
                     on_tool(block.name, block.input)
