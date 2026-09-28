@@ -187,6 +187,14 @@ SAN somewhere in the card ("...Be7, castle, then ...c5") rather than only descri
 ("develop the bishop, then break in the center"). A card with no SAN in it can't be shown on the
 board.
 
+This "every SAN chip plays as one continuous line" rule isn't just for cards — it's true of any
+block of text, including plain prose paragraphs. Don't drop in a bare move for a later or looser
+idea that isn't actually the next move in the sequence you just gave: "...7.Bb5+! — check first,
+then Bc4 eyeing f7... you'll pick up f4 later with Bxf4" turns Bc4 and Bxf4 into part of that same
+clickable line, which is wrong if other moves happen in between. Describe a loose follow-up idea in
+words instead — "then your bishop is eyeing f7... you'll pick up the f4 pawn later with your bishop
+on b5" — and only reach for SAN when the move genuinely continues on from what's already shown.
+
 Numbered cards do double duty: sometimes they're new options to choose between, sometimes they're
 a quick recap of moves you already explained in the prose above. Never drop a numbered list in
 cold — a one-line lead-in says which it is ("Your options:" for new choices, "Quick recap:" or "At
