@@ -175,6 +175,13 @@ TOOLS = [
 ]
 
 
+WEB_SEARCH_TOOL = {
+    "type": "web_search_20260209",
+    "name": "web_search",
+    "max_uses": 3,
+}
+
+
 EXPLORER_TOOL = {
     "name": "opening_explorer",
     "description": (
@@ -233,13 +240,12 @@ OPENING_LINES_TOOL = {
 
 
 def _final_answer(parts: list[str]) -> str:
-    """The coach's text across tool calls. A full final message stands alone (earlier bits are
-    usually 'let me check…' narration); a short one is a wrap-up after demos, so the substantial
-    text written before the tools is kept with it."""
+    """The coach's text across tool calls, stitched back together. Short bits before the last one
+    are usually 'let me check…' narration and get dropped; anything substantial is real content —
+    a multi-step answer (research, verify, explain, then a follow-up note) can legitimately write
+    more than one substantial part, and all of them belong in the answer, not just the last one."""
     if not parts:
         return ""
-    if len(parts[-1]) >= 400:
-        return parts[-1]
     return "\n\n".join([p for p in parts[:-1] if len(p) >= 200] + [parts[-1]])
 
 
@@ -251,7 +257,7 @@ class Coach:
         username-matching below entirely — that matching only works for a loaded chess.com/
         Lichess game where `review["white"]`/`["black"]` hold real usernames."""
         self.explorer = explorer
-        self.tools = TOOLS + ([EXPLORER_TOOL, OPENING_LINES_TOOL] if explorer else [])
+        self.tools = TOOLS + [WEB_SEARCH_TOOL] + ([EXPLORER_TOOL, OPENING_LINES_TOOL] if explorer else [])
         self.review = review
         self.engine = engine
         self._client = None
