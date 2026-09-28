@@ -905,30 +905,42 @@ function toggleLine(tokens, key) {
 }
 
 function playLine(tokens, sourceKey) {
-  // start from the position before the line's first move (found via its move number), play it as a demo
   const line = currentLine();
-  const first = resolveToken(tokens[0]);
-  if (!first) return false;
-  const c = new Chess(line.startFen);
-  try { for (const x of line.sans.slice(0, first.k)) c.move(x); } catch { return false; }
-  const startFen = c.fen();
-  const moves = [];
-  for (const tok of tokens) {
-    const san = tok.replace(/^\d+\.(\.\.)?\s?/, '');
-    try { moves.push(c.move(san).san); } catch { break; }  // stop at the first move that doesn't fit
-  }
-  if (!moves.length) return false;
+
+  // try to play `tokens` starting k moves into the current line; null if that start point is out
+  // of range or the very first token isn't legal there
+  const attempt = (k) => {
+    if (k == null || k < 0 || k > line.sans.length) return null;
+    const c = new Chess(line.startFen);
+    try { for (const x of line.sans.slice(0, k)) c.move(x); } catch { return null; }
+    const startFen = c.fen();
+    const moves = [];
+    for (const tok of tokens) {
+      const san = tok.replace(/^\d+\.(\.\.)?\s?/, '');
+      try { moves.push(c.move(san).san); } catch { break; }  // stop at the first move that doesn't fit
+    }
+    return moves.length ? { k, startFen, moves } : null;
+  };
+
+  // the line's own move number is the right place to start it from — but if that no longer lines
+  // up with what's on the board (navigated on, a takeback, a demo nested in a demo), the line
+  // itself is probably still fine: just play it from wherever we are now, or failing that from
+  // the very start of whatever's loaded. A line worth showing is worth showing somewhere.
+  const result = attempt(resolveToken(tokens[0])?.k) || attempt(line.at) || attempt(0);
+  if (!result) return false;
+  const { k, startFen, moves } = result;
+
   // where this sits in coach-tool terms, so questions inside the demo still work
   let origin;
   if (line.kind === 'demo') {
-    origin = { ply: state.demo.ply, then_moves: [...state.demo.then_moves, ...line.sans.slice(0, first.k)] };
+    origin = { ply: state.demo.ply, then_moves: [...state.demo.then_moves, ...line.sans.slice(0, k)] };
   } else if (line.kind === 'play') {
-    origin = { ply: 1, then_moves: line.sans.slice(0, first.k) };
+    origin = { ply: 1, then_moves: line.sans.slice(0, k) };
   } else {
     const game = state.review.moves.map((m) => m.san);
     let p = 0;
-    while (p < first.k && p < game.length && line.sans[p] === game[p]) p++;
-    origin = { ply: p + 1, then_moves: line.sans.slice(p, first.k) };
+    while (p < k && p < game.length && line.sans[p] === game[p]) p++;
+    origin = { ply: p + 1, then_moves: line.sans.slice(p, k) };
   }
   const title = tokens.length > 1 ? `Move order: ${tokens[0]}` : `On the board: ${tokens[0]}`;
   openDemo({ title, start_fen: startFen, moves, notes: [], sourceKey: sourceKey ?? tokens.join('|'), ...origin });
