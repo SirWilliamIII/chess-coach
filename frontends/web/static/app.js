@@ -1375,6 +1375,7 @@ function setReview(review, note, play = null) {
   closeEditor(false);
   if (state.play && !play) setEngineVisible(recall('engineOn') !== '0');  // leaving a game
   state.play = play;
+  opponentCommentCount = 0;
   renderChips();
   state.review = review;
   state.ply = (!play && review.player_color && review.moves.length) ? review.moves.length : 0;
@@ -1850,6 +1851,7 @@ function startReplay() {
   const color = r.player_color || (currentGame().turn() === 'w' ? 'white' : 'black');
   closeDemo(false);
   state.replay = { color, hint: null };
+  opponentCommentCount = 0;
   setEngineVisible(false);
   addMsg('system', `Replay from ${positionLabel().toLowerCase()}: play your ${color} moves from the game; your opponent plays theirs. I'll step in if there was something special on the board.`);
   update();
@@ -1923,8 +1925,12 @@ function renderReplayInfo() {
 // call like any question, just triggered automatically and rendered plainly (no GM-alert styling,
 // not saved to the Lessons library); the coach can say `(nothing)` to skip a forced/generic move
 
+let opponentCommentCount = 0;
+const OPPONENT_COMMENT_LIMIT = 4;  // just the opening phase — quiet again after that, for cost
+
 async function commentOnOpponentMove(c, san) {
-  if (!state.coachReady || c.isGameOver()) return;
+  if (!state.coachReady || c.isGameOver() || opponentCommentCount >= OPPONENT_COMMENT_LIMIT) return;
+  opponentCommentCount++;
   await ask(`[The opponent just played ${san}. Give your one-line reaction, or say (nothing) if there's really nothing worth saying.]`,
     { silent: true, skipEmpty: true, ambient: true, where: positionLabel() });
 }
