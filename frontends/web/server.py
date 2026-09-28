@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from core import gm_moments, library, openings
-from core.coach import Coach, audiences
+from core.coach import Coach, prompt_hash
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
 from core.review import CACHE_DIR, load_pgn, review_game
 from frontends.chesscom import client as chesscom
@@ -101,8 +101,7 @@ def index():
 def config():
     return {"me": os.environ.get("CHESS_USER", ""),
             "coach_ready": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
-            "explorer_ready": explorer.available(),
-            "audiences": audiences()}
+            "explorer_ready": explorer.available()}
 
 
 @app.get("/api/games")
@@ -412,7 +411,6 @@ class ChatReq(BaseModel):
     question: str
     ply: int = 0
     extra: list[str] = []
-    audience: str = "coach"
     where: str | None = None   # the page's label for the position ("After 35. Nf5")
     mode: str | None = None    # review / replay / play / analysis / demo
     label: str | None = None   # set for automatic GM alerts ("⚡ GM moment")
@@ -424,11 +422,25 @@ def chat(req: ChatReq):
     if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
         raise HTTPException(400, "Set ANTHROPIC_API_KEY before starting the server to use the coach.")
     coach = S.coach
+    question_key = req.label or req.question
     tools = []
+    cached = None
+    fen = None
     try:
         context = coach.board_context(req.ply, req.extra)
-        answer = coach.ask(req.question, context=context, audience=req.audience,
-                           on_tool=lambda name, inp: tools.append({"name": name, "input": inp}))
+        if not req.ambient:  # ambient commentary is never saved, so there's nothing to match either
+            board, _ = coach._position(req.ply + 1, req.extra)
+            fen = board.fen()
+            cached = library.find_cached(question_key, fen, prompt_hash())
+        if cached:
+            # exact same question, position, and prompt files as when this was last answered —
+            # genuinely what the coach would say again, so skip the API call. Doesn't touch the
+            # real conversation history (see Coach.record_cached).
+            coach.record_cached()
+            answer = cached["answer"]
+        else:
+            answer = coach.ask(req.question, context=context,
+                               on_tool=lambda name, inp: tools.append({"name": name, "input": inp}))
     except ValueError as e:
         raise HTTPException(400, str(e))
     except anthropic.APIConnectionError:
@@ -438,19 +450,20 @@ def chat(req: ChatReq):
     except anthropic.AnthropicError as e:
         coach.messages.clear()
         raise HTTPException(502, f"Claude API error: {e}")
+    if cached:
+        return {"answer": answer, "tools": cached["tools"], "demos": cached["demos"], "entry_id": cached["id"]}
     tools = [t for t in tools if t["name"] != "show_on_board"]  # shown as buttons instead
     entry_id = None
     if not req.ambient:  # opponent-move color commentary isn't a Q&A worth surfacing in Lessons
         try:  # save to the library (a failure here must never cost the player their answer)
             r = coach.review
-            board, _ = coach._position(req.ply + 1, req.extra)
             entry_id = library.add(
-                question=req.label or req.question, answer=answer,
-                kind="gm alert" if req.label else "question", mode=req.mode, fen=board.fen(),
+                question=question_key, answer=answer,
+                kind="gm alert" if req.label else "question", mode=req.mode, fen=fen,
                 game_id=r.get("game_id") if r["moves"] else None,
                 game_label=f"{r['white']} vs {r['black']}" if r["moves"] else None,
                 position_label=req.where, ply=req.ply, extra=req.extra, opening=r.get("opening"),
-                demos=coach.last_demos, tools=tools)
+                demos=coach.last_demos, tools=tools, prompt_hash=prompt_hash())
         except Exception as e:  # noqa: BLE001
             print(f"library: could not save answer: {e}")
     return {"answer": answer, "tools": tools, "demos": coach.last_demos, "entry_id": entry_id}

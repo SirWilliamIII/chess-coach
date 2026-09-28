@@ -47,8 +47,8 @@ terminal version.
   and time control play in the current position, with results, plus a Masters database and
   example games you can open. Needs a free Lichess account token (`LICHESS_TOKEN` in `.env`, no
   scopes). The coach uses it too ("what do people at my level play here?").
-- **📚 Library**: every coach answer is saved automatically (with its position, game, Habit line
-  and auto-tags like back-rank, fork, sicilian) in `data/library.sqlite`. Search it, filter by tag,
+- **📚 Library**: every coach answer is saved automatically (with its position, game, and
+  auto-tags like back-rank, fork, sicilian) in `data/library.sqlite`. Search it, filter by tag,
   favourites (☆ on any answer) or habits, and click an entry to put the board back where it was.
   Works offline.
 - **Analysis board** gives an empty board to set up and discuss any line.
@@ -57,11 +57,11 @@ terminal version.
 
 ## Prompts
 
-The coach's instructions live in `prompts/` as Markdown: `coach.md` (ground rules, how to
-explain, answer format including the "Habit to build" line) plus one file per voice in
-`prompts/audiences/`, and `player.md` (your level, goals and style, which the coach pitches to).
-They're re-read on every question, so edits apply without a restart;
-the coach's voice is `prompts/audiences/coach.md`; add another file there and a voice switch appears in the chat.
+The coach's instructions live in `prompts/` as Markdown: `coach.md` (voice, ground rules, how to
+explain, answer format — including how it reads the shape of a question and leans into theory,
+a sharp try, or a patient plan accordingly, without ever asking you to pick a persona) and
+`player.md` (your level, goals and style, which the coach pitches to). They're re-read on every
+question, so edits apply without a restart.
 
 ## Offline use
 

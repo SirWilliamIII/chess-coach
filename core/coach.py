@@ -1,5 +1,6 @@
 """LLM coach: Claude answers questions about a reviewed game, grounded by engine tools."""
 
+import hashlib
 import json
 import os
 import re
@@ -16,18 +17,19 @@ MODEL = os.environ.get("COACH_MODEL", "claude-opus-5")
 PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
 
 
-def audiences() -> list[str]:
-    return sorted(f.stem for f in (PROMPTS / "audiences").glob("*.md"))
-
-
-def system_prompt(audience: str = "coach") -> str:
-    """prompts/coach.md + prompts/audiences/<audience>.md, re-read every call so edits apply live."""
-    if audience not in audiences():
-        audience = "coach"
-    files = [PROMPTS / "coach.md", PROMPTS / "player.md", PROMPTS / "audiences" / f"{audience}.md"]
+def system_prompt() -> str:
+    """prompts/coach.md + prompts/player.md, re-read every call so edits apply live."""
+    files = [PROMPTS / "coach.md", PROMPTS / "player.md"]
     parts = [f.read_text() for f in files if f.exists()]
     text = "\n\n".join(re.sub(r"<!--.*?-->", "", part, flags=re.S).strip() for part in parts)
     return text
+
+
+def prompt_hash() -> str:
+    """Fingerprint of the exact system prompt in effect. Changes whenever coach.md or player.md
+    changes, so a cached answer from before that edit stops matching instead of serving
+    outdated-style content forever."""
+    return hashlib.sha256(system_prompt().encode()).hexdigest()[:16]
 
 TOOLS = [
     {
@@ -454,8 +456,7 @@ class Coach:
                 f"- **FEN:** `{board.fen()}`\n"
                 f"- **For tools:** {args}\n")
 
-    def ask(self, question: str, focus_ply: int | None = None, on_tool=None, context: str | None = None,
-            audience: str = "coach") -> str:
+    def _user_turn_text(self, question: str, focus_ply: int | None = None, context: str | None = None) -> str:
         text = question
         if context:
             text = f"{context}\n## Question\n{question}"
@@ -464,6 +465,18 @@ class Coach:
             text = f"[Player is looking at ply {focus_ply}: {m['label']} {m['san']}]\n{question}"
         if not self.messages:
             text = f"{self._intro}\n\n{text}"
+        return text
+
+    def record_cached(self) -> None:
+        """A cache-served answer never touches the real conversation: injecting a synthetic turn
+        risked corrupting the tool_use/tool_result pairing a later real question depends on (the
+        same bug class fixed in 84e28bc). The player still gets the instant answer; the coach just
+        has no memory of it for a follow-up, same as if the question had never been asked."""
+        self.last_demos = []
+        self.progress = []
+
+    def ask(self, question: str, focus_ply: int | None = None, on_tool=None, context: str | None = None) -> str:
+        text = self._user_turn_text(question, focus_ply, context)
         self.messages.append({"role": "user", "content": text})
         self.last_demos = []
         self.progress = []
@@ -475,7 +488,7 @@ class Coach:
             response = self._client.beta.messages.create(
                 model=MODEL,
                 max_tokens=16000,
-                system=system_prompt(audience),
+                system=system_prompt(),
                 tools=self.tools,
                 messages=self.messages,
                 thinking={"type": "adaptive"},
