@@ -41,54 +41,35 @@
       </div>
     </section>
 
-    <section class="panel game-panel">
-      <button class="gp-toggle" id="gp-toggle">Moves &amp; engine</button>
-      <div id="gp-details">
-        <div class="moves" id="moves"></div>
-        <div class="variation hidden" id="variation">
-          <span id="variation-text"></span>
-          <button class="link" id="btn-back-to-game">Back to game</button>
-        </div>
-        <div class="engine">
-          <div id="engine-pane">
-            <label class="toggle"><input type="checkbox" id="engine-toggle" checked> Engine lines</label>
-            <div id="engine-lines"></div>
-          </div>
-          <div id="explorer-pane">
-            <div class="eng-h">Opening explorer</div>
-            <div class="xfilters">
-              <select id="x-db" title="Database">
-                <option value="lichess">Lichess</option>
-                <option value="masters">Masters</option>
-              </select>
-              <select id="x-band" title="Rating band (Lichess ratings)">
-                <option value="0,1000">Under 1200</option>
-                <option value="1200,1400">1200–1600</option>
-                <option value="1600,1800">1600–2000</option>
-                <option value="2000,2200,2500">2000+</option>
-                <option value="">All ratings</option>
-              </select>
-              <select id="x-speed" title="Time control">
-                <option value="blitz,rapid">Blitz + rapid</option>
-                <option value="bullet">Bullet</option>
-                <option value="blitz">Blitz</option>
-                <option value="rapid">Rapid</option>
-                <option value="classical">Classical</option>
-              </select>
-            </div>
-            <button class="btn ghost small x-lines-btn" id="x-lines">▶ Common lines</button>
-            <div id="x-lines-box" class="hidden"></div>
-            <div id="x-body"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <section class="panel chat-panel">
       <div class="chat-head">
         <div class="game-info" id="game-info"></div>
         <div class="summary" id="summary"></div>
-        <button class="link" id="btn-chat-reset" title="Start a fresh conversation">New chat</button>
+        <div class="chat-head-right">
+          <div class="game-panel">
+            <button class="gp-toggle" id="gp-toggle">Moves &amp; engine</button>
+            <div id="gp-details">
+              <div class="moves" id="moves"></div>
+              <div class="variation hidden" id="variation">
+                <span id="variation-text"></span>
+                <button class="link" id="btn-back-to-game">Back to game</button>
+              </div>
+              <div class="engine">
+                <div id="engine-pane">
+                  <label class="toggle"><input type="checkbox" id="engine-toggle" checked> Engine lines</label>
+                  <div id="engine-lines"></div>
+                </div>
+                <div id="explorer-pane">
+                  <div class="eng-h">Opening explorer</div>
+                  <button class="btn ghost small x-lines-btn" id="x-lines" title="The lines Lichess players play most from this position, as demos">▶ Most played lines</button>
+                  <div id="x-lines-box" class="hidden"></div>
+                  <div id="x-body"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button class="link" id="btn-chat-reset" title="Start a fresh conversation">New chat</button>
+        </div>
       </div>
       <div class="chat-log" id="chat-log"></div>
       <div class="chips" id="chips"></div>

@@ -231,10 +231,13 @@ function clockText(seconds) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
+// "Improving (~1200)" -> "(~1200)"; falls back to the whole name if it has no rating.
+const botElo = (levelName) => levelName.match(/\(.*\)/)?.[0] ?? levelName;
+
 function playerLine(color) {
   const p = state.play;
   if (p) {
-    const label = color === p.color ? (state.me ? `${esc(state.me)} (you)` : 'You') : `Bot <span class="elo">${esc(p.levelName)}</span>`;
+    const label = color === p.color ? (state.me ? `${esc(state.me)} (you)` : 'You') : `Bot <span class="elo">${esc(botElo(p.levelName))}</span>`;
     if (!p.clock) return label;
     const running = !p.over && playChess(p).turn() === color[0];
     const low = p.clock[color] < 30 ? ' low' : '';
@@ -335,12 +338,20 @@ setInterval(() => {
   }
 }, 250);
 
+// Takeback sits on the player's own name row (right-aligned), not in the chat header.
+function takebackHtml(color) {
+  const p = state.play;
+  if (!p || state.demo || color !== p.color) return '';
+  return `<button class="btn ghost small takeback" id="pb-takeback" ${p.moves.length ? '' : 'disabled'}>Takeback</button>`;
+}
+
 function renderInfo() {
   const r = state.review;
   const top = state.orientation === 'white' ? 'black' : 'white';
   const mat = material(currentGame());
-  $('player-top').innerHTML = playerLine(top) + capturedHtml(top, mat);
-  $('player-bottom').innerHTML = playerLine(state.orientation) + capturedHtml(state.orientation, mat);
+  $('player-top').innerHTML = playerLine(top) + capturedHtml(top, mat) + takebackHtml(top);
+  $('player-bottom').innerHTML = playerLine(state.orientation) + capturedHtml(state.orientation, mat) + takebackHtml(state.orientation);
+  $('pb-takeback')?.addEventListener('click', takeback);
   document.querySelectorAll('.you-pick').forEach((el) => { el.onclick = () => setYou(el.dataset.color); });
   document.body.classList.toggle('demo-mode', !!state.demo);
   if (state.demo) return renderDemoInfo();
@@ -512,14 +523,14 @@ function fmtCount(n) {
   return String(n);
 }
 
-function explorerFilters() {
-  const band = $('x-band').value;
-  return {
-    db: $('x-db').value,
-    ratings: band ? band.split(',').map(Number) : null,
-    speeds: $('x-speed').value.split(','),
-  };
-}
+// No filter UI: always the whole Lichess database. ratings=null means every rating band, but speeds
+// must be listed explicitly — the server defaults a missing list to blitz+rapid only.
+const EXPLORER_ALL = {
+  db: 'lichess',
+  ratings: null,
+  speeds: ['ultraBullet', 'bullet', 'blitz', 'rapid', 'classical', 'correspondence'],
+};
+const explorerFilters = () => EXPLORER_ALL;
 
 function requestExplorer(c) {
   clearTimeout(xTimer);
@@ -527,7 +538,6 @@ function requestExplorer(c) {
   const token = ++xToken;
   if (!c) return;
   const f = explorerFilters();
-  $('x-band').disabled = $('x-speed').disabled = f.db === 'masters';
   if (!state.explorerReady) {
     $('x-body').innerHTML = '<p class="hint">The explorer needs a Lichess token: add <code>LICHESS_TOKEN=lip_…</code> to <code>.env</code> and restart.</p>';
     return;
@@ -555,13 +565,6 @@ function linesOrigin() {
   }
   if (state.play) return { ply: 1, then_moves: state.play.moves.slice(0, state.play.view) };
   return { ply: state.ply + 1, then_moves: [...state.extra] };
-}
-
-function updateLinesButton() {
-  const masters = $('x-db').value === 'masters';
-  $('x-lines').textContent = masters ? '▶ Common lines' : '▶ Most played lines at this level';
-  $('x-lines').title = masters ? 'The lines masters play most from this position, as demos'
-    : 'The lines Lichess players in this rating band play most, as demos';
 }
 
 async function showLines() {
@@ -2234,7 +2237,7 @@ function reviewPlayedGame() {
 function renderPlayInfo() {
   const p = state.play;
   $('game-info').textContent = 'Practice game vs bot';
-  $('board-sub').textContent = `${p.levelName} · you play ${p.color}`;
+  $('board-sub').textContent = '';
   let status, cls = '';
   if (p.over) {
     status = p.over.text;
@@ -2242,18 +2245,14 @@ function renderPlayInfo() {
   } else if (p.thinking) status = 'Bot is thinking…';
   else if (p.view < p.moves.length) status = 'Viewing an earlier position; press → or ⏭ to return';
   else status = 'Your move';
-  const takebackBtn = `<button class="btn ghost small" id="pb-takeback" ${p.moves.length ? '' : 'disabled'}>Takeback</button>`;
   const buttons = p.over
     ? `<button class="btn small" id="pb-review">Review this game</button>
-       <button class="btn ghost small" id="pb-again">New game</button>
-       ${takebackBtn}`
-    : `${p.thinking ? '<button class="btn ghost small" id="pb-stop">Stop bot</button>' : ''}
-       ${takebackBtn}`;
+       <button class="btn ghost small" id="pb-again">New game</button>`
+    : (p.thinking ? '<button class="btn ghost small" id="pb-stop">Stop bot</button>' : '');
   $('summary').innerHTML = `<div class="status ${cls}">${esc(status)}</div><div class="play-buttons">${buttons}</div>`;
   $('pb-review')?.addEventListener('click', reviewPlayedGame);
   $('pb-again')?.addEventListener('click', openPlayDialog);
   $('pb-stop')?.addEventListener('click', stopBotThinking);
-  $('pb-takeback')?.addEventListener('click', takeback);
 }
 
 function renderPlayMoves(box) {
@@ -2493,15 +2492,6 @@ closeGpDropdown();
 
 $('engine-toggle').onchange = (e) => setEngine(e.target.checked);
 $('x-lines').onclick = showLines;
-for (const id of ['x-db', 'x-band', 'x-speed']) {
-  $(id).onchange = () => {
-    store(id, $(id).value);
-    updateLinesButton();
-    $('x-lines-box').classList.add('hidden');
-    linesFor = null;
-    if (!state.editor) requestExplorer(currentGame());
-  };
-}
 
 $('chat-form').onsubmit = (e) => { e.preventDefault(); ask($('chat-text').value); };
 $('chat-text').onkeydown = (e) => {
@@ -2532,10 +2522,6 @@ document.addEventListener('keydown', (e) => {
   const cfg = await api('/api/config');
   state.coachReady = cfg.coach_ready;
   state.explorerReady = cfg.explorer_ready;
-  // default to master-level games unless the player has picked their own explorer filters before
-  $('x-db').value = recall('x-db') || 'masters';
-  for (const id of ['x-band', 'x-speed']) { const v = recall(id); if (v !== null) $(id).value = v; }
-  updateLinesButton();
   state.me = recall('me') || cfg.me || '';
   const engineOn = recall('engineOn') !== '0';
   $('engine-toggle').checked = engineOn;
