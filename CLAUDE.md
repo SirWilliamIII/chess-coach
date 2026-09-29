@@ -60,11 +60,19 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
     `.msg.coach strong:has(.san, .sq)` rule makes sure it doesn't visually break (no more
     gold-on-yellow-background invisible text when bolded).
 - **Chat rendering pipeline**: `markdown()` → `inline()` in `app.js`, regex-driven (SAN_RE,
-  eval pills, glossary terms, `.lbl` label lines, "Pro tip"/"Habit to build" callout blocks,
-  `ol.points` numbered cards). A numbered `ol.points li` card is a single clickable unit — the
-  whole card plays its move sequence on click (`addLineButtons()`), built from whatever `.san`
-  chips exist in that block, not from parsing English prose. A card with no SAN in it literally
-  can't be shown on the board (the prompt tells the coach this).
+  eval pills, glossary terms, `.lbl` label lines, a "Pro tip" callout block, `ol.points` numbered
+  cards). A numbered `ol.points li` card is a single clickable unit — the whole card plays its
+  move sequence on click (`addLineButtons()`), built from whatever `.san` chips exist in that
+  block, not from parsing English prose. A card with no SAN in it literally can't be shown on the
+  board (the prompt tells the coach this). Outside numbered cards, a block's `.san` chips *are*
+  the demo trigger directly (hover previews the move, click opens it on the demo board) — there's
+  no separate "Show on board" button anymore, see `addLineButtons()`'s non-card-play branch.
+- **`#game-info` and `#summary` live in `.chat-head` now, not `.game-panel`.** `renderInfo()`
+  still targets them by ID so no JS needed to change when they moved — but `#from-moves` (the
+  "Play from position" move-picker dropdown, `position: absolute`) anchors to whatever positioned
+  ancestor it's nearest to, which is now `.summary` itself (`position: relative` in `style.css`),
+  not `.game-panel`. If `#summary` ever moves again, that CSS rule has to move with it or the
+  dropdown will anchor to the wrong element.
 - **`.env` is gitignored** and must be recreated on every machine/clone
   (`ANTHROPIC_API_KEY`, `LICHESS_TOKEN`, optional `CHESS_USER`). This machine has two local
   clones — `/Users/will/chess-coach` (primary) and `~/Projects/chess-coach` (secondary,
@@ -134,7 +142,7 @@ audit):
   don't have a clock option — that was out of scope for the original ask, not an oversight,
   but worth adding if wanted later.
 
-## Recent major work (this session, roughly chronological)
+## Recent major work (an earlier session, roughly chronological)
 
 Chat rendering overhaul (plain underlined move/square chips instead of boxed pills with
 figurine icons; universal per-point "Show on board" buttons instead of only 3+-move runs;
@@ -150,3 +158,31 @@ hover tooltips · right-click now holds a piece's threat arrows (accumulates; le
 resets) instead of drawing chessground's native circle · Explorer defaults to Masters games
 unless you've picked your own filters · optional chess clock (time + increment) in the
 "Play game" dialog.
+
+## Recent major work (2026-09-28 session, roughly chronological)
+
+Replaced the Coach/Encyclopedia/Magnus/Solid persona switcher with one coach that reads the
+question's phrasing and adapts emphasis itself (main-lines → theory, "let's yolo this" →
+verified sharp tries, "I feel stuck" → patient plan-finding), never asking the player to pick a
+mode · added exact-match local answer caching (question + position + prompt-file hash + player
+color all have to match) so a genuine repeat skips the API call entirely, with a hash-based
+invalidation so editing the prompt never serves stale-styled cached answers · added `move_quiz`:
+a clickable multiple-choice guess (2-4 options, or `['True','False']` for a claim to verify)
+instead of describing a hint/puzzle in prose, wired into "Hint" and a new "Test me" chip ·
+"Their threats?" folded into "My plan?" as a leading "Opponent:" blurb · move mentions in chat
+are now the demo trigger directly (hover previews with the board's own capture/check colors,
+click opens the full line on the demo board) instead of a separate "Show on board" button ·
+opponent-move mentions preview in the board's darker "warning" colors, including threats one ply
+before they're actually playable (`legalAtFlipped()`) · player color is now explicit and
+correctable (click either name in the game header) instead of silently inferred from a username
+match that can fail with no visible sign · added `web_search`, scoped narrowly to naming/
+verifying an opening the coach doesn't recognize (never for evaluation, which stays the engine's
+job), with explicit "this is a different trust tier" framing in the coach's own voice · added
+local usage/cost tracking (`core/usage.py`, `GET /api/usage`) for this app's own Claude spend ·
+default model switched from Opus to Sonnet (see "Model choice" above) · layout: game panel moved
+to the rightmost column with its dropdowns opening leftward over chat, board/chat widened to a
+roughly 5-5-2 split, `#game-info` and the "Play from position" button moved into `.chat-head`
+(left/center) · fixed a `_final_answer()` bug that silently dropped substantial answer text
+whenever the model wrote more than one substantial part (a multi-step web-search answer's
+explanation, verification, and follow-up note, for example) · fixed a CSS Grid bug where mixing
+explicitly-placed and auto-placed panels dropped chat into an unintended second row.

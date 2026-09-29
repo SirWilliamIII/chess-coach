@@ -42,8 +42,6 @@
     </section>
 
     <section class="panel game-panel">
-      <div class="game-info" id="game-info"></div>
-      <div class="summary" id="summary"></div>
       <button class="gp-toggle" id="gp-toggle">Moves &amp; engine</button>
       <div id="gp-details">
         <div class="moves" id="moves"></div>
@@ -88,6 +86,8 @@
 
     <section class="panel chat-panel">
       <div class="chat-head">
+        <div class="game-info" id="game-info"></div>
+        <div class="summary" id="summary"></div>
         <button class="link" id="btn-chat-reset" title="Start a fresh conversation">New chat</button>
       </div>
       <div class="chat-log" id="chat-log"></div>
@@ -104,7 +104,7 @@
     <form method="dialog" class="dlg-head"><h2>Find game by username</h2><button class="link">Close</button></form>
     <div class="seg" id="games-tabs">
       <button data-tab="chesscom" class="on">From chess.com</button>
-      <button data-tab="saved">Saved on this Pi (offline)</button>
+      <button data-tab="saved">Saved on this device (offline)</button>
     </div>
     <div id="tab-chesscom">
       <div class="row">
