@@ -288,6 +288,51 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
     pick (game review only). `move_quiz` reward cap is 300 chars (200 truncated mid-sentence). The coach
     sees the game's real continuation and leaked it ("9...Be6 was the real mistake") until the chip
     text said not to spoil; if the leak returns, that wording is the place to fix it.
+- **`move_quiz` fairness is enforced by the engine** (`Coach._check_quiz_fairness`): the marked answer must
+  be within 30 cp of the best move and every wrong option at least 80 cp worse, or the tool errors with
+  the numbers and the coach must swap decoys or skip. Found 2026-09-29 by running "Guess the next move"
+  on seven board states: one quiz marked a move "wrong" that was 23-65 cp behind the answer. The retry
+  makes the model rewrite its lead-in, so `_final_answer()` drops an earlier part that a later part
+  rewrites (difflib ratio > 0.6). Perspective: the coach is told "To move" and "The player is playing";
+  the chip text makes it say whose move it is and, on the opponent's turn, "step into their shoes"
+  (it used the opponent's username), with you/your only for the side to move. Start and final
+  positions correctly produce no quiz. Still seen: a filler closer ("Give it a think…") and sloppy
+  wording ("d5 forks the c6-knight"). Hypothetical lines quiz the board position fine.
+- **Bot-game chips** share definitions with the review chips (`CHIP` in `app.js`; `CHIPS.review` / `CHIPS.play`):
+  My plan?, Best move, Hint, Guess the next move, Why this move?, Show main lines. Left out on purpose:
+  Game-changing moment (needs a finished game's per-move scores and a timeline) and "What should I have
+  played?" (after the bot moves, "this move" is the bot's, so the coach assessed the bot's move instead of
+  yours). "Test me" was replaced by Guess the next move. Checked live on a bot-game position: Guess works,
+  perspective correct; other chips not run in a bot game.
+- **Coach latency is mostly thinking tokens, and it is tunable.** `COACH_EFFORT=low|medium|high|xhigh|max`
+  (sets `output_config.effort`) and `COACH_THINKING=off` (`_thinking_kwargs()` in `core/coach.py`, read on
+  every call; defaults unchanged = adaptive thinking at Sonnet 5's default `high`) — put them in `.env`.
+  **Measured 2026-09-29** on `claude-sonnet-5`, chip questions on a bot-game position plus two tactical
+  positions of `cc184224792278`, one sample per cell so noisy: API time tracks output tokens at ~72
+  tok/s; mean API seconds per question over 7 runs was **baseline 38 s, effort=low 19 s, thinking off 20 s**
+  (medium, 3 runs: 40 s, inconsistent). Quality check: on the tactical positions every variant that gave
+  a move gave the engine's best or a move within 1 cp of it (14 graded outputs, all fine); prose was not
+  graded beyond a read-through. "Thinking off" once needed 8 API calls (retries), low was steadier.
+  **Not adopted** (decision 2026-09-29: accuracy over speed, don't knowingly or suspectedly trade quality
+  for it): thinking may matter more in sharp middlegames the tests didn't cover (see "Model choice" for the
+  regression signals to watch). The knobs exist for a later, evidence-based change. Likewise the explorer
+  `BUDGET` stays 20 (a smaller budget means fewer/shorter lines).
+- **Explorer cold walks are slow and rate-limit-prone.** `opening_lines` → `openings.main_lines` costs about
+  **1 s per Lichess request** (network latency, not the 0.35 s pacing), all serialized by design: budget
+  8 = 16 s, 12 = 19 s, 20 (`BUDGET` now) = 27 s (28 requests) on a cold position. One unspaced run hit
+  Lichess's 429 mid-walk and returned `partial=True` (shortened/unnamed lines) and then blocked the
+  following requests for about a minute, so don't benchmark it in a tight loop. Disk cache
+  (`data/explorer/`, a month) makes repeats instant; practice-game positions are usually cold.
+  **Two accuracy/latency fixes (2026-09-29, no quality trade-off):**
+  - `explorer.explore(..., patient=True)` waits out a 429 (Retry-After, else 61 s; up to 3 attempts)
+    instead of failing, so a walk completes and isn't shortened/unnamed. A shared `_cooldown_until` makes
+    other callers stand down; **the coach's tools are patient** (`functools.partial` in `make_coach`),
+    the interactive explorer panel and `/api/lines` still fail fast. Worst case a walk is ~1 min slower.
+  - `_warm_explorer()` in `server.py`: after each bot move in the opening (`fullmove_number <= 8`, hooked
+    into `/api/opponent_card`) a background thread runs the coach's default walk (masters, depth 6) so
+    "Show main lines" finds it on disk. One at a time, supersedes itself when the position moves on,
+    never raises. Verified: a walk after warm-up took 0.00 s / 0 requests (small tree, so the full
+    28-request case wasn't exercised). Costs extra Lichess traffic (up to ~28 requests per opening move).
 - **Loaded games open at move 1** (`state.ply = 0` in `setReview()`); they used to open at the last
   move when your side was known. This also applies to a page reload and to opening a saved game.
 - **Engine memo + timing.** `Engine.lines()` caches results in memory (`LINES_CACHE_SIZE` 1024) keyed
