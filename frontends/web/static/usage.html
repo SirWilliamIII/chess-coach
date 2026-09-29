@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Usage · Chess Coach</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 48px; }
+    .top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+    .top h1 { margin: 0; font-size: 22px; }
+    .range { display: flex; gap: 6px; }
+    .range button { background: var(--panel); color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; }
+    .range button:hover { color: var(--text); }
+    .range button.on { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+
+    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+    .tile .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+    .tile .v { font-size: 28px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+    .tile .s { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+    .tile.hero .v { color: var(--accent); }
+
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 18px; }
+    .card h2 { margin: 0 0 12px; font-size: 14px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+
+    .bars { display: flex; align-items: flex-end; gap: 6px; height: 150px; padding-top: 8px; }
+    .bar { flex: 1; min-width: 6px; max-width: 56px; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; position: relative; }
+    .bar i { display: block; background: linear-gradient(var(--accent), var(--accent-dark)); border-radius: 4px 4px 0 0; min-height: 2px; }
+    .bar:hover i { filter: brightness(1.15); }
+    .bar .tip { display: none; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 4px;
+                background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 12px; white-space: nowrap; z-index: 2; }
+    .bar:hover .tip { display: block; }
+    .axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+    .mix { display: flex; height: 16px; border-radius: 8px; overflow: hidden; background: var(--panel-2); }
+    .mix span { display: block; }
+    .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+    .legend b { color: var(--text); font-variant-numeric: tabular-nums; }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    th:first-child, td:first-child { text-align: left; }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+    tbody tr:last-child td { border-bottom: 0; }
+    .scroll { overflow-x: auto; }
+
+    .spend .row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .spend .big { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .spend .big small { font-size: 15px; font-weight: 500; color: var(--muted); }
+    .meter { height: 14px; border-radius: 7px; background: var(--panel-2); overflow: hidden; margin: 12px 0 8px; }
+    .meter i { display: block; height: 100%; border-radius: 7px; background: var(--accent); }
+    .meter i.warn { background: var(--inaccuracy); }
+    .meter i.hot { background: var(--blunder); }
+    .spend .meta { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
+
+    .note { color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+    .empty, .err { text-align: center; color: var(--muted); padding: 32px 0; }
+    .err { color: var(--blunder); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">♞ Chess Coach</div>
+    <div class="actions"><a class="btn ghost" href="/" style="text-decoration:none">← Back to coach</a></div>
+  </header>
+
+  <div class="wrap">
+    <div class="top">
+      <h1>Claude usage</h1>
+      <div class="range" id="range"></div>
+    </div>
+    <div id="org"></div>
+    <div id="out"><div class="empty">Loading…</div></div>
+  </div>
+
+  <script>
+    const RANGES = [7, 30, 90];
+    let days = 30;
+    try { days = Number(localStorage.getItem("usageDays")) || 30; } catch (e) {}
+
+    const $ = (id) => document.getElementById(id);
+    const el = (tag, cls, text) => {
+      const n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (text !== undefined) n.textContent = text;
+      return n;
+    };
+    const num = (n) => n.toLocaleString();
+    const compact = (n) => new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(n);
+    const usd = (n) => "$" + (n < 1 ? n.toFixed(3) : n.toFixed(2));
+
+    function tile(k, v, s, hero) {
+      const t = el("div", "tile" + (hero ? " hero" : ""));
+      t.append(el("div", "k", k), el("div", "v", v), el("div", "s", s));
+      return t;
+    }
+
+    function render(d) {
+      const t = d.totals, out = $("out");
+      out.replaceChildren();
+      if (!t.questions) {
+        out.append(el("div", "empty", "No usage recorded in the last " + d.days + " days."));
+        return;
+      }
+      const inputSide = t.input_tokens + t.cache_creation_input_tokens + t.cache_read_input_tokens;
+      const hit = inputSide ? t.cache_read_input_tokens / inputSide : 0;
+      const perQ = t.estimated_cost / t.questions;
+
+      const tiles = el("div", "tiles");
+      tiles.append(
+        tile("Estimated cost", usd(t.estimated_cost), "last " + d.days + " days", true),
+        tile("Per question", usd(perQ), num(t.questions) + " questions"),
+        tile("API calls", num(t.api_calls), (t.api_calls / t.questions).toFixed(1) + " per question"),
+        tile("Prompt-cache hit", (hit * 100).toFixed(0) + "%", "of input tokens read from cache"),
+        tile("Free repeats", num(t.cached_questions), "answered from local cache"),
+      );
+      out.append(tiles);
+
+      // Daily cost chart
+      const chart = el("div", "card");
+      chart.append(el("h2", null, "Estimated cost per day"));
+      const max = Math.max(...d.by_day.map((r) => r.estimated_cost), 0.0001);
+      const bars = el("div", "bars");
+      for (const r of d.by_day) {
+        const b = el("div", "bar");
+        const fill = document.createElement("i");
+        fill.style.height = Math.max(2, (r.estimated_cost / max) * 100) + "%";
+        b.append(el("div", "tip", r.date + " · " + usd(r.estimated_cost) + " · " + r.questions + " q"), fill);
+        bars.append(b);
+      }
+      chart.append(bars);
+      const axis = el("div", "axis");
+      axis.append(el("span", null, d.by_day[0].date), el("span", null, d.by_day[d.by_day.length - 1].date));
+      chart.append(axis);
+      out.append(chart);
+
+      // Token mix
+      const parts = [
+        ["Cache reads", t.cache_read_input_tokens, "var(--accent)"],
+        ["Cache writes", t.cache_creation_input_tokens, "var(--inaccuracy)"],
+        ["Output", t.output_tokens, "#5b9bd5"],
+        ["Uncached input", t.input_tokens, "var(--blunder)"],
+      ];
+      const total = parts.reduce((a, p) => a + p[1], 0) || 1;
+      const mix = el("div", "card");
+      mix.append(el("h2", null, "Token mix"));
+      const bar = el("div", "mix");
+      const legend = el("div", "legend");
+      for (const [name, n, color] of parts) {
+        const s = el("span");
+        s.style.width = (n / total * 100) + "%";
+        s.style.background = color;
+        s.title = name + ": " + num(n);
+        bar.append(s);
+        const item = el("span");
+        const dot = el("span", "dot");
+        dot.style.background = color;
+        item.append(dot, name + " ", el("b", null, compact(n)));
+        legend.append(item);
+      }
+      mix.append(bar, legend);
+      out.append(mix);
+
+      // Table (newest first)
+      const tbl = el("div", "card");
+      tbl.append(el("h2", null, "By day"));
+      const wrap = el("div", "scroll");
+      const table = document.createElement("table");
+      const head = table.createTHead().insertRow();
+      for (const h of ["Date", "Questions", "Free", "API calls", "Input tok", "Output tok", "Est. cost"]) {
+        head.append(el("th", null, h));
+      }
+      const body = table.createTBody();
+      for (const r of [...d.by_day].reverse()) {
+        const row = body.insertRow();
+        for (const v of [r.date, num(r.questions), num(r.cached_questions), num(r.api_calls),
+                         num(r.input_tokens), num(r.output_tokens), usd(r.estimated_cost)]) {
+          row.insertCell().textContent = v;
+        }
+      }
+      wrap.append(table);
+      tbl.append(wrap);
+      out.append(tbl);
+
+      const note = el("p", "note",
+        "Estimate from this app's own calls only — the Anthropic Console is the authoritative, account-wide source. " +
+        "Cache writes/reads are priced at ~1.25×/0.1× the input rate. Input tokens here are the uncached remainder; " +
+        "most of each prompt is served from the prompt cache.");
+      if (t.unpriced_calls) {
+        note.append(" " + t.unpriced_calls + " call(s) used a model with no price on file and are excluded from the cost.");
+      }
+      out.append(note);
+    }
+
+    function renderOrg(o) {
+      const box = $("org");
+      box.replaceChildren();
+      const card = el("div", "card spend");
+      card.append(el("h2", null, "Organization spend this month"));
+      if (!o.available) {
+        card.append(el("p", "note", o.reason === "no_key"
+          ? "Add ANTHROPIC_ADMIN_KEY (an sk-ant-admin… key from Console → Settings → Admin keys) to .env, and optionally " +
+            "MONTHLY_SPEND_LIMIT=<dollars>, then restart the server to see account-wide spend here."
+          : "Couldn't load org spend: " + o.error));
+        box.append(card);
+        return;
+      }
+      const row = el("div", "row");
+      const big = el("div", "big", usd(o.spent));
+      if (o.limit) big.append(el("small", null, " of " + usd(o.limit)));
+      row.append(big, el("div", "note", "resets " + o.resets + " (UTC)"));
+      card.append(row);
+      if (o.limit) {
+        const frac = o.spent / o.limit;
+        const meter = el("div", "meter");
+        const fill = document.createElement("i");
+        fill.className = frac >= 0.9 ? "hot" : frac >= 0.7 ? "warn" : "";
+        fill.style.width = Math.min(100, frac * 100) + "%";
+        meter.append(fill);
+        const meta = el("div", "meta");
+        meta.append(el("span", null, (frac * 100).toFixed(0) + "% used"),
+                    el("span", null, usd(Math.max(0, o.limit - o.spent)) + " left"));
+        card.append(meter, meta);
+      } else {
+        card.append(el("p", "note", "Set MONTHLY_SPEND_LIMIT in .env to show a progress bar (the API doesn't expose your limit)."));
+      }
+      card.append(el("p", "note", "Whole organization, from Anthropic's cost report. May differ slightly from the billing page " +
+        "(Priority Tier costs aren't included in that report)."));
+      box.append(card);
+    }
+
+    async function loadOrg() {
+      try {
+        const res = await fetch("/api/org-spend");
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        renderOrg(await res.json());
+      } catch (e) {
+        renderOrg({ available: false, reason: "error", error: e.message });
+      }
+    }
+
+    async function load() {
+      for (const b of $("range").children) b.classList.toggle("on", Number(b.dataset.days) === days);
+      try {
+        const res = await fetch("/api/usage?days=" + days);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        render(await res.json());
+      } catch (e) {
+        $("out").replaceChildren(el("div", "err", "Couldn't load usage: " + e.message));
+      }
+    }
+
+    for (const n of RANGES) {
+      const b = el("button", null, n + "d");
+      b.dataset.days = n;
+      b.onclick = () => {
+        days = n;
+        try { localStorage.setItem("usageDays", n); } catch (e) {}
+        load();
+      };
+      $("range").append(b);
+    }
+    load();
+    loadOrg();
+  </script>
+</body>
+</html>

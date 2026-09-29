@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from core import gm_moments, library, openings, usage
+from core import org_spend as org_spend_mod
 from core.coach import Coach, prompt_hash
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
 from core.review import CACHE_DIR, load_pgn, review_game
@@ -389,6 +390,17 @@ def library_delete(entry_id: int):
 @app.get("/api/review")
 def current_review():
     return public_review()
+
+
+@app.get("/api/org-spend")
+def org_spend():
+    """Whole-organization month-to-date spend (Cost Admin API), vs. MONTHLY_SPEND_LIMIT if set."""
+    return org_spend_mod.month_to_date()
+
+
+@app.get("/usage")
+def usage_page():
+    return FileResponse(STATIC / "usage.html")
 
 
 @app.get("/api/usage")
