@@ -14,7 +14,7 @@
     .range button:hover { color: var(--text); }
     .range button.on { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
 
-    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
     .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
     .tile .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
     .tile .v { font-size: 28px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
@@ -123,6 +123,7 @@
         tile("API calls", num(t.api_calls), (t.api_calls / t.questions).toFixed(1) + " per question"),
         tile("Prompt-cache hit", (hit * 100).toFixed(0) + "%", "of input tokens read from cache"),
         tile("Free repeats", num(t.cached_questions), "answered from local cache"),
+        tile("Web searches", num(t.web_searches ?? 0), num(t.questions_with_search ?? 0) + " question" + (t.questions_with_search === 1 ? "" : "s") + " used it"),
       );
       out.append(tiles);
 
@@ -177,13 +178,13 @@
       const wrap = el("div", "scroll");
       const table = document.createElement("table");
       const head = table.createTHead().insertRow();
-      for (const h of ["Date", "Questions", "Free", "API calls", "Input tok", "Output tok", "Est. cost"]) {
+      for (const h of ["Date", "Questions", "Free", "API calls", "Searches", "Input tok", "Output tok", "Est. cost"]) {
         head.append(el("th", null, h));
       }
       const body = table.createTBody();
       for (const r of [...d.by_day].reverse()) {
         const row = body.insertRow();
-        for (const v of [r.date, num(r.questions), num(r.cached_questions), num(r.api_calls),
+        for (const v of [r.date, num(r.questions), num(r.cached_questions), num(r.api_calls), num(r.web_searches ?? 0),
                          num(r.input_tokens), num(r.output_tokens), usd(r.estimated_cost)]) {
           row.insertCell().textContent = v;
         }
@@ -195,7 +196,8 @@
       const note = el("p", "note",
         "Estimate from this app's own calls only — the Anthropic Console is the authoritative, account-wide source. " +
         "Cache writes/reads are priced at ~1.25×/0.1× the input rate. Input tokens here are the uncached remainder; " +
-        "most of each prompt is served from the prompt cache.");
+        "most of each prompt is served from the prompt cache. Web searches are counted from the API's own usage report, only " +
+        "since that was added (earlier rows show 0), and any per-search fee is not in the estimated cost.");
       if (t.unpriced_calls) {
         note.append(" " + t.unpriced_calls + " call(s) used a model with no price on file and are excluded from the cost.");
       }

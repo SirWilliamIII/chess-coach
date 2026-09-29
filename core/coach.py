@@ -594,6 +594,7 @@ class Coach:
         calls = 0
         tok = {"input_tokens": 0, "output_tokens": 0,
                "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}
+        searches = 0  # server-side web_search uses (Anthropic runs them inside the call)
         try:
             while True:
                 if self._client is None:
@@ -612,6 +613,7 @@ class Coach:
                 calls += 1
                 for k in tok:
                     tok[k] += getattr(response.usage, k, 0) or 0
+                searches += getattr(getattr(response.usage, "server_tool_use", None), "web_search_requests", 0) or 0
                 self.messages.append({"role": "assistant", "content": response.content})
                 text_now = "".join(b.text for b in response.content if b.type == "text").strip()
                 if text_now:
@@ -645,6 +647,6 @@ class Coach:
         finally:
             if calls:
                 try:
-                    usage.record(model=MODEL, api_calls=calls, question=question, **tok)
+                    usage.record(model=MODEL, api_calls=calls, question=question, web_searches=searches, **tok)
                 except Exception:  # noqa: BLE001 — telemetry must never cost the player their answer
                     pass

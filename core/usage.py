@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS calls (
     cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
     api_calls INTEGER NOT NULL DEFAULT 1,
     cached INTEGER NOT NULL DEFAULT 0,
-    question TEXT
+    question TEXT,
+    web_searches INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -54,6 +55,10 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    # databases created before web-search counting have no such column; rows from then count as 0
+    if "web_searches" not in {r["name"] for r in conn.execute("PRAGMA table_info(calls)")}:
+        conn.execute("ALTER TABLE calls ADD COLUMN web_searches INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
     return conn
 
 
@@ -77,15 +82,16 @@ def _cost(model: str, input_tokens: int, output_tokens: int,
 
 def record(*, model: str, input_tokens: int = 0, output_tokens: int = 0,
            cache_creation_input_tokens: int = 0, cache_read_input_tokens: int = 0,
-           api_calls: int = 1, cached: bool = False, question: str = "") -> None:
+           api_calls: int = 1, cached: bool = False, question: str = "", web_searches: int = 0) -> None:
     """A failure here must never cost the player their answer — callers should swallow errors."""
     with _lock:
         db().execute(
             """INSERT INTO calls (created_at, model, input_tokens, output_tokens,
-                   cache_creation_input_tokens, cache_read_input_tokens, api_calls, cached, question)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+                   cache_creation_input_tokens, cache_read_input_tokens, api_calls, cached, question,
+                   web_searches)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (time.time(), model, input_tokens, output_tokens, cache_creation_input_tokens,
-             cache_read_input_tokens, api_calls, int(cached), (question or "")[:200]))
+             cache_read_input_tokens, api_calls, int(cached), (question or "")[:200], web_searches))
         db().commit()
 
 
@@ -99,15 +105,20 @@ def summary(days: int = 30) -> dict:
     totals = {"questions": len(rows), "cached_questions": 0, "api_calls": 0,
               "input_tokens": 0, "output_tokens": 0,
               "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
-              "estimated_cost": 0.0, "unpriced_calls": 0}
+              "estimated_cost": 0.0, "unpriced_calls": 0,
+              "web_searches": 0, "questions_with_search": 0}
     by_day: dict[str, dict] = {}
     for r in rows:
         day = time.strftime("%Y-%m-%d", time.localtime(r["created_at"]))
         slot = by_day.setdefault(day, {"questions": 0, "cached_questions": 0, "api_calls": 0,
-                                        "input_tokens": 0, "output_tokens": 0, "estimated_cost": 0.0})
+                                        "input_tokens": 0, "output_tokens": 0, "estimated_cost": 0.0,
+                                        "web_searches": 0})
         cost = _cost(r["model"], r["input_tokens"], r["output_tokens"],
                      r["cache_creation_input_tokens"], r["cache_read_input_tokens"])
         totals["cached_questions"] += r["cached"]
+        totals["web_searches"] += r["web_searches"]
+        totals["questions_with_search"] += r["web_searches"] > 0
+        slot["web_searches"] += r["web_searches"]
         totals["api_calls"] += r["api_calls"]
         totals["input_tokens"] += r["input_tokens"]
         totals["output_tokens"] += r["output_tokens"]

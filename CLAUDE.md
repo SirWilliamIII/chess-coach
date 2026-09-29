@@ -161,6 +161,12 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   field, so it's typed once in `.env`). The cost report excludes Priority Tier costs, so it can
   read slightly under the Console billing page; results are cached 60 s. Add new models to
   `PRICING` in `core/usage.py` or their calls show as `unpriced_calls`.
+  **Web searches** are counted per question from `response.usage.server_tool_use.web_search_requests`
+  (summed over the tool loop in `Coach.ask()`, stored in `calls.web_searches`; older rows are 0, and an
+  existing DB gets the column via `ALTER TABLE` on connect). Shown as a tile and a By-day column. The
+  count was tested against a DB copy but the field's real-world population is unverified — if the tile
+  stays 0 after the coach searches, check that path. Per-search cost is *not* in the estimate (rate
+  unknown here); the org card lists "Web Search Usage" as its own line.
 - **`/lessons` page** (`static/lessons.html`, route in `server.py`): a standalone, deliberately
   *unlinked* copy of the in-app 📚 Lessons dialog — search, ★/🧠 filters, tag chips, expand an
   entry to read the full answer, star, delete. Same `/api/library*` endpoints and same
