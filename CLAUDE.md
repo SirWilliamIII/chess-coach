@@ -83,6 +83,10 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   explorer) to `.game-panel`, both `position: relative` in `style.css`. If either wrapper moves
   again, that CSS rule has to move with it or the dropdown anchors to the wrong element. The
   dropdowns open inside `.chat-panel`, which is `overflow: hidden`, so they must fit within it.
+- **Header buttons have a deliberate hierarchy** (`.actions` in `index.html`): Play game + Find game by
+  username are `.btn.primary` (green, larger), Analysis board is a grey `.btn.ghost`, and Lessons +
+  Load game are quiet `.link` text buttons after an `.actions-sep` divider (hidden ≤760px, where the
+  row wraps). Button ids are unchanged, so the JS wiring didn't move.
 - **"Moves & engine" panel (`.game-panel` / `#gp-details`) is docked, draggable and resizable.**
   - *Docking:* `dockGamePanel()` in `app.js` (called first in `renderInfo()` and `updateEditor()`)
     moves the whole `.game-panel` into `#game-info` on the empty analysis board, where the old
@@ -344,4 +348,5 @@ width so it lines up with the board's right edge · removed "Your move" / "Bot i
 analysis board and became draggable, resizable and stay-open (closes on ✕ / toggle / Esc / a click
 outside board and panel) · "Play from position" dialog reordered (color first), previews the bot it
 will use, Replay honours the chosen color, and Best-moves-only falls back to your own side's rating
-before ~1500 (see the bullets above).
+before ~1500 (see the bullets above) · header buttons re-ranked: Play game / Find game primary, Analysis
+board secondary, Lessons / Load game demoted to text links.
