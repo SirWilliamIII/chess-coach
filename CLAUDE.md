@@ -97,7 +97,8 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   answer cache with the chip for the same position. Evals on the card are White's point of view, like
   the rest of the app. **Play X** makes the best move via `onPlayMove`; the buttons
   disable themselves (`syncCards()`, called from `update()`) once the position moves on or it isn't
-  your turn. Older cards collapse to their header. Takes ~2.5-5.5 s per card here. **Replays still get
+  your turn. Each card also has a **Back to my game** button (lower right, `closeDemo()`), enabled
+  only while a demo is open. Older cards collapse to their header. Takes ~2.5-5.5 s per card here. **Replays still get
   the short coach one-liner** (`commentOnOpponentMove`, capped at 4), not a card, since there you
   play your own game move. Tested with Playwright including stubbed responses for the sharper-try /
   threat / loose rows; the "Why?" click and real threat/loose output in a live game were not run.
@@ -139,7 +140,7 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
 - **The name rows are capped to the board's width.** `--board-w` is defined on `.board-col` and used
   by both `.board-wrap` and `.player` (`max-width: 34px + --board-w`; 34px = 28px eval bar + 6px
   gap, same as the rows' `padding-left`). Without the cap the rows span the whole grid column,
-  which is wider than the capped board, so right-aligned items (Takeback) hung off the board's edge.
+  which is wider than the capped board, so right-aligned items hung off the board's edge (Takeback used to be one; the demo's "Back to my game" still is).
   The ≤760px override sets `--board-w` on `.board-col`.
 - **`#summary` in a bot game shows no "Your move" / "Bot is thinking…" text** (removed on purpose).
   It still shows the game-over result, the "Viewing an earlier position" note, and Stop bot.
@@ -147,10 +148,12 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   database, all rating bands, all six speeds. The speeds are listed explicitly on purpose —
   `explorer.explore()` turns a *missing* speeds list into blitz+rapid only, so "all" has to be
   sent. Masters is no longer selectable from the UI (the backend still supports `db="masters"`).
-- **Takeback lives at the right end of the `#player-top` row** (`takebackHtml()`, rendered in `renderInfo()`
-  after the name/clock/captured pieces; `#player-top .btn.small` has `margin-left: auto` in `style.css`
-  to push it right). That's the opponent's row in a normal game (your side is at the bottom). It's
-  hidden in demo mode.
+- **"Takeback Move" lives in the chat header** — a static `#pb-takeback` button in `.chat-head-right`
+  (`index.html`), before the Moves & engine panel and New chat. `syncTakeback()` (called from
+  `renderInfo()`) shows it only in a bot game and not in demo mode, and disables it until there's a
+  move to take back; `updateEditor()` hides it. `dockGamePanel()` inserts the panel before
+  `#btn-chat-reset`, so Takeback stays first. Nowrap on the right cluster; at ~1200px the title on the
+  left may wrap instead.
 - **One game load at a time.** `POST /api/load` returns 409 while `S.job` is `running` (one
   Stockfish, one global state); the message says to wait and retry. Loading a second game while
   the first is still being analysed is the usual way to see it. A load does *not* cancel the

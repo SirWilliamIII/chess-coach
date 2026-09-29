@@ -275,6 +275,7 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .chat-head .game-info { justify-self: start; padding: 0; }
 .chat-head .summary { justify-self: center; padding: 0; position: relative; }
 .chat-head-right { justify-self: end; display: flex; align-items: center; gap: 10px; }
+.chat-head-right .btn, .chat-head-right .link { white-space: nowrap; }
 .chat-log { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 .msg { max-width: 92%; padding: 9px 12px; border-radius: 10px; word-wrap: break-word; }
 .msg p { margin: 0 0 16px; }
@@ -579,6 +580,7 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .demo-btn.sharp { background: #6b3a1f; }
 .demo-btn.sharp:hover { background: #82461f; }
 .card-actions { margin-top: 2px; }
+.card-back { margin-left: auto; }  /* lower right of the card */
 .card-replylist { display: flex; flex-direction: column; gap: 4px; }
 .card-reply { display: flex; align-items: center; gap: 8px; }
 .card-arrow { color: var(--muted); }

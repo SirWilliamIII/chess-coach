@@ -338,13 +338,6 @@ setInterval(() => {
   }
 }, 250);
 
-// Takeback sits at the right end of the top name row (#player-top), not in the chat header.
-function takebackHtml() {
-  const p = state.play;
-  if (!p || state.demo) return '';
-  return `<button class="btn ghost small takeback" id="pb-takeback" ${p.moves.length ? '' : 'disabled'}>Takeback</button>`;
-}
-
 // On the empty analysis board the "Moves & engine" panel takes the spot the "Analysis board" title
 // used to have (left of the chat header); everywhere else it lives in .chat-head-right. It has to
 // be moved back before anything overwrites #game-info, or that assignment would delete it.
@@ -354,7 +347,14 @@ function dockGamePanel(inTitle) {
   const home = inTitle ? $('game-info') : document.querySelector('.chat-head-right');
   if (gp.parentElement === home) return;
   if (inTitle) { $('game-info').textContent = ''; home.appendChild(gp); }
-  else home.prepend(gp);
+  else home.insertBefore(gp, $('btn-chat-reset'));  // keeps Takeback Move first, New chat last
+}
+
+// "Takeback Move" lives in the chat header (a static button in index.html), shown only in a bot game
+function syncTakeback() {
+  const p = state.play;
+  $('pb-takeback').classList.toggle('hidden', !p || !!state.demo);
+  $('pb-takeback').disabled = !p || !p.moves.length;
 }
 
 function renderInfo() {
@@ -362,9 +362,9 @@ function renderInfo() {
   dockGamePanel(!state.demo && !state.play && !r.moves.length);
   const top = state.orientation === 'white' ? 'black' : 'white';
   const mat = material(currentGame());
-  $('player-top').innerHTML = playerLine(top) + capturedHtml(top, mat) + takebackHtml();
+  $('player-top').innerHTML = playerLine(top) + capturedHtml(top, mat);
   $('player-bottom').innerHTML = playerLine(state.orientation) + capturedHtml(state.orientation, mat);
-  $('pb-takeback')?.addEventListener('click', takeback);
+  syncTakeback();
   document.querySelectorAll('.you-pick').forEach((el) => { el.onclick = () => setYou(el.dataset.color); });
   document.body.classList.toggle('demo-mode', !!state.demo);
   if (state.demo) return renderDemoInfo();
@@ -1871,6 +1871,7 @@ function onEditorSelect(key) {
 
 function updateEditor() {
   dockGamePanel(false);
+  $('pb-takeback').classList.add('hidden');
   renderBoard();
   const ed = state.editor;
   const fen = editorFen();
@@ -2178,7 +2179,8 @@ async function showOpponentCard(c) {
     if (list.length) rows.push(`<div class="card-row"><span class="card-k">${who} loose</span><span class="card-sub">${esc(list.join('; '))}</span></div>`);
   }
   rows.push(`<div class="card-row card-actions"><button class="btn small card-play-btn" data-fen="${esc(fen)}">Play ${esc(best.move)}</button>`
-    + `<button class="btn ghost small card-why" data-fen="${esc(fen)}">Why?</button></div>`);
+    + `<button class="btn ghost small card-why" data-fen="${esc(fen)}">Why?</button>`
+    + `<button class="btn ghost small card-back" title="Close the demo board and return to your game">Back to my game</button></div>`);
 
   document.querySelectorAll('.msg.card:not(.collapsed)').forEach((m) => m.classList.add('collapsed'));  // keep the chat short
   const msg = addMsg('coach card',
@@ -2207,6 +2209,7 @@ async function showOpponentCard(c) {
     b.onclick = () => openDemo(b.dataset.demo === 'main' ? demoFor(`Main line: ${best.move}`, best.moves)
       : demoFor(`Sharper try: ${card.aggressive.move}`, card.aggressive.moves));
   });
+  msg.querySelector('.card-back').onclick = () => closeDemo();
   msg.querySelector('.card-play-btn').onclick = () => {
     if (!cardIsCurrent(fen)) return;
     onPlayMove(best.uci.slice(0, 2), best.uci.slice(2, 4));
@@ -2226,6 +2229,7 @@ function cardIsCurrent(fen) {
 
 function syncCards() {
   document.querySelectorAll('.card-play-btn, .card-why').forEach((b) => { b.disabled = !cardIsCurrent(b.dataset.fen); });
+  document.querySelectorAll('.card-back').forEach((b) => { b.disabled = !state.demo; });  // only meaningful while a demo is open
 }
 
 // ---- "only a GM would see this": engine check each time it's the player's turn
@@ -2538,6 +2542,7 @@ async function startGame() {
 
 // ---------------------------------------------------------------- wiring
 
+$('pb-takeback').onclick = takeback;
 $('btn-play').onclick = () => { pendingFen = null; openPlayDialog(); };
 $('btn-library').onclick = openLibrary;
 $('lib-q').oninput = () => { clearTimeout(libTimer); libTimer = setTimeout(searchLibrary, 250); };
