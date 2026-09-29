@@ -229,7 +229,7 @@ def _load_job(ref: str, me: str | None):
 @app.post("/api/load")
 def load(req: LoadReq):
     if S.job["status"] == "running":
-        raise HTTPException(409, "already loading a game")
+        raise HTTPException(409, "still analysing the previous game — try again in a moment")
     S.job = {"status": "running", "done": 0, "total": 0, "error": None}
     threading.Thread(target=_load_job, args=(req.ref, req.me), daemon=True).start()
     return {"ok": True}

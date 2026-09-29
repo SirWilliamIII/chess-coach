@@ -73,14 +73,40 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   board (the prompt tells the coach this). Outside numbered cards, a block's `.san` chips *are*
   the demo trigger directly (hover previews the move, click opens it on the demo board) — there's
   no separate "Show on board" button anymore, see `addLineButtons()`'s non-card-play branch.
-- **`#game-info` and `#summary` live in `.chat-head` now, not `.game-panel`.** `renderInfo()`
-  still targets them by ID so no JS needed to change when they moved — but `#from-moves` (the
-  "Play from position" move-picker dropdown, `position: absolute`) anchors to whatever positioned
-  ancestor it's nearest to, which is now `.summary` itself (`position: relative` in `style.css`),
-  not `.game-panel`. If `#summary` ever moves again, that CSS rule has to move with it or the
-  dropdown will anchor to the wrong element.
+- **The whole header cluster lives in `.chat-head`; there is no right-hand column anymore.**
+  `#game-info`, `#summary`, and the "Moves & engine" panel (`.game-panel`, now a plain `<div>`
+  inside `.chat-head-right` next to "New chat", no longer a `.panel` grid item) are all there, and
+  `main` is a two-column grid (board + chat; one column ≤1150px with chat below the board).
+  `renderInfo()` targets everything by ID, so moving things needs no JS change — but two dropdowns
+  are `position: absolute` and anchor to their nearest positioned ancestor: `#from-moves` (the
+  "Play from position" picker) to `.summary`, and `#gp-details` (moves list, engine lines,
+  explorer) to `.game-panel`, both `position: relative` in `style.css`. If either wrapper moves
+  again, that CSS rule has to move with it or the dropdown anchors to the wrong element. The
+  dropdowns open inside `.chat-panel`, which is `overflow: hidden`, so they must fit within it.
+- **Opening explorer has no filter UI.** `explorerFilters()` in `app.js` is a constant: Lichess
+  database, all rating bands, all six speeds. The speeds are listed explicitly on purpose —
+  `explorer.explore()` turns a *missing* speeds list into blitz+rapid only, so "all" has to be
+  sent. Masters is no longer selectable from the UI (the backend still supports `db="masters"`).
+- **Takeback lives on the player's own name row** (`takebackHtml()`, rendered in `renderInfo()`
+  after the name/clock/captured pieces; that row is `justify-content: space-evenly` via
+  `.player:has(.takeback)`), not in `#summary`. It's hidden in demo mode.
+- **One game load at a time.** `POST /api/load` returns 409 while `S.job` is `running` (one
+  Stockfish, one global state); the message says to wait and retry. Loading a second game while
+  the first is still being analysed is the usual way to see it. A load does *not* cancel the
+  running one — see TODOs.
+- **`/usage` page** (`static/usage.html`, standalone, reuses `style.css` tokens): this app's own
+  spend from `core/usage.py` (`GET /api/usage`, everything the app sent, estimated cost only) plus
+  **organization-wide** month-to-date spend, by model, from `core/org_spend.py`
+  (`GET /api/org-spend`, Anthropic's Cost Admin API `/v1/organizations/cost_report`). The org part
+  needs `ANTHROPIC_ADMIN_KEY` (an `sk-ant-admin…` key — separate from `ANTHROPIC_API_KEY`, which
+  admin keys can't replace; it can manage org members/keys, so it's only used for that one
+  read-only call) and optionally `MONTHLY_SPEND_LIMIT` (dollars — the API exposes no spend-limit
+  field, so it's typed once in `.env`). The cost report excludes Priority Tier costs, so it can
+  read slightly under the Console billing page; results are cached 60 s. Add new models to
+  `PRICING` in `core/usage.py` or their calls show as `unpriced_calls`.
 - **`.env` is gitignored** and must be recreated on every machine/clone
-  (`ANTHROPIC_API_KEY`, `LICHESS_TOKEN`, optional `CHESS_USER`). This machine has two local
+  (`ANTHROPIC_API_KEY`, `LICHESS_TOKEN`, optional `CHESS_USER`, optional `ANTHROPIC_ADMIN_KEY` +
+  `MONTHLY_SPEND_LIMIT` for the `/usage` page's org-spend card). This machine has two local
   clones — `/Users/will/chess-coach` (primary) and `~/Projects/chess-coach` (secondary,
   kept in sync via `git pull`) — each needs its own `.env`.
 
@@ -143,6 +169,9 @@ audit):
     tool verified." The cheaper, lower-risk lever is skipping the LLM call entirely for
     lookup-shaped content (openings/puzzles/tablebases — see above), not swapping the model
     that does the actual reasoning.
+- **Loading a game while another is analysing.** Currently rejected with a 409 (see "One game
+  load at a time"). Nicer option not built: let a new load cancel/replace the running one, which
+  needs a way to abort the in-flight `review_game` engine pass.
 - **Clock is scoped to fresh bot games only.** The "Use a clock" option lives in the
   "Play a game" dialog (`dlg-play` → `startGame()`). "Play from here" / Replay (`dlg-from`)
   don't have a clock option — that was out of scope for the original ask, not an oversight,
@@ -192,3 +221,14 @@ roughly 5-5-2 split, `#game-info` and the "Play from position" button moved into
 whenever the model wrote more than one substantial part (a multi-step web-search answer's
 explanation, verification, and follow-up note, for example) · fixed a CSS Grid bug where mixing
 explicitly-placed and auto-placed panels dropped chat into an unintended second row.
+
+## Recent major work (2026-09-28, later in the same day)
+
+Added the `/usage` page (local usage tiles, daily chart, token mix, per-day table) and an
+org-wide month-to-date spend card with a by-model breakdown and a progress bar against
+`MONTHLY_SPEND_LIMIT` (`core/org_spend.py`, `GET /api/org-spend`) · bot games show the opponent as
+`Bot (~1200)` and drop the subtitle above the board · Takeback moved onto the player's own name
+row · **supersedes the earlier layout bullet above:** the game panel moved *out of* the right
+column into `.chat-head`, the grid went from three columns to two · the explorer lost its
+db/rating/speed dropdowns and now always queries all of Lichess (Masters is no longer the UI
+default — it isn't selectable) · clearer 409 message when a load is already running.
