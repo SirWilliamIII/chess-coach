@@ -23,10 +23,16 @@ const state = {
 const CHIPS = {
   review: [
     ['Best move', 'What is the best move here, and why? Keep it concise — concrete effect, my plan, opponent response if relevant.'],
-    ['Quiz me', "Quiz me on why this move was played — ask me first what its point was, wait for my answer, then tell me if I've got it and fill in whatever I'm missing."],
+    ['Why this move?', "Quiz me on why this move was played — ask me first what its point was, wait for my answer, then tell me if I've got it and fill in whatever I'm missing."],
     ['What should I have played?', 'What should have been played instead? Just the concrete difference — what it achieves or what my move allowed.'],
-    ['Show me', "Walk me through this position step by step. Ask me what I'd play before each move."],
+    ['Guess the next move', "Quiz me on what to play from this position with move_quiz: a few real options, no hint "
+      + "beyond the tension on the board, in one or two sentences. Don't say what happened in the actual "
+      + "game or which option is wrong: that would spoil it. Keep the reward under 40 words: why the move "
+      + "works and what to expect back. If there really isn't one correct move to find here, skip the quiz and say why."],
     ['Show main lines', 'Show me the main lines from this position: how to play them properly, the ideas for both sides, and the key traps.'],
+    // [label, question, needs, action]. 'game': only offered when a game with moves is loaded.
+    // A chip with an action runs locally (no coach call) instead of asking the question.
+    ['Game-changing moment', null, 'game', () => gameChangingMoment()],
   ],
   play: [
     ['My plan?', "What plan should I be aiming for in this position? Start with a one-line opponent "
@@ -40,6 +46,19 @@ const CHIPS = {
       + "first. If there really isn't one correct move to find here, skip the quiz and say why "
       + "(e.g. an open position with more than one reasonable plan)."],
   ],
+};
+
+// hover text for each chip, by label
+const CHIP_TIPS = {
+  'Best move': 'Asks the coach for the best move here: what it does, your plan, and their likely reply.',
+  'Why this move?': 'The coach asks what the last move was for, waits for your answer, then tells you what you got and what you missed.',
+  'What should I have played?': 'What should have been played instead, and what the move played allowed.',
+  'Guess the next move': 'A multiple-choice quiz on what to play here. Play the right move, then press it again for the next one.',
+  'Show main lines': 'The main lines from this position: how to play them, the ideas for both sides, and the key traps.',
+  'Game-changing moment': 'Free and instant: jumps to the move that cost the most win chance in this game. Its Explain button asks the coach why.',
+  'My plan?': 'Their threats first, then your move, their realistic replies, and an if-then plan for each.',
+  'Hint': 'A nudge without the move: pick from a few options.',
+  'Test me': 'Guess the move from a few options with no hint first.',
 };
 
 function store(key, value) {
@@ -1354,7 +1373,7 @@ async function ask(question, opts = {}) {
     }
     pending.remove();
     if (opts.skipEmpty && /^\(nothing\)\.?$/i.test(data.answer.trim())) return;
-    renderAnswer(data, opts);
+    renderAnswer(data, { ...opts, live: true });
   } catch (e) {
     pending.remove();
     addMsg('error', esc(e.message));
@@ -1388,8 +1407,11 @@ function renderAnswer(data, opts = {}) {
   // coach ply = the position *before* that move, so the board goes to ply - 1 moves played
   const jumps = state.review && !state.play
     ? (data.jumps || []).filter((j) => j.ply <= state.review.moves.length + 1) : [];
-  const jumpBtn = jumps.length
-    ? `<div class="demos">${jumps.map((j, i) => `<button class="demo-btn jump-btn" data-j="${i}">⏭ Jump ahead to move ${Math.ceil(Math.max(1, j.ply) / 2)}</button>`).join('')}</div>` : '';
+  // a go-now jump ("what would you play as White's 10th move?") moves the board as the answer appears,
+  // only for a fresh answer (not one reopened from Lessons) and not mid-replay, where you're already on the move
+  const auto = opts.live && !state.replay ? jumps.find((j) => j.now) : null;
+  const jumpBtn = jumps.some((j) => !j.now)
+    ? `<div class="demos">${jumps.map((j, i) => (j.now ? '' : `<button class="demo-btn jump-btn" data-j="${i}">⏭ Jump ahead to move ${Math.ceil(Math.max(1, j.ply) / 2)}</button>`)).join('')}</div>` : '';
   const label = opts.label ? `<div class="gm-label">${esc(opts.label)}</div>` : '';
   const star = data.entry_id
     ? `<button class="star${data.starred ? ' on' : ''}" title="Save to favourites in Lessons">${data.starred ? '★' : '☆'}</button>` : '';
@@ -1397,6 +1419,7 @@ function renderAnswer(data, opts = {}) {
     star + label + markdown(data.answer) + renderQuiz(data.quiz) + jumpBtn + buttons + tools, opts.where);
   msg.querySelectorAll('.demo-btn[data-i]').forEach((b) => { b.onclick = () => openDemo(demos[+b.dataset.i]); });
   msg.querySelectorAll('.jump-btn').forEach((b) => { b.onclick = () => jumpToPly(jumps[+b.dataset.j].ply); });
+  if (auto) jumpToPly(auto.ply);
   msg.querySelectorAll('.quiz-opt').forEach((btn) => {
     const dest = moveDestination(btn.dataset.san);
     btn.onclick = () => {
@@ -1406,6 +1429,13 @@ function renderAnswer(data, opts = {}) {
         box.querySelectorAll('.quiz-opt').forEach((b) => { b.disabled = true; });
         const reward = box.querySelector('.quiz-reward');
         reward.textContent = box.dataset.reward;
+        // a move quiz in a game review: point at how to keep going (the chip asks about the board as it is now)
+        if (!state.play && !['True', 'False'].includes(box.dataset.correct)) {
+          const next = document.createElement('div');
+          next.className = 'quiz-next';
+          next.textContent = 'Play it on the board, then press “Guess the next move” for the next one.';
+          reward.appendChild(next);
+        }
         reward.classList.remove('hidden');
       } else {
         btn.disabled = true;
@@ -1508,9 +1538,37 @@ async function openEntry(id) {
 }
 
 function renderChips() {
-  const chips = CHIPS[state.play ? 'play' : 'review'];
-  $('chips').innerHTML = chips.map(([label, q]) => `<button class="chip" data-q="${esc(q)}">${esc(label)}</button>`).join('');
-  $('chips').querySelectorAll('.chip').forEach((el) => { el.onclick = () => ask(el.dataset.q, { hideQuestion: true }); });
+  const chips = CHIPS[state.play ? 'play' : 'review']
+    .filter(([, , needs]) => needs !== 'game' || (state.review && state.review.moves.length));
+  $('chips').innerHTML = chips.map(([label], i) =>
+    `<button class="chip" data-i="${i}" data-tip="${esc(CHIP_TIPS[label] || '')}">${esc(label)}</button>`).join('');
+  $('chips').querySelectorAll('.chip').forEach((el) => {
+    const [, q, , action] = chips[+el.dataset.i];
+    el.onclick = () => (action ? action() : ask(q, { hideQuestion: true }));
+    // chips near the right edge would push the tooltip out of the (overflow: hidden) chat panel
+    el.onmouseenter = () => el.classList.toggle('tip-right', el.getBoundingClientRect().left + 250 > $('chips').getBoundingClientRect().right);
+  });
+}
+
+// "Game-changing moment": free and instant. The review already scored every move by how much win
+// probability it cost, so jump to the biggest drop; the coach is only asked if you click Explain.
+function gameChangingMoment() {
+  const moves = state.review.moves.filter((m) => typeof m.win_pct_lost === 'number');
+  if (!moves.length || state.play || state.editor) return;
+  const m = moves.reduce((a, b) => (b.win_pct_lost > a.win_pct_lost ? b : a));
+  const name = `${m.label}${m.label.endsWith('...') ? '' : ' '}${m.san}`;
+  const side = m.color === state.review.player_color ? 'your' : m.color === 'white' ? "White's" : "Black's";
+  const big = m.win_pct_lost >= 10;
+  const text = big
+    ? `Biggest swing: **${name}** (${side} move). It took the eval from ${m.eval_before} to ${m.eval_after}, `
+      + `about ${Math.round(m.win_pct_lost)}% win chance lost in one move.`
+    : `No single move decided this game. The biggest swing was **${name}** (${side} move), `
+      + `${m.eval_before} to ${m.eval_after}, only about ${Math.round(m.win_pct_lost)}% win chance.`;
+  jumpToPly(m.ply);
+  const msg = addMsg('coach', `${markdown(text)}<div class="demos"><button class="demo-btn">Explain why</button></div>`);
+  msg.querySelector('.demo-btn').onclick = () => ask(
+    `Explain why ${name} was the biggest turning point of this game: what it did, and what should have been played instead. Keep it concise.`,
+    { hideQuestion: true });
 }
 
 function resetChatUi(note) {
@@ -1528,9 +1586,9 @@ function setReview(review, note, play = null) {
   state.play = play;
   opponentCommentCount = 0;
   openingNote = { family: null, key: null, count: 0 };
-  renderChips();
   state.review = review;
-  state.ply = (!play && review.player_color && review.moves.length) ? review.moves.length : 0;
+  renderChips();  // after state.review: some chips depend on whether a game is loaded
+  state.ply = 0;  // every load starts from the beginning of the game
   state.extra = [];
   state.orientation = play ? play.color : (review.player_color || 'white');
   resetChatUi(note);

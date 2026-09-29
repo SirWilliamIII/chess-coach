@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 import anthropic
@@ -153,14 +154,23 @@ TOOLS = [
             "navigating. Call it once per moment you name (max 3), with the ply of the move you're "
             "pointing at (the button shows the board *before* that move, so the player sees the "
             "position you're talking about). Only for a loaded game with moves; not for hypothetical "
-            "lines (use show_on_board for those). It complements show_on_board, it doesn't replace it."
+            "lines (use show_on_board for those). It complements show_on_board, it doesn't replace it. "
+            "Set go_now=true when you're asking the player to find a move at a specific point of the "
+            "game ('what would you play as White's 10th move here?'): the board then moves there by "
+            "itself as your answer appears, instead of waiting for a click."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "ply": {"type": "integer", "description": "Ply of the move to jump to (as for analyze_position)"},
+                "move": {"type": "string",
+                         "description": "SAN of the move played at that ply, e.g. 'Be6'. Checked against the game, "
+                                        "so the button can't point at the wrong place."},
+                "go_now": {"type": "boolean",
+                           "description": "Move the board there automatically (no button), for a 'what would you "
+                                          "play here?' question. Default false."},
             },
-            "required": ["ply"],
+            "required": ["ply", "move"],
         },
     },
     {
@@ -448,13 +458,24 @@ class Coach:
                                 "start_fen": start_fen, "moves": line, "notes": notes})
         return {"ok": True, "demo": len(self.last_demos), "moves": line}
 
-    def jump_to_move(self, ply: int) -> dict:
+    def jump_to_move(self, ply: int, move: str, go_now: bool = False) -> dict:
         moves = self.review["moves"]
         if not moves:
             raise ValueError("there's no game loaded to jump around in")
         self._board_at(ply)  # validates the range
-        if all(j["ply"] != ply for j in self.last_jumps) and len(self.last_jumps) < 3:
-            self.last_jumps.append({"ply": ply})
+        # the ply and the move you named in the text must agree, or the button lands somewhere else
+        played = moves[ply - 1]["san"] if 1 <= ply <= len(moves) else None
+        strip = lambda san: san.strip().rstrip("+#!?")  # noqa: E731
+        if played is None or strip(played) != strip(move):
+            near = [m["ply"] for m in moves if strip(m["san"]) == strip(move)]
+            raise ValueError(
+                f"ply {ply} is {moves[ply - 1]['label'] + ' ' + played if played else 'past the last move'}, not {move}."
+                + (f" {move} was played at ply {', '.join(map(str, near[:3]))}." if near else ""))
+        same = next((j for j in self.last_jumps if j["ply"] == ply), None)
+        if same:
+            same["now"] = same.get("now", False) or go_now
+        elif len(self.last_jumps) < 3:
+            self.last_jumps.append({"ply": ply, **({"now": True} if go_now else {})})
         return {"ok": True, "ply": ply}
 
     def move_quiz(self, ply: int, options: list[str], correct: str, reward: str,
@@ -466,7 +487,7 @@ class Coach:
             correct_norm = correct.strip().capitalize()
             if correct_norm not in legal:
                 raise ValueError("`correct` must be one of `options`")
-            self.last_quiz = {"options": legal, "correct": correct_norm, "reward": str(reward)[:200]}
+            self.last_quiz = {"options": legal, "correct": correct_norm, "reward": str(reward)[:300]}
             return {"ok": True, "options": legal}
         board, setup = self._position(ply, then_moves)
         legal = []
@@ -484,7 +505,7 @@ class Coach:
             raise ValueError(f"the correct answer {correct!r} is illegal in this position")
         if correct_san not in legal:
             raise ValueError("`correct` must be one of `options`")
-        self.last_quiz = {"options": legal, "correct": correct_san, "reward": str(reward)[:200]}
+        self.last_quiz = {"options": legal, "correct": correct_san, "reward": str(reward)[:300]}
         return {"ok": True, "options": legal}
 
     def opening_explorer(self, ply: int, then_moves: list[str] | None = None, db: str = "lichess",
@@ -535,7 +556,7 @@ class Coach:
             result = self.show_on_board(str(args["title"]), int(args["ply"]), list(args["moves"]),
                                         args.get("then_moves"), args.get("notes"))
         elif name == "jump_to_move":
-            result = self.jump_to_move(int(args["ply"]))
+            result = self.jump_to_move(int(args["ply"]), str(args["move"]), bool(args.get("go_now", False)))
         elif name == "move_quiz":
             result = self.move_quiz(int(args["ply"]), list(args["options"]), str(args["correct"]),
                                     str(args["reward"]), args.get("then_moves"))
@@ -629,10 +650,15 @@ class Coach:
         tok = {"input_tokens": 0, "output_tokens": 0,
                "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}
         searches = 0  # server-side web_search uses (Anthropic runs them inside the call)
+        # where the wait goes: time in the API vs. time in our tools (engine, explorer), per question
+        t_start = time.monotonic()
+        api_s = tool_s = 0.0
+        stats0 = dict(getattr(self.engine, "stats", None) or {})
         try:
             while True:
                 if self._client is None:
                     self._client = anthropic.Anthropic()
+                t0 = time.monotonic()
                 response = self._client.beta.messages.create(
                     model=MODEL,
                     max_tokens=16000,
@@ -644,6 +670,7 @@ class Coach:
                     betas=["server-side-fallback-2026-07-01"],
                     fallbacks="default",
                 )
+                api_s += time.monotonic() - t0
                 calls += 1
                 for k in tok:
                     tok[k] += getattr(response.usage, k, 0) or 0
@@ -664,6 +691,7 @@ class Coach:
                     return _final_answer(parts)
 
                 results = []
+                t0 = time.monotonic()
                 for block in tool_uses:
                     self.progress.append({"name": block.name, "input": block.input})
                     if on_tool:
@@ -677,10 +705,19 @@ class Coach:
                         # the conversation for every question after it in this game
                         results.append({"type": "tool_result", "tool_use_id": block.id,
                                         "content": f"Error: {e}", "is_error": True})
+                tool_s += time.monotonic() - t0
                 self.messages.append({"role": "user", "content": results})
         finally:
             if calls:
+                stats1 = getattr(self.engine, "stats", None) or {}
+                searched = int(stats1.get("searches", 0) - stats0.get("searches", 0))
+                hits = int(stats1.get("cache_hits", 0) - stats0.get("cache_hits", 0))
+                print(f"coach: {time.monotonic() - t_start:.1f}s total | api {api_s:.1f}s over {calls} call(s) | "
+                      f"tools {tool_s:.1f}s | engine {searched} search(es), {hits} cache hit(s) | {question[:50]!r}",
+                      flush=True)
                 try:
-                    usage.record(model=MODEL, api_calls=calls, question=question, web_searches=searches, **tok)
+                    usage.record(model=MODEL, api_calls=calls, question=question, web_searches=searches,
+                                 api_seconds=api_s, tool_seconds=tool_s, engine_searches=searched,
+                                 engine_cache_hits=hits, **tok)
                 except Exception:  # noqa: BLE001 — telemetry must never cost the player their answer
                     pass

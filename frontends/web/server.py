@@ -89,7 +89,8 @@ def public_review() -> dict:
         "opening": r["opening"], "start_fen": r["start_fen"],
         "player_color": S.coach.player_color if S.coach else None,
         "moves": [{k: m[k] for k in ("ply", "label", "color", "san", "uci", "fen_after",
-                                     "eval_after", "best", "class", "played_best")} for m in r["moves"]],
+                                     "eval_before", "eval_after", "best", "class", "played_best",
+                                     "win_pct_lost")} for m in r["moves"]],
     }
 
 
