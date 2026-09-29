@@ -101,6 +101,17 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   the short coach one-liner** (`commentOnOpponentMove`, capped at 4), not a card, since there you
   play your own game move. Tested with Playwright including stubbed responses for the sharper-try /
   threat / loose rows; the "Why?" click and real threat/loose output in a live game were not run.
+- **Opening reactions** ("Caro-Kann player, I see…") — free, no Claude call. `core/eco.py` indexes the
+  vendored lichess-org/chess-openings TSVs (`core/eco_data/`, CC0, fetched 2026-09-28) by EPD, so
+  transpositions into a listed position are recognised; **only exact positions in the table match**
+  (an off-book move produces nothing until it lands on a named position). `core/opening_quips.py` maps
+  names to hand-written lines by longest prefix (family or variation, ~65 entries; the rest get a
+  generic "A {nickname} player, I see."). `POST /api/opening {fen}` returns the name + a quip;
+  `openingQuip()` in `app.js` posts it as a `.msg.quip` bubble after an opponent move — bot games
+  (`botMove`) and replays (`commentOnOpponentMove`, where it replaces the paid one-liner for that
+  move). Guards: game started from the standard position, ply ≤ 16, max 3 per game, only for a new
+  family or a variation that has its own line, and bland names ("King's Pawn Game") are skipped.
+  Not built: tactic reactions ("nice fork") — only openings.
 - **`Engine._call` is serialized with a lock** (`core/engine.py`). One Stockfish, several request
   threads (eval bar, GM check, coach tools, the card): overlapping `analyse` calls returned an empty
   line list and 500'd the card endpoint. `Bot` has its own process and lock.
@@ -277,7 +288,7 @@ audit):
 - **Duplicate board-link buttons.** Decide whether to drop the bottom "Show me: ..." row now
   that inline per-point buttons cover almost everything, keep both, or something else. User
   wanted to use the app for a while first before deciding — revisit when asked.
-- **Local ECO opening-name dataset** (e.g. vendor `lichess-org/chess-openings`, the same data
+- **Local ECO opening-name dataset** — *partly done:* it's vendored and used for the opening reactions (see above), but the explorer panel and the coach's tools still use the live explorer's names. (Original note:) (e.g. vendor `lichess-org/chess-openings`, the same data
   Lichess's own explorer uses). Would make opening *naming* (not stats) work fully offline, no
   `LICHESS_TOKEN` needed, and fill gaps where the live explorer returns `opening: null` for
   real book positions (observed during testing). The *statistics* side (popularity %, win

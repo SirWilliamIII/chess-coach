@@ -1,0 +1,2 @@
+a.tsv - e.tsv come from https://github.com/lichess-org/chess-openings
+(CC0 1.0 Public Domain Dedication, per that repository's README; fetched 2026-09-28).

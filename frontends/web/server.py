@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import gm_moments, library, openings, opponent_card, usage
+from core import eco, gm_moments, library, openings, opening_quips, opponent_card, usage
 from core import org_spend as org_spend_mod
 from core.coach import Coach, prompt_hash
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
@@ -346,6 +346,14 @@ def opponent_card_endpoint(req: GmReq):
         return opponent_card.build(S.engine, board)
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+@app.post("/api/opening")
+def opening_for_position(req: GmReq):
+    """Named opening for this exact position (offline ECO data) plus a one-line reaction to it.
+    `opening` is null when the position isn't a named one."""
+    hit = eco.lookup(parse_fen(req.fen))
+    return {"opening": {**hit, **opening_quips.pick(hit["name"])} if hit else None}
 
 
 class CardRepliesReq(BaseModel):

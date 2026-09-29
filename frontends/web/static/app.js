@@ -1498,6 +1498,7 @@ function setReview(review, note, play = null) {
   if (state.play && !play) setEngineVisible(recall('engineOn') !== '0');  // leaving a game
   state.play = play;
   opponentCommentCount = 0;
+  openingNote = { family: null, key: null, count: 0 };
   renderChips();
   state.review = review;
   state.ply = (!play && review.player_color && review.moves.length) ? review.moves.length : 0;
@@ -2014,6 +2015,7 @@ function startReplay() {
   state.replay = { color, hint: null };
   state.orientation = color;
   opponentCommentCount = 0;
+  openingNote = { family: null, key: null, count: 0 };
   setEngineVisible(false);
   addMsg('system', `Replay from ${positionLabel().toLowerCase()}: play your ${color} moves from the game; your opponent plays theirs. I'll step in if there was something special on the board.`);
   update();
@@ -2083,6 +2085,32 @@ function renderReplayInfo() {
   $('replay-exit').onclick = stopReplay;
 }
 
+// ---- opening reactions ("Caro-Kann player, I see…"): free and instant, no Claude call. The name
+// comes from the server's offline ECO table (/api/opening); this fires when an opponent move lands
+// on a named opening, only in the first moves of a game that started from the standard position,
+// at most a few times per game, and again only for a new family (or a variation with its own line).
+
+let openingNote = { family: null, key: null, count: 0 };
+const OPENING_QUIP_MAX_PLY = 16;
+const OPENING_QUIP_MAX = 3;
+// names too generic to react to ("King's Pawn Game" after 1.e4): skip them without using up a quip
+const isBlandOpening = (family) => /^(King's|Queen's) Pawn (Game|Opening)?$|^Indian Defense$/.test(family);
+
+async function openingQuip(c) {
+  if (openingNote.count >= OPENING_QUIP_MAX) return false;
+  const start = state.play ? state.play.startFen : state.review.start_fen;
+  const ply = (c.moveNumber() - 1) * 2 + (c.turn() === 'b' ? 1 : 0);
+  if (start !== START_FEN || ply > OPENING_QUIP_MAX_PLY) return false;
+  let res;
+  try { res = (await api('/api/opening', { fen: c.fen() })).opening; } catch { return false; }
+  if (!res || isBlandOpening(res.family)) return false;
+  const fresh = res.family !== openingNote.family || (res.flavored && res.key !== openingNote.key);
+  if (!fresh || currentGame().fen() !== c.fen()) return false;  // repeat of what we said, or the board moved on
+  openingNote = { family: res.family, key: res.key, count: openingNote.count + 1 };
+  addMsg('coach quip', `<div class="quip-line">${esc(res.quip)}</div><div class="quip-sub">${esc(res.eco)} · ${esc(res.name)}</div>`);
+  return true;
+}
+
 // ---- knowledgeable-player color commentary after (almost) every opponent move — a real coach
 // call like any question, just triggered automatically and rendered plainly (no GM-alert styling,
 // not saved to the Lessons library); the coach can say `(nothing)` to skip a forced/generic move
@@ -2091,7 +2119,9 @@ let opponentCommentCount = 0;
 const OPPONENT_COMMENT_LIMIT = 4;  // just the opening phase — quiet again after that, for cost
 
 async function commentOnOpponentMove(c, san) {
-  if (!state.coachReady || c.isGameOver() || opponentCommentCount >= OPPONENT_COMMENT_LIMIT) return;
+  if (c.isGameOver()) return;
+  if (await openingQuip(c)) return;  // the free opening reaction stands in for the paid one-liner this move
+  if (!state.coachReady || opponentCommentCount >= OPPONENT_COMMENT_LIMIT) return;
   opponentCommentCount++;
   await ask(`[The opponent just played ${san}. Give your one-line reaction, or say (nothing) if there's really nothing worth saying.]`,
     { silent: true, skipEmpty: true, ambient: true, where: positionLabel() });
@@ -2296,6 +2326,7 @@ async function botMove() {
       p.thinking = false;
       playView(p.moves.length);
       if (!checkGameOver()) {
+        openingQuip(playChess(p));
         showOpponentCard(playChess(p));
         gmCheck(playChess(p));
       }
