@@ -358,6 +358,11 @@ def lines(req: LinesReq):
 
 # ---------- the chat library ----------
 
+@app.get("/lessons")
+def lessons_page():
+    return FileResponse(STATIC / "lessons.html")
+
+
 @app.get("/api/library")
 def library_search(q: str = "", tag: str | None = None, starred: bool = False, habits: bool = False):
     return {"entries": library.search(q, tag, starred, habits), "tags": library.tag_counts()}

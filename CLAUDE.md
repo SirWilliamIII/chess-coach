@@ -104,6 +104,49 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   field, so it's typed once in `.env`). The cost report excludes Priority Tier costs, so it can
   read slightly under the Console billing page; results are cached 60 s. Add new models to
   `PRICING` in `core/usage.py` or their calls show as `unpriced_calls`.
+- **`/lessons` page** (`static/lessons.html`, route in `server.py`): a standalone, deliberately
+  *unlinked* copy of the in-app 📚 Lessons dialog — search, ★/🧠 filters, tag chips, expand an
+  entry to read the full answer, star, delete. Same `/api/library*` endpoints and same
+  `data/library.sqlite` as the dialog, so the two always agree; but it's separate rendering code
+  (the dialog's lives in `app.js`), so display changes must be made in both. It can't restore the
+  board (that needs app state) and only formats **bold** (the chat's markdown renderer isn't
+  reused). Like `/usage`, no auth — fine on the default `127.0.0.1`, exposes saved answers and org
+  spend if the server is ever bound to `0.0.0.0`.
+- **What the coach actually "remembers".** Nothing across games except `prompts/player.md`
+  (hand-written profile, sent with every question, re-read live) — the coach does **not** read the
+  Lessons library. Within one game it keeps the running conversation server-side (cleared by
+  loading another game, a new bot game, or "New chat"). So a line like "since it's the Vienna
+  you're working on" comes from `player.md`, not from memory.
+- **Persona/profile cost is negligible; history is the real cost driver.** Measured with
+  `messages.count_tokens` (2026-09-28, `claude-sonnet-5`): `player.md` ≈ 360 tokens, `coach.md` ≈
+  6,860, tool definitions ≈ 8,990 — ~16.2K fixed prefix, of which the profile is ~2%. Average
+  cache read was ~33K tokens/call, so roughly half is game context + tool results + chat history
+  (inferred). Growing the profile 10× would still be pennies. Editing `player.md`/`coach.md`
+  changes `prompt_hash()`, so saved exact-match answers stop matching and the next question pays
+  one fresh cache write — batch prompt edits.
+- **Lessons review loop (habit → persona).** `scripts/lessons_digest.py` (read-only against
+  `library.sqlite`) writes a dated snapshot to `data/digests/lessons-YYYY-MM-DD.md` (gitignored):
+  stats, a keyword-grouped DRAFT "Recurring mistakes" block, all habit lines, all questions, and a
+  list of very short questions. Its tag grouping is heuristic (21/54 habits had no informative
+  tag on the first run) — the first real grouping was done by reading the habit lines by hand.
+  Never auto-edits `player.md`; promote habits manually and generalize them (strip the "here e5
+  hangs…" specifics or the coach over-applies them). The habit lines are the *coach's advice on
+  single positions*, not measured stats about the player's play — treat recurring themes as
+  hypotheses. To review: rerun the script, diff against the previous snapshot (which habits faded,
+  which are new, whether questions got more specific), and update the `player.md` section.
+  Question-asking tips that make the library useful: one concept per question with the move named;
+  ask while the relevant position is on the board (it's saved with it); reuse exact wording or the
+  app's chips so repeats hit the local answer cache; use the tag vocabulary (`PATTERNS` in
+  `core/library.py`: back rank, fork, pin, skewer, discovered attack, deflection, zwischenzug,
+  outpost, opposition…) so answers get tagged and searches match; search is AND over word
+  prefixes, so keep queries short. Avoid vague/bundled questions ("is this good?", "explain the
+  opening, my mistakes and the endgame") and "just give me the move" when the goal is to learn.
+- **`player.md` has a "Recurring mistakes" section** (added 2026-09-28 from the first digest): loose
+  pieces, forcing-moves-first / "can they win it back with tempo?", Vienna/f4-gambit `...Qh4+`
+  (h4-e1 diagonal), reading the opponent's castling side and last pawn move, cramped c8-bishop
+  before `...e6`, converting a pawn up by trading, and listing all answers when in check. It says
+  to name one only when the position shows the flag. If the coach starts raising these in
+  positions that don't show them, tighten that sentence.
 - **`.env` is gitignored** and must be recreated on every machine/clone
   (`ANTHROPIC_API_KEY`, `LICHESS_TOKEN`, optional `CHESS_USER`, optional `ANTHROPIC_ADMIN_KEY` +
   `MONTHLY_SPEND_LIMIT` for the `/usage` page's org-spend card). This machine has two local
@@ -231,4 +274,8 @@ org-wide month-to-date spend card with a by-model breakdown and a progress bar a
 row · **supersedes the earlier layout bullet above:** the game panel moved *out of* the right
 column into `.chat-head`, the grid went from three columns to two · the explorer lost its
 db/rating/speed dropdowns and now always queries all of Lichess (Masters is no longer the UI
-default — it isn't selectable) · clearer 409 message when a load is already running.
+default — it isn't selectable) · clearer 409 message when a load is already running · the
+"Or continue one of your own games…" button moved to the bottom of the Play-a-game dialog, just
+above "Start game" · added the unlinked `/lessons` page · added `scripts/lessons_digest.py`, ran
+the first Lessons digest (204 saved answers, 54 habit lines), and turned it into the "Recurring
+mistakes" section of `prompts/player.md` (see the review-loop and persona-cost bullets above).

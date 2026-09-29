@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lessons · Chess Coach</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .wrap { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
+    .wrap h1 { margin: 0 0 14px; font-size: 22px; }
+    #lib-q { width: 100%; margin: 0 0 10px; padding: 10px 12px; font-size: 15px; }
+    .count { color: var(--muted); font-size: 13px; margin: 0 0 6px; }
+    .lib-entry.open { background: var(--panel); cursor: default; }
+    .lib-entry .lib-q { cursor: pointer; }
+    .lib-actions { display: flex; gap: 4px; }
+    .lib-actions .link { font-size: 16px; }
+    .lib-actions .star.on { color: var(--inaccuracy); }
+    .lib-full { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 14px; line-height: 1.55; white-space: pre-wrap; word-wrap: break-word; }
+    .lib-full strong { color: #fff; }
+    .lib-fen { margin-top: 8px; font: 12px ui-monospace, monospace; color: var(--muted); word-break: break-all; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">♞ Chess Coach</div>
+    <div class="actions"><a class="btn ghost" href="/" style="text-decoration:none">← Back to coach</a></div>
+  </header>
+
+  <div class="wrap">
+    <h1>📚 Lessons</h1>
+    <input id="lib-q" placeholder="Search your coach answers: back rank, Najdorf, knight fork…" autocomplete="off">
+    <div class="lib-filters">
+      <label class="toggle"><input type="checkbox" id="lib-starred"> ★ Favourites</label>
+      <label class="toggle"><input type="checkbox" id="lib-habits"> 🧠 Habits only</label>
+    </div>
+    <div id="lib-tags" class="lib-tags"></div>
+    <p class="count" id="count"></p>
+    <div id="lib-list"></div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const when = (t) => new Date(t * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+    // escape first, then allow only **bold** — the answer is the coach's markdown, shown as readable text
+    const answerHtml = (s) => esc(s).replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+
+    let tag = null, timer = null;
+    const opened = new Set();
+
+    async function call(path, opts) {
+      const res = await fetch(path, opts);
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'HTTP ' + res.status);
+      return res.json();
+    }
+
+    async function search() {
+      const params = new URLSearchParams({ q: $('lib-q').value.trim() });
+      if (tag) params.set('tag', tag);
+      if ($('lib-starred').checked) params.set('starred', 'true');
+      if ($('lib-habits').checked) params.set('habits', 'true');
+      let res;
+      try {
+        res = await call('/api/library?' + params);
+      } catch (e) {
+        $('lib-list').innerHTML = `<p class="hint">Couldn't load lessons: ${esc(e.message)}</p>`;
+        return;
+      }
+      $('lib-tags').innerHTML = res.tags.map((t) =>
+        `<button class="lib-tag${t.tag === tag ? ' on' : ''}" data-tag="${esc(t.tag)}">${esc(t.tag)} <span>${t.count}</span></button>`).join('');
+      $('lib-tags').querySelectorAll('.lib-tag').forEach((b) => {
+        b.onclick = () => { tag = tag === b.dataset.tag ? null : b.dataset.tag; search(); };
+      });
+      $('count').textContent = res.entries.length ? res.entries.length + (res.entries.length === 50 ? '+ lessons (showing newest 50)' : ' lessons') : '';
+      if (!res.entries.length) {
+        $('lib-list').innerHTML = `<p class="hint">${res.tags.length ? 'Nothing matches.' : 'Nothing saved yet — every coach answer lands here automatically.'}</p>`;
+        return;
+      }
+      $('lib-list').innerHTML = res.entries.map((e) => {
+        const where = [e.position_label, e.game_label].filter(Boolean).join(' · ');
+        return `<div class="lib-entry" data-id="${e.id}">
+          <div class="lib-top"><span class="lib-q">${e.starred ? '★ ' : ''}${esc(e.question)}</span>
+            <span class="lib-actions">
+              <button class="link star${e.starred ? ' on' : ''}" title="Favourite">${e.starred ? '★' : '☆'}</button>
+              <button class="link lib-del" title="Delete from Lessons">🗑</button>
+            </span></div>
+          <div class="lib-meta">${esc(where)}${where ? ' · ' : ''}${esc(when(e.created_at))}</div>
+          ${e.habit ? `<div class="lib-habit">🧠 ${esc(e.habit)}</div>` : `<div class="lib-snippet">${esc(e.snippet)}</div>`}
+          <div class="lib-etags">${e.tags.map((t) => `<span>${esc(t)}</span>`).join('')}</div>
+          <div class="detail"></div>
+        </div>`;
+      }).join('');
+
+      $('lib-list').querySelectorAll('.lib-entry').forEach((el) => {
+        const id = +el.dataset.id;
+        el.querySelector('.lib-q').onclick = () => toggle(el, id);
+        el.querySelector('.star').onclick = async (ev) => {
+          ev.stopPropagation();
+          await call(`/api/library/${id}/star`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ starred: !ev.currentTarget.classList.contains('on') }),
+          });
+          search();
+        };
+        el.querySelector('.lib-del').onclick = async (ev) => {
+          ev.stopPropagation();
+          if (!confirm('Delete this from Lessons?')) return;
+          await call(`/api/library/${id}`, { method: 'DELETE' });
+          opened.delete(id);
+          search();
+        };
+        if (opened.has(id)) toggle(el, id, true);  // keep expanded entries open across a re-search
+      });
+    }
+
+    async function toggle(el, id, forceOpen) {
+      const box = el.querySelector('.detail');
+      if (!forceOpen && el.classList.contains('open')) {
+        el.classList.remove('open'); box.innerHTML = ''; opened.delete(id);
+        return;
+      }
+      el.classList.add('open'); opened.add(id);
+      box.innerHTML = '<p class="hint">Loading…</p>';
+      try {
+        const e = await call('/api/library/' + id);
+        box.innerHTML = `<div class="lib-full">${answerHtml(e.answer)}</div>`
+          + (e.fen ? `<div class="lib-fen">${esc(e.fen)}</div>` : '');
+      } catch (err) {
+        box.innerHTML = `<p class="hint">Couldn't load this lesson: ${esc(err.message)}</p>`;
+      }
+    }
+
+    $('lib-q').oninput = () => { clearTimeout(timer); timer = setTimeout(search, 250); };
+    $('lib-starred').onchange = search;
+    $('lib-habits').onchange = search;
+    search();
+  </script>
+</body>
+</html>
