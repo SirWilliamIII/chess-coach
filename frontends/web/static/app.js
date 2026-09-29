@@ -200,6 +200,24 @@ function canMove(c, turn) {
   return !p.over && !p.thinking && p.view === p.moves.length && turn === p.color;
 }
 
+// the coach's "jump ahead" button. Coach ply = position *before* that move, so ply - 1 moves are played.
+function jumpToPly(coachPly) {
+  if (state.play || state.editor) return;  // a bot game / set-up board has no game timeline to jump in
+  closeDemo(false);
+  const target = Math.max(0, Math.min(coachPly - 1, state.review.moves.length));
+  if (state.replay) {
+    // goTo() ignores replays; move the replay itself, and swap the object so a pending
+    // opponent-move timer from before the jump sees a different replay and stands down
+    state.replay = { ...state.replay, hint: null };
+    state.ply = target;
+    state.extra = [];
+    update();
+    replayStep();
+    return;
+  }
+  goTo(target);
+}
+
 function goTo(ply) {
   if (state.editor || (state.replay && !state.demo)) return;
   if (state.demo) return demoStep(ply);
@@ -1316,7 +1334,7 @@ async function ask(question, opts = {}) {
         if (!polling) break;
         try {
           const { steps } = await api('/api/chat/progress');
-          const shown = steps.filter((t) => t.name !== 'show_on_board' && t.name !== 'move_quiz');
+          const shown = steps.filter((t) => t.name !== 'show_on_board' && t.name !== 'move_quiz' && t.name !== 'jump_to_move');
           if (polling && shown.length) {
             pending.innerHTML = `<span class="thinking">${opts.silent ? 'Spotted something' : 'Analysing'}</span>`
               + `<div class="steps">${shown.map((t) => `<div>✓ ${esc(toolLabel(t))}</div>`).join('')}</div>`;
@@ -1367,12 +1385,18 @@ function renderAnswer(data, opts = {}) {
   const demos = data.demos || [];
   const buttons = demos.length
     ? `<div class="demos">${demos.map((d, i) => `<button class="demo-btn" data-i="${i}">▶ Show me: ${esc(d.title)}</button>`).join('')}</div>` : '';
+  // coach ply = the position *before* that move, so the board goes to ply - 1 moves played
+  const jumps = state.review && !state.play
+    ? (data.jumps || []).filter((j) => j.ply <= state.review.moves.length + 1) : [];
+  const jumpBtn = jumps.length
+    ? `<div class="demos">${jumps.map((j, i) => `<button class="demo-btn jump-btn" data-j="${i}">⏭ Jump ahead to move ${Math.ceil(Math.max(1, j.ply) / 2)}</button>`).join('')}</div>` : '';
   const label = opts.label ? `<div class="gm-label">${esc(opts.label)}</div>` : '';
   const star = data.entry_id
     ? `<button class="star${data.starred ? ' on' : ''}" title="Save to favourites in Lessons">${data.starred ? '★' : '☆'}</button>` : '';
   const msg = addMsg(opts.label ? 'coach gm' : 'coach',
-    star + label + markdown(data.answer) + renderQuiz(data.quiz) + buttons + tools, opts.where);
-  msg.querySelectorAll('.demo-btn').forEach((b) => { b.onclick = () => openDemo(demos[+b.dataset.i]); });
+    star + label + markdown(data.answer) + renderQuiz(data.quiz) + jumpBtn + buttons + tools, opts.where);
+  msg.querySelectorAll('.demo-btn[data-i]').forEach((b) => { b.onclick = () => openDemo(demos[+b.dataset.i]); });
+  msg.querySelectorAll('.jump-btn').forEach((b) => { b.onclick = () => jumpToPly(jumps[+b.dataset.j].ply); });
   msg.querySelectorAll('.quiz-opt').forEach((btn) => {
     const dest = moveDestination(btn.dataset.san);
     btn.onclick = () => {
@@ -1479,7 +1503,7 @@ async function openEntry(id) {
     setReview(await api('/api/analysis', { fen: e.fen }), `From your library (${when}), on an analysis board of that position.`);
   }
   if (e.kind !== 'gm alert') addMsg('user', esc(e.question), e.position_label);
-  renderAnswer({ answer: e.answer, tools: e.tools, demos: e.demos, entry_id: e.id, starred: e.starred },
+  renderAnswer({ answer: e.answer, tools: e.tools, demos: e.demos, jumps: e.jumps, entry_id: e.id, starred: e.starred },
     { label: e.kind === 'gm alert' ? e.question : null, where: e.kind === 'gm alert' ? e.position_label : null });
 }
 

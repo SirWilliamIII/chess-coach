@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS entries (
     player_color TEXT,       -- white/black/NULL as the coach understood it when answered (cache key:
                               -- the phrasing throughout leans on "your plan" vs "their threat", so a
                               -- wrong or unknown color at answer time makes it a genuinely different answer
-    quiz TEXT                 -- JSON: the move_quiz options/correct/reward, if any
+    quiz TEXT,                -- JSON: the move_quiz options/correct/reward, if any
+    jump TEXT                 -- JSON: list of jump_to_move {ply}, if any
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
     question, answer, habit, tags, opening, game_label,
@@ -75,7 +76,7 @@ def _connect() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(entries)")}
-    for col in ("audience", "prompt_hash", "player_color", "quiz"):
+    for col in ("audience", "prompt_hash", "player_color", "quiz", "jump"):
         if col not in cols:
             conn.execute(f"ALTER TABLE entries ADD COLUMN {col} TEXT")
     conn.commit()
@@ -129,7 +130,8 @@ def add(*, question: str, answer: str, kind: str = "question", mode: str | None 
         fen: str | None = None, game_id: str | None = None, game_label: str | None = None,
         position_label: str | None = None, ply: int | None = None, extra: list[str] | None = None,
         opening: str | None = None, demos: list | None = None, tools: list | None = None,
-        prompt_hash: str | None = None, player_color: str | None = None, quiz: dict | None = None) -> int:
+        prompt_hash: str | None = None, player_color: str | None = None, quiz: dict | None = None,
+        jumps: list | None = None) -> int:
     tools = tools or []
     habit, special = extract_habit(answer), extract_special(answer)
     tags = auto_tags(question, answer, tools, kind, opening)
@@ -137,12 +139,12 @@ def add(*, question: str, answer: str, kind: str = "question", mode: str | None 
         cur = db().execute(
             """INSERT INTO entries (created_at, question, answer, kind, mode, fen, game_id, game_label,
                    position_label, ply, extra, opening, habit, special, tags, demos, tools,
-                   prompt_hash, player_color, quiz)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   prompt_hash, player_color, quiz, jump)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (time.time(), question, answer, kind, mode, fen, game_id, game_label, position_label, ply,
              json.dumps(extra or []), opening, habit, special, " ".join(tags),
              json.dumps(demos or []), json.dumps(tools), prompt_hash, player_color,
-             json.dumps(quiz) if quiz else None))
+             json.dumps(quiz) if quiz else None, json.dumps(jumps) if jumps else None))
         db().commit()
         return cur.lastrowid
 
@@ -161,7 +163,8 @@ def find_cached(question: str, fen: str, prompt_hash: str, player_color: str | N
         return None
     return {"id": r["id"], "answer": r["answer"],
             "tools": json.loads(r["tools"] or "[]"), "demos": json.loads(r["demos"] or "[]"),
-            "quiz": json.loads(r["quiz"]) if r["quiz"] else None}
+            "quiz": json.loads(r["quiz"]) if r["quiz"] else None,
+            "jumps": json.loads(r["jump"]) if r["jump"] else []}
 
 
 def _fts_query(q: str) -> str:
@@ -208,6 +211,7 @@ def get(entry_id: int) -> dict | None:
     out["extra"] = json.loads(r["extra"] or "[]")
     out["demos"] = json.loads(r["demos"] or "[]")
     out["tools"] = json.loads(r["tools"] or "[]")
+    out["jumps"] = json.loads(r["jump"]) if r["jump"] else []
     out["tags"] = (r["tags"] or "").split()
     out["starred"] = bool(r["starred"])
     return out

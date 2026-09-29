@@ -144,6 +144,26 @@ TOOLS = [
         },
     },
     {
+        "name": "jump_to_move",
+        "description": (
+            "Attach a 'Jump ahead to move N' button to your answer that takes the player's board to a "
+            "later (or earlier) point of the loaded game. Use it whenever you point the player at a "
+            "specific moment of the game, whether they asked to skip ahead or you're recommending it "
+            "('want to jump ahead to the rough patch around move 37?'), so they can click instead of "
+            "navigating. Call it once per moment you name (max 3), with the ply of the move you're "
+            "pointing at (the button shows the board *before* that move, so the player sees the "
+            "position you're talking about). Only for a loaded game with moves; not for hypothetical "
+            "lines (use show_on_board for those). It complements show_on_board, it doesn't replace it."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ply": {"type": "integer", "description": "Ply of the move to jump to (as for analyze_position)"},
+            },
+            "required": ["ply"],
+        },
+    },
+    {
         "name": "move_quiz",
         "description": (
             "Turn 'find the move yourself' into a clickable multiple-choice guess instead of "
@@ -273,6 +293,7 @@ class Coach:
         self.messages: list[dict] = []
         self.last_demos: list[dict] = []  # show_on_board demos created during the latest ask()
         self.last_quiz: dict | None = None  # move_quiz created during the latest ask(), if any
+        self.last_jumps: list[dict] = []  # jump_to_move buttons created during the latest ask()
         self.progress: list[dict] = []    # tools called so far in the current ask(), for live progress
         self.player_color = player_color
         if self.player_color is None and player:
@@ -427,6 +448,15 @@ class Coach:
                                 "start_fen": start_fen, "moves": line, "notes": notes})
         return {"ok": True, "demo": len(self.last_demos), "moves": line}
 
+    def jump_to_move(self, ply: int) -> dict:
+        moves = self.review["moves"]
+        if not moves:
+            raise ValueError("there's no game loaded to jump around in")
+        self._board_at(ply)  # validates the range
+        if all(j["ply"] != ply for j in self.last_jumps) and len(self.last_jumps) < 3:
+            self.last_jumps.append({"ply": ply})
+        return {"ok": True, "ply": ply}
+
     def move_quiz(self, ply: int, options: list[str], correct: str, reward: str,
                   then_moves: list[str] | None = None) -> dict:
         # a claim to verify ("is this piece safe?") rather than a move to find — no board position
@@ -504,6 +534,8 @@ class Coach:
         elif name == "show_on_board":
             result = self.show_on_board(str(args["title"]), int(args["ply"]), list(args["moves"]),
                                         args.get("then_moves"), args.get("notes"))
+        elif name == "jump_to_move":
+            result = self.jump_to_move(int(args["ply"]))
         elif name == "move_quiz":
             result = self.move_quiz(int(args["ply"]), list(args["options"]), str(args["correct"]),
                                     str(args["reward"]), args.get("then_moves"))
@@ -577,6 +609,7 @@ class Coach:
         has no memory of it for a follow-up, same as if the question had never been asked."""
         self.last_demos = []
         self.last_quiz = None
+        self.last_jumps = []
         self.progress = []
         try:
             usage.record(model=MODEL, api_calls=0, cached=True, question=question)
@@ -588,6 +621,7 @@ class Coach:
         self.messages.append({"role": "user", "content": text})
         self.last_demos = []
         self.last_quiz = None
+        self.last_jumps = []
         self.progress = []
 
         parts: list[str] = []  # text written between tool calls counts as part of the answer
