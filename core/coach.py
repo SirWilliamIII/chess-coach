@@ -5,6 +5,7 @@ import json
 import os
 import re
 import time
+from difflib import SequenceMatcher
 from pathlib import Path
 
 import anthropic
@@ -278,6 +279,20 @@ OPENING_LINES_TOOL = {
 }
 
 
+def _thinking_kwargs() -> dict:
+    """Thinking depth for the coach's calls, read from the environment on every call (so a test script
+    can vary it per run). Default: adaptive thinking at the model's default effort (unchanged behavior).
+    COACH_THINKING=off turns thinking off (Sonnet 5 accepts "disabled"; Sonnet 5.5 needs "between_tools").
+    COACH_EFFORT=low|medium|high|xhigh|max sets output_config.effort."""
+    kw: dict = {"thinking": {"type": "adaptive"}}
+    if os.environ.get("COACH_THINKING", "").lower() in ("off", "0", "false", "disabled"):
+        kw["thinking"] = {"type": "between_tools" if "sonnet-5-5" in MODEL else "disabled"}
+    effort = os.environ.get("COACH_EFFORT", "").lower()
+    if effort in ("low", "medium", "high", "xhigh", "max"):
+        kw["output_config"] = {"effort": effort}
+    return kw
+
+
 def _final_answer(parts: list[str]) -> str:
     """The coach's text across tool calls, stitched back together. Short bits before the last one
     are usually 'let me check…' narration and get dropped; anything substantial is real content —
@@ -285,7 +300,11 @@ def _final_answer(parts: list[str]) -> str:
     more than one substantial part, and all of them belong in the answer, not just the last one."""
     if not parts:
         return ""
-    return "\n\n".join([p for p in parts[:-1] if len(p) >= 200] + [parts[-1]])
+    # a rejected tool call (e.g. an unfair quiz) makes the model write its lead-in again after the
+    # retry: drop an earlier part when a later one is a rewrite of it, so the text isn't shown twice
+    kept = [p for i, p in enumerate(parts[:-1])
+            if len(p) >= 200 and not any(SequenceMatcher(None, p, q).ratio() > 0.6 for q in parts[i + 1:])]
+    return "\n\n".join(kept + [parts[-1]])
 
 
 class Coach:
@@ -505,8 +524,36 @@ class Coach:
             raise ValueError(f"the correct answer {correct!r} is illegal in this position")
         if correct_san not in legal:
             raise ValueError("`correct` must be one of `options`")
+        self._check_quiz_fairness(board, legal, correct_san)
         self.last_quiz = {"options": legal, "correct": correct_san, "reward": str(reward)[:300]}
         return {"ok": True, "options": legal}
+
+    QUIZ_CORRECT_MAX_LOSS = 30   # cp: the marked answer must be (about) the engine's best
+    QUIZ_DECOY_MIN_LOSS = 80     # cp: every wrong option must be clearly worse than it
+
+    def _check_quiz_fairness(self, board: chess.Board, options: list[str], correct: str) -> None:
+        """A quiz is only fair if exactly one option is right. Two live runs marked a move "wrong" that
+        was 23 cp behind the answer, and another offered three near-equal winning moves. The engine
+        decides, not the model: reject with the numbers so the coach can swap decoys or skip the quiz."""
+        lines = self.engine.lines(board, multipv=8, seconds=2, depth=16)
+        if not lines:
+            return
+        sign = 1 if board.turn == chess.WHITE else -1
+        best = sign * lines[0]["cp_white"]
+        loss = {l["move"]: best - sign * l["cp_white"] for l in lines}  # cp behind the best move
+        problems = []
+        if loss.get(correct, 10_000) > self.QUIZ_CORRECT_MAX_LOSS:
+            problems.append(f"{correct} isn't the engine's best (best is {lines[0]['move']}; "
+                            f"{correct} is {round(loss[correct]) if correct in loss else 'far'} cp behind)")
+        base = loss.get(correct, 0)
+        close = [f"{o} ({round(loss[o] - base)} cp behind)" for o in options
+                 if o != correct and o in loss and loss[o] - base < self.QUIZ_DECOY_MIN_LOSS]
+        if close:
+            problems.append("these wrong options are too close to the answer to be fair: " + ", ".join(close))
+        if problems:
+            raise ValueError("Quiz rejected by the engine: " + "; ".join(problems) + f". Wrong options must be at "
+                             f"least {self.QUIZ_DECOY_MIN_LOSS} cp worse. Swap them for clearly worse moves a "
+                             "player might still consider, or skip the quiz and say several moves work.")
 
     def opening_explorer(self, ply: int, then_moves: list[str] | None = None, db: str = "lichess",
                          ratings: list[int] | None = None, speeds: list[str] | None = None) -> dict:
@@ -665,10 +712,10 @@ class Coach:
                     system=system_prompt(),
                     tools=self.tools,
                     messages=self.messages,
-                    thinking={"type": "adaptive"},
                     cache_control={"type": "ephemeral"},
                     betas=["server-side-fallback-2026-07-01"],
                     fallbacks="default",
+                    **_thinking_kwargs(),
                 )
                 api_s += time.monotonic() - t0
                 calls += 1
