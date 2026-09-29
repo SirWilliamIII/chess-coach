@@ -41,7 +41,8 @@ header {
   padding: 10px 16px; background: var(--panel-2); border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
 }
-.brand { font-weight: 700; font-size: 18px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; }
+.brand .logo { height: 34px; width: auto; flex: none; }
 .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 /* header hierarchy: the two ways to start (bigger, green) > analysis board (grey button) > Lessons
    and Load game (quiet text links, set apart by a divider) */

@@ -116,6 +116,15 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
 - **`Engine._call` is serialized with a lock** (`core/engine.py`). One Stockfish, several request
   threads (eval bar, GM check, coach tools, the card): overlapping `analyse` calls returned an empty
   line list and 500'd the card endpoint. `Bot` has its own process and lock.
+- **Logo / favicon.** The user supplied a black crowned-piece JPEG (a Pinterest image; origin and
+  license unknown, so check before making the repo public). It was converted (black→cream
+  silhouette with alpha, cropped) into `static/logo-mark.png` (transparent, 256px tall; the `.brand`
+  image on all three pages, 34px tall — on a badge it shrank to an unreadable blob at header size),
+  and, centred on the accent-green badge with the buttons' darker lower edge, into `favicon-32.png`
+  and `apple-touch-icon.png` (`/favicon.ico` in `server.py` serves the 32px one). The original JPEG
+  is **not** in the repo and the conversion script wasn't kept: to redo it, map luminance to alpha
+  (`(235 - lum) / 205`, clamped) and draw the cropped mark. Not checked in Safari/Firefox tabs,
+  only that every link loads.
 - **Header buttons have a deliberate hierarchy** (`.actions` in `index.html`): Play game + Find game by
   username are `.btn.primary` (green, larger), Analysis board is a grey `.btn.ghost`, and Lessons +
   Load game are quiet `.link` text buttons after an `.actions-sep` divider (hidden ≤760px, where the

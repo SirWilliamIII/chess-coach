@@ -98,6 +98,12 @@ def index():
     return FileResponse(STATIC / "index.html")
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    """Browsers ask for /favicon.ico regardless of the <link> tags; answer with the PNG."""
+    return FileResponse(STATIC / "favicon-32.png", media_type="image/png")
+
+
 @app.get("/api/config")
 def config():
     return {"me": os.environ.get("CHESS_USER", ""),
