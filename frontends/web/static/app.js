@@ -244,17 +244,18 @@ function playerLine(color) {
     return `${label}<span class="clock${running ? ' running' : ''}${low}">${clockText(p.clock[color])}</span>`;
   }
   const r = state.review;
-  if (!r.moves.length) return '';
-  const name = r[color], elo = r[`${color}_elo`];
+  const bare = !r.moves.length;  // analysis board: no names, so label the rows by side
+  const name = bare ? (color === 'white' ? 'White' : 'Black') : r[color], elo = bare ? null : r[`${color}_elo`];
   const isYou = r.player_color === color;
-  const title = isYou ? 'This is you' : 'Click if this is you — the coach may have guessed wrong or not know at all';
+  const title = isYou ? 'This is you' : bare ? 'Click to tell the coach you are playing this side'
+    : 'Click if this is you — the coach may have guessed wrong or not know at all';
   const nameHtml = `<span class="you-pick${isYou ? ' on' : ''}" data-color="${color}" title="${title}">`
     + `${esc(name)}${isYou ? ' (you)' : ''}</span>`;
   return `${nameHtml} <span class="elo">${elo ? `(${esc(elo)})` : ''}</span>`;
 }
 
 async function setYou(color) {
-  if (state.play || state.demo || !state.review.moves.length || state.review.player_color === color) return;
+  if (state.play || state.demo || state.editor || state.review.player_color === color) return;
   const review = await api('/api/me-color', { color });
   state.review.player_color = review.player_color;
   state.orientation = review.player_color;
@@ -372,7 +373,11 @@ function renderInfo() {
   if (state.play) return renderPlayInfo();
   if (!r.moves.length) {
     $('board-sub').textContent = 'Move pieces freely and ask the coach about any position.';
-    $('summary').innerHTML = '';
+    // visible toggle: the dashed-underline name labels alone don't read as clickable
+    $('summary').innerHTML = `<div class="me-pick"><span class="label">I'm playing</span><div class="seg">`
+      + ['white', 'black'].map((c) => `<button data-me="${c}" class="${r.player_color === c ? 'on' : ''}">${c === 'white' ? 'White' : 'Black'}</button>`).join('')
+      + '</div></div>';
+    $('summary').querySelectorAll('[data-me]').forEach((b) => { b.onclick = () => setYou(b.dataset.me); });
     return;
   }
   $('game-info').innerHTML = `${esc(r.white)} vs ${esc(r.black)} · ${esc(r.result)}`;

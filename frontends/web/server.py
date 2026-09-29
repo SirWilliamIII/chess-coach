@@ -469,7 +469,8 @@ def set_me_color(req: MeColorReq):
     if not S.coach:
         raise HTTPException(400, "no game loaded")
     S.coach.set_player_color(req.color)
-    S.me = S.review.get(req.color) or S.me
+    name = S.review.get(req.color)
+    S.me = name if name and name != "?" else S.me
     return public_review()
 
 

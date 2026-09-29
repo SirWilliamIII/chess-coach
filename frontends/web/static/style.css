@@ -591,3 +591,6 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .msg.quip { align-self: flex-start; background: #2f2e2b; border-left: 3px solid #e5a23b; padding: 7px 12px; }
 .quip-line { font-weight: 600; }
 .quip-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+.me-pick { display: flex; align-items: center; gap: 8px; }
+.me-pick .seg button { padding: 4px 12px; }
