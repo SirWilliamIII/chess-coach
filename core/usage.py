@@ -43,7 +43,11 @@ CREATE TABLE IF NOT EXISTS calls (
     api_calls INTEGER NOT NULL DEFAULT 1,
     cached INTEGER NOT NULL DEFAULT 0,
     question TEXT,
-    web_searches INTEGER NOT NULL DEFAULT 0
+    web_searches INTEGER NOT NULL DEFAULT 0,
+    api_seconds REAL NOT NULL DEFAULT 0,
+    tool_seconds REAL NOT NULL DEFAULT 0,
+    engine_searches INTEGER NOT NULL DEFAULT 0,
+    engine_cache_hits INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -56,9 +60,12 @@ def _connect() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
     # databases created before web-search counting have no such column; rows from then count as 0
-    if "web_searches" not in {r["name"] for r in conn.execute("PRAGMA table_info(calls)")}:
-        conn.execute("ALTER TABLE calls ADD COLUMN web_searches INTEGER NOT NULL DEFAULT 0")
-        conn.commit()
+    have = {r["name"] for r in conn.execute("PRAGMA table_info(calls)")}
+    for col, decl in (("web_searches", "INTEGER"), ("api_seconds", "REAL"), ("tool_seconds", "REAL"),
+                      ("engine_searches", "INTEGER"), ("engine_cache_hits", "INTEGER")):
+        if col not in have:
+            conn.execute(f"ALTER TABLE calls ADD COLUMN {col} {decl} NOT NULL DEFAULT 0")
+    conn.commit()
     return conn
 
 
@@ -82,16 +89,19 @@ def _cost(model: str, input_tokens: int, output_tokens: int,
 
 def record(*, model: str, input_tokens: int = 0, output_tokens: int = 0,
            cache_creation_input_tokens: int = 0, cache_read_input_tokens: int = 0,
-           api_calls: int = 1, cached: bool = False, question: str = "", web_searches: int = 0) -> None:
+           api_calls: int = 1, cached: bool = False, question: str = "", web_searches: int = 0,
+           api_seconds: float = 0.0, tool_seconds: float = 0.0, engine_searches: int = 0,
+           engine_cache_hits: int = 0) -> None:
     """A failure here must never cost the player their answer — callers should swallow errors."""
     with _lock:
         db().execute(
             """INSERT INTO calls (created_at, model, input_tokens, output_tokens,
                    cache_creation_input_tokens, cache_read_input_tokens, api_calls, cached, question,
-                   web_searches)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                   web_searches, api_seconds, tool_seconds, engine_searches, engine_cache_hits)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (time.time(), model, input_tokens, output_tokens, cache_creation_input_tokens,
-             cache_read_input_tokens, api_calls, int(cached), (question or "")[:200], web_searches))
+             cache_read_input_tokens, api_calls, int(cached), (question or "")[:200], web_searches,
+             api_seconds, tool_seconds, engine_searches, engine_cache_hits))
         db().commit()
 
 

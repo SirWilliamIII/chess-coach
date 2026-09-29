@@ -1,14 +1,18 @@
 """Thin wrapper around Stockfish (UCI) via python-chess."""
 
+import copy
 import math
 import os
 import shutil
 import threading
+import time
+from collections import OrderedDict
 
 import chess
 import chess.engine
 
 MATE_CP = 10_000
+LINES_CACHE_SIZE = 1024  # positions kept in memory; a few KB each
 
 
 def find_stockfish() -> str:
@@ -74,6 +78,11 @@ class Engine:
         # One Stockfish process, several request threads (eval bar, GM check, coach tools, the
         # opponent card). Overlapping searches on it can come back with no lines, so serialize them.
         self._lock = threading.Lock()
+        # In-memory memo of `lines()` results: the same position asked again (a follow-up question,
+        # stepping back to a move already viewed) returns instantly instead of re-searching.
+        self._cache: OrderedDict = OrderedDict()
+        self._cache_lock = threading.Lock()
+        self.stats = {"searches": 0, "search_seconds": 0.0, "cache_hits": 0}  # for timing logs
         self._start()
 
     def _start(self):
@@ -116,7 +125,18 @@ class Engine:
         check_position(board)
         if board.is_game_over():
             return []
+        # Keyed on the position (not move history) plus the exact search budget, so a shallow
+        # review search is never passed off as a deep coach search. Repetition history is ignored,
+        # which can differ only in draw-by-repetition scoring.
+        key = (board.epd(), multipv, seconds, depth)
+        with self._cache_lock:
+            hit = self._cache.get(key)
+            if hit is not None:
+                self._cache.move_to_end(key)
+                self.stats["cache_hits"] += 1
+                return copy.deepcopy(hit)
         limit = chess.engine.Limit(time=seconds, depth=depth)
+        started = time.monotonic()
         infos = self._call(lambda e: e.analyse(board, limit, multipv=multipv))
         out = []
         for info in infos:
@@ -132,6 +152,13 @@ class Engine:
                 "pv": [m.uci() for m in pv[:10]],
                 "depth": info.get("depth"),
             })
+        with self._cache_lock:
+            self.stats["searches"] += 1
+            self.stats["search_seconds"] += time.monotonic() - started
+            if out:  # never memoize an empty result: that's the overlap glitch, not an answer
+                self._cache[key] = copy.deepcopy(out)
+                while len(self._cache) > LINES_CACHE_SIZE:
+                    self._cache.popitem(last=False)
         return out
 
     def evaluate(self, board: chess.Board, seconds: float = 0.3, depth: int | None = None) -> dict:
