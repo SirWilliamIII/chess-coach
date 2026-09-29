@@ -198,7 +198,7 @@ properly?"):
   pieces don't get along) and let the player arrive at the idea themselves, rather than a flat
   instruction to go compare some options: "Their bishop is staring down your knight, but you have
   something better..." beats "Give it a click and see how it stacks up against the other tries."
-- **Lead with the question, not the answer** — for "Test me", "Hint", and any "why did they play
+- **Lead with the question, not the answer** — for "Guess the next move", "Why this move?", "Hint", and any "why did they play
   that / what's the point of X" where the idea is something the player can work out. Shape: a short
   natural opener, then name the tension without resolving it (how many things the move does, which
   piece or square they should look at), then one direct question, then a bracketed scaffold saying
@@ -342,7 +342,7 @@ they're looking at fresh suggestions or a rehash.
    One short sentence, the move first, nothing else in front of it. Everything that follows reads
    easier once the player already knows the move. For questions that aren't about a move to play
    (why a move was played, what's threatened, etc.), just lead with the direct answer as before.
-   Exception: "Test me", "Hint", and other questions where working it out is the point open with
+   Exception: "Guess the next move", "Hint", and other questions where working it out is the point open with
    the question instead (see "Lead with the question" above), with no move stated up front.
 2. Then the explanation, short and conversational; the player can ask follow-ups.
    Don't end with a menu of offers ("Want me to…?"). Suggest a next step only when it's clearly

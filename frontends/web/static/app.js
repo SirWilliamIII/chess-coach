@@ -20,32 +20,34 @@ const state = {
   demo: null,       // coach's "show me" line on a grey board: {title, ply, then_moves, start_fen, moves, notes, step}
 };
 
+// [label, question, needs, action]. 'game': only offered when a game with moves is loaded.
+// A chip with an action runs locally (no coach call) instead of asking the question.
+// Each chip is defined once and shared by the review and bot-game lists below.
+const CHIP = {
+  best: ['Best move', 'What is the best move here, and why? Keep it concise — concrete effect, my plan, opponent response if relevant.'],
+  why: ['Why this move?', "Quiz me on why this move was played — ask me first what its point was, wait for my answer, then tell me if I've got it and fill in whatever I'm missing."],
+  should: ['What should I have played?', 'What should have been played instead? Just the concrete difference — what it achieves or what my move allowed.'],
+  guess: ['Guess the next move', "Quiz me on what to play from this position with move_quiz: a few real options, no hint "
+    + "beyond the tension on the board, in one or two sentences. Open by saying whose move it is and whether "
+    + "that's my side or my opponent's (if it's theirs, tell me to step into their shoes), and use 'you/your' "
+    + "only for the side to move. Don't end with 'give it a click'. Don't say what happened in the actual "
+    + "game or which option is wrong: that would spoil it. Keep the reward under 40 words: why the move "
+    + "works and what to expect back. If there really isn't one correct move to find here, skip the quiz and say why."],
+  lines: ['Show main lines', 'Show me the main lines from this position: how to play them properly, the ideas for both sides, and the key traps.'],
+  // needs a finished game's per-move scores and a timeline to jump in, so not offered in bot games
+  turning: ['Game-changing moment', null, 'game', () => gameChangingMoment()],
+  plan: ['My plan?', "What plan should I be aiming for in this position? Start with a one-line opponent "
+    + "check labeled 'Opponent:' — anything hanging or threatening right now, or that nothing is if "
+    + "it's quiet. Then give me: the move to play and why; my opponent's realistic tries here, with a "
+    + "counter for each; then spell it out as if-then — if they play X, I play Y; if they try Z, I "
+    + "play W; anything else, I just play <default move>. Keep it short and concrete."],
+  hint: ['Hint', "Give me a hint without telling me the move. If there's one genuinely correct move here, "
+    + "use move_quiz so I can guess from a few options instead of just describing it."],
+};
 const CHIPS = {
-  review: [
-    ['Best move', 'What is the best move here, and why? Keep it concise — concrete effect, my plan, opponent response if relevant.'],
-    ['Why this move?', "Quiz me on why this move was played — ask me first what its point was, wait for my answer, then tell me if I've got it and fill in whatever I'm missing."],
-    ['What should I have played?', 'What should have been played instead? Just the concrete difference — what it achieves or what my move allowed.'],
-    ['Guess the next move', "Quiz me on what to play from this position with move_quiz: a few real options, no hint "
-      + "beyond the tension on the board, in one or two sentences. Don't say what happened in the actual "
-      + "game or which option is wrong: that would spoil it. Keep the reward under 40 words: why the move "
-      + "works and what to expect back. If there really isn't one correct move to find here, skip the quiz and say why."],
-    ['Show main lines', 'Show me the main lines from this position: how to play them properly, the ideas for both sides, and the key traps.'],
-    // [label, question, needs, action]. 'game': only offered when a game with moves is loaded.
-    // A chip with an action runs locally (no coach call) instead of asking the question.
-    ['Game-changing moment', null, 'game', () => gameChangingMoment()],
-  ],
-  play: [
-    ['My plan?', "What plan should I be aiming for in this position? Start with a one-line opponent "
-      + "check labeled 'Opponent:' — anything hanging or threatening right now, or that nothing is if "
-      + "it's quiet. Then give me: the move to play and why; my opponent's realistic tries here, with a "
-      + "counter for each; then spell it out as if-then — if they play X, I play Y; if they try Z, I "
-      + "play W; anything else, I just play <default move>. Keep it short and concrete."],
-    ['Hint', "Give me a hint without telling me the move. If there's one genuinely correct move here, "
-      + "use move_quiz so I can guess from a few options instead of just describing it."],
-    ['Test me', "Quiz me on this position with move_quiz — a few move options, let me guess, no hint text "
-      + "first. If there really isn't one correct move to find here, skip the quiz and say why "
-      + "(e.g. an open position with more than one reasonable plan)."],
-  ],
+  review: [CHIP.best, CHIP.why, CHIP.should, CHIP.guess, CHIP.lines, CHIP.turning],
+  // no CHIP.should here: after the bot moves, "this move" is the bot's, so "what should I have played?" misfires
+  play: [CHIP.plan, CHIP.best, CHIP.hint, CHIP.guess, CHIP.why, CHIP.lines],
 };
 
 // hover text for each chip, by label
@@ -58,7 +60,6 @@ const CHIP_TIPS = {
   'Game-changing moment': 'Free and instant: jumps to the move that cost the most win chance in this game. Its Explain button asks the coach why.',
   'My plan?': 'Their threats first, then your move, their realistic replies, and an if-then plan for each.',
   'Hint': 'A nudge without the move: pick from a few options.',
-  'Test me': 'Guess the move from a few options with no hint first.',
 };
 
 function store(key, value) {
