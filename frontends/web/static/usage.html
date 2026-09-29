@@ -55,6 +55,14 @@
     .meter i.hot { background: var(--blunder); }
     .spend .meta { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
 
+    .spend h2.sub { margin: 18px 0 8px; }
+    .mrow { display: grid; grid-template-columns: minmax(120px, 210px) 1fr auto; align-items: center; gap: 12px; padding: 4px 0; font-size: 13.5px; }
+    .mname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mbar { height: 8px; border-radius: 4px; background: var(--panel-2); overflow: hidden; }
+    .mbar i { display: block; height: 100%; background: linear-gradient(var(--accent), var(--accent-dark)); }
+    .mval { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+    @media (max-width: 520px) { .mrow { grid-template-columns: 1fr auto; } .mbar { display: none; } }
+
     .note { color: var(--muted); font-size: 12.5px; line-height: 1.5; }
     .empty, .err { text-align: center; color: var(--muted); padding: 32px 0; }
     .err { color: var(--blunder); }
@@ -225,6 +233,21 @@
         card.append(meter, meta);
       } else {
         card.append(el("p", "note", "Set MONTHLY_SPEND_LIMIT in .env to show a progress bar (the API doesn't expose your limit)."));
+      }
+      if (o.by_model && o.by_model.length) {
+        const list = el("div", "models");
+        const top = Math.max(...o.by_model.map((m) => m.spent), 0.0001);
+        for (const m of o.by_model) {
+          const line = el("div", "mrow");
+          const bar = el("div", "mbar");
+          const fill = document.createElement("i");
+          fill.style.width = Math.max(1, (m.spent / top) * 100) + "%";
+          bar.append(fill);
+          line.append(el("span", "mname", m.model), bar,
+                      el("span", "mval", usd(m.spent) + (o.spent ? " · " + (m.spent / o.spent * 100).toFixed(0) + "%" : "")));
+          list.append(line);
+        }
+        card.append(el("h2", "sub", "By model"), list);
       }
       card.append(el("p", "note", "Whole organization, from Anthropic's cost report. May differ slightly from the billing page " +
         "(Priority Tier costs aren't included in that report)."));

@@ -34,13 +34,19 @@ def _month_bounds(now: datetime) -> tuple[datetime, datetime]:
     return start, end
 
 
-def _fetch(start: datetime, end: datetime) -> Decimal:
-    """Sum of every cost line in [start, end), in dollars. Raises RuntimeError with a readable message."""
+def _fetch(start: datetime, end: datetime) -> tuple[Decimal, dict[str, Decimal]]:
+    """(total, per-model) cost in [start, end), in dollars. Raises RuntimeError with a readable message.
+
+    Grouping by description is what makes each line carry its model; non-token costs (web search,
+    code execution) have model=null, so they're listed under their description instead.
+    """
     headers = {"x-api-key": os.environ["ANTHROPIC_ADMIN_KEY"], "anthropic-version": "2023-06-01",
                "User-Agent": "chess-coach/1.0 (personal spend readout)"}
-    params = {"starting_at": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
-              "ending_at": end.strftime("%Y-%m-%dT%H:%M:%SZ"), "limit": 31}
+    params = [("starting_at", start.strftime("%Y-%m-%dT%H:%M:%SZ")),
+              ("ending_at", end.strftime("%Y-%m-%dT%H:%M:%SZ")), ("limit", 31),
+              ("group_by[]", "description")]
     cents = Decimal(0)
+    by_model: dict[str, Decimal] = {}
     for _ in range(5):  # a month is at most 31 daily buckets = one page; loop only guards pagination
         try:
             r = requests.get(URL, headers=headers, params=params, timeout=15)
@@ -53,11 +59,14 @@ def _fetch(start: datetime, end: datetime) -> Decimal:
         body = r.json()
         for bucket in body.get("data", []):
             for item in bucket.get("results", []):
-                cents += Decimal(item["amount"])  # decimal string, in cents (USD)
+                amount = Decimal(item["amount"])  # decimal string, in cents (USD)
+                cents += amount
+                label = item.get("model") or item.get("description") or item.get("cost_type") or "other"
+                by_model[label] = by_model.get(label, Decimal(0)) + amount
         if not body.get("has_more") or not body.get("next_page"):
             break
-        params["page"] = body["next_page"]
-    return cents / 100
+        params = [p for p in params if p[0] != "page"] + [("page", body["next_page"])]
+    return cents / 100, {k: v / 100 for k, v in by_model.items()}
 
 
 def month_to_date() -> dict:
@@ -70,9 +79,11 @@ def month_to_date() -> dict:
         now = datetime.now(timezone.utc)
         start, end = _month_bounds(now)
         try:
-            spent = float(_fetch(start, end))
-            value = {"available": True, "spent": round(spent, 2), "resets": end.strftime("%Y-%m-%d"),
-                     "limit": _limit(), "as_of": time.time()}
+            total, by_model = _fetch(start, end)
+            models = sorted(({"model": m, "spent": round(float(v), 2)} for m, v in by_model.items()),
+                            key=lambda x: -x["spent"])
+            value = {"available": True, "spent": round(float(total), 2), "resets": end.strftime("%Y-%m-%d"),
+                     "limit": _limit(), "by_model": models, "as_of": time.time()}
         except (RuntimeError, ValueError, KeyError, ArithmeticError) as e:
             value = {"available": False, "reason": "error", "error": str(e)}
         _cache.update(at=time.time(), value=value)
