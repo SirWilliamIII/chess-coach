@@ -259,6 +259,59 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   `MONTHLY_SPEND_LIMIT` for the `/usage` page's org-spend card). This machine has two local
   clones — `/Users/will/chess-coach` (primary) and `~/Projects/chess-coach` (secondary,
   kept in sync via `git pull`) — each needs its own `.env`.
+- **Jump buttons / `jump_to_move` tool** (`core/coach.py`, `renderAnswer()`/`jumpToPly()` in `app.js`).
+  The coach attaches "⏭ Jump ahead to move N" buttons (max 3, deduped by ply) to an answer. Args:
+  `ply`, `move` (SAN, **validated against the game** — a wrong ply is rejected with "ply 25 is
+  13. Nb5+, not Be6. Be6 was played at ply 18", which the coach then fixes; this exists because
+  one live run put the button on the wrong move), optional `go_now`. **Ply convention trap:** the
+  coach's `ply` is the position *before* that move (`_board_at`), while the frontend's `goTo(n)`
+  means "n plies played" — the button calls `goTo(ply - 1)`. `go_now: true` (used when the coach
+  *asks* "what would you play as White's 10th move?": White's move n = ply 2n-1, Black's = 2n)
+  moves the board automatically as the answer appears, with no button. Auto-jump only fires for a
+  fresh answer (`opts.live` from `ask()`, not one reopened from Lessons) and not mid-replay. In a
+  replay `jumpToPly()` moves the replay itself (`goTo` ignores replays) and swaps the `state.replay`
+  object so a pending opponent-move timer stands down; in bot games and the set-up board there is
+  no game timeline, so the button is hidden. Stored in `library.jump` (JSON list, auto-migrated) so
+  cached answers keep their buttons. Not in the "checks" bubble (filtered like `show_on_board`).
+- **Chat chips** (`CHIPS` in `app.js`): entries are `[label, question, needs, action]`. `needs:
+  'game'` hides a chip unless a game with moves is loaded (so `setReview()` calls `renderChips()`
+  *after* setting `state.review`); an `action` runs locally instead of asking the coach. Hover text
+  is the `CHIP_TIPS` table (custom `data-tip`, opens upward, flips right near the panel edge).
+  - **Game-changing moment**: free and instant, no coach call. Picks the move with the largest
+    `win_pct_lost` in the saved review, jumps to the position before it, posts a note with an
+    "Explain why" button (only that click costs money). `public_review()` had been stripping
+    `win_pct_lost` and `eval_before`; they're sent now. Under 10% it says no single move decided the game.
+  - **Why this move?** (was "Quiz me": open-ended, about the last move) and **Guess the next move**
+    (was "Show me": a `move_quiz` on the move to come). A quiz click only reveals the reward in the
+    browser and never messages the coach, so the coach can't "wait" and continue: it's one quiz per
+    press, and the UI adds "Play it on the board, then press “Guess the next move”…" after a correct
+    pick (game review only). `move_quiz` reward cap is 300 chars (200 truncated mid-sentence). The coach
+    sees the game's real continuation and leaked it ("9...Be6 was the real mistake") until the chip
+    text said not to spoil; if the leak returns, that wording is the place to fix it.
+- **Loaded games open at move 1** (`state.ply = 0` in `setReview()`); they used to open at the last
+  move when your side was known. This also applies to a page reload and to opening a saved game.
+- **Engine memo + timing.** `Engine.lines()` caches results in memory (`LINES_CACHE_SIZE` 1024) keyed
+  on `(board.epd(), multipv, seconds, depth)`: not persisted (empty after a restart), ignores
+  repetition history, and a different budget is a separate entry, so 0.3 s review evals are *not*
+  reused by the coach's depth-22 searches. `Coach.ask()` prints one line per uncached question to the
+  server terminal (`coach: 8.4s total | api … | tools … | engine N search(es), M cache hit(s)`) and
+  stores the same in `usage.calls` (`api_seconds`, `tool_seconds`, `engine_searches`,
+  `engine_cache_hits`). **Measured 2026-09-29** (5 chip-style questions on one game): 25-89 s each,
+  **Claude API time dominated** (25-77 s over 3-6 calls); tool time was 21 s cold and 0-1 s once the
+  cache was warm. So the engine cache helps follow-ups on a position but isn't the main cost;
+  fewer tool round trips would be the next lever. Not persisted to SQLite on purpose.
+- **Three different "caches":** the local *answer* cache (SQL, `data/library.sqlite`, exact match),
+  the *engine* memo above (in-memory dict), and Anthropic's *prompt* cache (server-side, 5 min). The
+  library stores tool *names and inputs* only, never the engine's output.
+- **Testing without touching your running server:** start a second instance
+  (`(set -a; . ./.env; set +a; .venv/bin/python -m frontends.web.server --port 8011 &)`), load a
+  saved game into it with `POST /api/saved/open {"game_id": "...", "me": "sirwill3rd"}` (games are in
+  `data/reviews/`), then drive the page with Playwright (in `.venv`, not system `python3`, which has
+  no project deps). Stub `**/api/chat` to avoid API spend. To test the coach itself, build
+  `Coach(review, Engine(), player=...)` in a script and call `ask()` (loads `.env` by hand; no `dotenv`).
+  **The server does not hot-reload Python**: after editing `core/*.py` or `server.py`, restart it
+  (prompts and `static/` are re-read live). Its output goes to the terminal that started it;
+  `/tmp/chess-coach-server.log` is stale.
 
 ## Known, deliberately-accepted overlap
 
@@ -326,6 +379,24 @@ audit):
   "Play a game" dialog (`dlg-play` → `startGame()`). "Play from here" / Replay (`dlg-from`)
   don't have a clock option — that was out of scope for the original ask, not an oversight,
   but worth adding if wanted later.
+- **Named/"trick" sidelines are prompt-driven, not systematic.** `prompts/coach.md` ("Tricks, not just
+  the engine line") tells the coach not to bury famous sidelines (Traxler, Halloween/Alien Gambit,
+  Englund, Danish…) just because the engine ranks them lower, and to state the facts and the risk. It
+  still relies on the model recognizing the line. Not built: an explorer check for moves that are
+  played often but engine-worse (one extra tool call per opening question, needs `LICHESS_TOKEN`).
+  Discovered because answer 233 in the library said the Traxler's `...Nxe4+` "forks king and queen"
+  after 5.Nxf7 Bxf2+ 6.Kxf2; a knight on e4 doesn't attack d1, so this looks wrong (**not verified
+  with the engine**) — worth checking, and evidence that coach claims need tool verification.
+- **`jump_to_move` / `go_now` live coverage is thin.** Tested: backend validation, the browser with a
+  stubbed answer, and single-turn coach runs on one game (`cc184224792278`). Not tested: a real
+  multi-turn walkthrough ("try again for White's 9th move" → board at ply 17), or many games. Coach
+  quirks seen: a lead-in that calls the opponent's piece "your knight", a filler "Give it a click…"
+  line, and answers that say "move 18" for a ply (prompt now says never show ply numbers).
+- **Move chips drop the move number** in the Game-changing note ("Be6", not "9...Be6"); the Explain
+  question has the full move. Cosmetic, from the chat move-chip renderer.
+- **Not built:** persisting engine results across restarts (would need Stockfish-version/hash
+  invalidation); a depth-tolerant engine cache (serve a deeper result to a shallower request); a
+  "clock" for Play-from-here (older TODO, still open).
 
 ## Recent major work (an earlier session, roughly chronological)
 
@@ -400,3 +471,17 @@ outside board and panel) · "Play from position" dialog reordered (color first),
 will use, Replay honours the chosen color, and Best-moves-only falls back to your own side's rating
 before ~1500 (see the bullets above) · header buttons re-ranked: Play game / Find game primary, Analysis
 board secondary, Lessons / Load game demoted to text links.
+
+## Recent major work (2026-09-29 session)
+
+Investigated the coach skipping the Traxler (4...Bc5): the bot is plain Stockfish with no book, so
+the miss was the *coach* (Lessons entries 230/233 show it listed the Traxler briefly, then gave
+engine numbers, +1.33 vs +0.20 for 4...d5, only when asked) · prompt rules: never bury a famous
+named sideline or YouTube "trick" opening, state facts and risk; lead with a pointed question
+(Test me / Hint / "what's the point") instead of the answer, with a where-to-look scaffold · the
+`jump_to_move` tool and "Jump ahead to move N" buttons (SAN-validated, multi, saved with library
+entries, `go_now` auto-jump for "what would you play here?") · loaded games open at move 1 · in-memory
+`Engine.lines()` memo plus per-question timing logs and `usage` columns (finding: API time dominates)
+· a free, local "Game-changing moment" chip with an Explain button · "Quiz me"/"Show me" became "Why
+this move?" / "Guess the next move" (`move_quiz`, no spoilers, follow-up hint in the UI) · hover
+tooltips on every chip. Commits: `cc87308`, `1a2242b`, `0eed228` (+ this notes commit).
