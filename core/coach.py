@@ -12,7 +12,7 @@ import chess
 from . import features, openings, tricks, usage
 from .engine import Engine
 
-MODEL = os.environ.get("COACH_MODEL", "claude-opus-5")
+MODEL = os.environ.get("COACH_MODEL", "claude-sonnet-5")
 
 PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
 

@@ -77,6 +77,34 @@ buttons at the bottom of a message (a separate, older mechanism). The newer inli
 **"▶ Show on board"** buttons can point at the same line, so a message occasionally has both.
 Not yet resolved — see TODOs.
 
+## Model choice
+
+`core/coach.py`'s `MODEL` defaults to `claude-sonnet-5` (was `claude-opus-5` until 2026-09-28).
+Switched after a same-day cost comparison in the Anthropic Console showed Opus-only usage running
+$7-11/day vs. a fraction of that on Sonnet for comparable volume, plus a session's worth of manual
+testing — multi-tool orchestration, the "Read the question" voice-switching, `move_quiz` decoy
+quality, `web_search` trust-tier framing, real-vs-hypothetical divergence tracking — showing no
+quality drop. Override via the `COACH_MODEL` env var if needed, but the code default is what
+actually ships to a fresh clone or a wiped `.env`.
+
+Indicators it's time to reconsider a more powerful model (watch for these in normal use, not an
+audit):
+- A claim that doesn't match what the tools would actually show (an invented-feeling eval, a
+  "trap" that isn't real) — the ground rules require every concrete claim to be tool-verified, so
+  this is the most catchable regression.
+- Tool-orchestration mistakes: skipping a verification step it should have taken, or misreading a
+  tool's actual output.
+- `move_quiz` decoys turning into obviously-bad filler instead of moves a real player at that
+  level would plausibly consider.
+- The "Read the question, not a fixed mode" section flattening out — main-lines questions should
+  lean theory, "let's yolo this" should lean sharp-but-verified, "I feel stuck" should lean
+  patient; if answers stop varying with phrasing, that judgment call is degrading.
+- `web_search` trust-tier blurring — treating something found online as settled instead of
+  re-verifying the actual moves through the engine.
+- Muddled explanations on genuinely sharp, multi-candidate middlegames — the engine gives the raw
+  eval regardless of model, but turning a complicated forcing sequence into clear, correct prose is
+  still real language-model work.
+
 ## TODOs / open decisions
 
 - **Duplicate board-link buttons.** Decide whether to drop the bottom "Show me: ..." row now
