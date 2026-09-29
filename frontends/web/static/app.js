@@ -338,19 +338,32 @@ setInterval(() => {
   }
 }, 250);
 
-// Takeback sits on the player's own name row (right-aligned), not in the chat header.
-function takebackHtml(color) {
+// Takeback sits at the right end of the top name row (#player-top), not in the chat header.
+function takebackHtml() {
   const p = state.play;
-  if (!p || state.demo || color !== p.color) return '';
+  if (!p || state.demo) return '';
   return `<button class="btn ghost small takeback" id="pb-takeback" ${p.moves.length ? '' : 'disabled'}>Takeback</button>`;
+}
+
+// On the empty analysis board the "Moves & engine" panel takes the spot the "Analysis board" title
+// used to have (left of the chat header); everywhere else it lives in .chat-head-right. It has to
+// be moved back before anything overwrites #game-info, or that assignment would delete it.
+function dockGamePanel(inTitle) {
+  const gp = document.querySelector('.game-panel');
+  gp.classList.toggle('in-title', inTitle);
+  const home = inTitle ? $('game-info') : document.querySelector('.chat-head-right');
+  if (gp.parentElement === home) return;
+  if (inTitle) { $('game-info').textContent = ''; home.appendChild(gp); }
+  else home.prepend(gp);
 }
 
 function renderInfo() {
   const r = state.review;
+  dockGamePanel(!state.demo && !state.play && !r.moves.length);
   const top = state.orientation === 'white' ? 'black' : 'white';
   const mat = material(currentGame());
-  $('player-top').innerHTML = playerLine(top) + capturedHtml(top, mat) + takebackHtml(top);
-  $('player-bottom').innerHTML = playerLine(state.orientation) + capturedHtml(state.orientation, mat) + takebackHtml(state.orientation);
+  $('player-top').innerHTML = playerLine(top) + capturedHtml(top, mat) + takebackHtml();
+  $('player-bottom').innerHTML = playerLine(state.orientation) + capturedHtml(state.orientation, mat);
   $('pb-takeback')?.addEventListener('click', takeback);
   document.querySelectorAll('.you-pick').forEach((el) => { el.onclick = () => setYou(el.dataset.color); });
   document.body.classList.toggle('demo-mode', !!state.demo);
@@ -358,7 +371,6 @@ function renderInfo() {
 
   if (state.play) return renderPlayInfo();
   if (!r.moves.length) {
-    $('game-info').textContent = 'Analysis board';
     $('board-sub').textContent = 'Move pieces freely and ask the coach about any position.';
     $('summary').innerHTML = '';
     return;
@@ -1856,6 +1868,7 @@ function onEditorSelect(key) {
 }
 
 function updateEditor() {
+  dockGamePanel(false);
   renderBoard();
   const ed = state.editor;
   const fen = editorFen();
@@ -1930,6 +1943,7 @@ function openFromDialog() {
   $('from-replay').title = canReplay ? '' : 'Replay needs a position from the game itself (not your own variation) before the last move.';
   fromColor = r.player_color || (c.turn() === 'w' ? 'white' : 'black');
   $('from-color').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.color === fromColor));
+  showFromBot();
   $('dlg-from').showModal();
 }
 
@@ -1944,19 +1958,38 @@ async function levelForRating(elo) {
   return rated.reduce((a, b) => (Math.abs(b.elo - elo) < Math.abs(a.elo - elo) ? b : a));
 }
 
+// Which bot level "Best moves only" plays, and why. Matches the strength of the player who
+// actually had the other side in the game. If that side is unrated, falls back to the rating of the
+// side you're taking over (the game's own level), then to the level last used in "Play a game",
+// then ~1500 as a last resort (analysis board, earlier bot games).
+async function botLevelFor(color) {
+  const r = state.review;
+  const oppColor = color === 'white' ? 'black' : 'white';
+  for (const [side, whose] of [[oppColor, `${r[oppColor]}'s`], [color, `${r[color]}'s (your side)`]]) {
+    const elo = parseInt(r[`${side}_elo`], 10);
+    if (!(elo > 0)) continue;
+    try { return { level: await levelForRating(elo), why: `matched to ${whose} ${elo} rating` }; } catch { /* try the next source */ }
+  }
+  botLevels ??= await api('/api/play/levels').catch(() => []);
+  const last = botLevels.find((l) => String(l.id) === recall('botLevel'));
+  if (last) return { level: last, why: "the level you last used, since the game has no ratings" };
+  return { level: { id: 10, name: 'Intermediate (~1500)' }, why: 'default, since the game has no ratings' };
+}
+
+let fromBotToken = 0;
+async function showFromBot() {
+  const token = ++fromBotToken;
+  $('from-bot').textContent = '';
+  const { level, why } = await botLevelFor(fromColor);
+  if (token === fromBotToken) $('from-bot').textContent = `Bot: ${level.name}, ${why}.`;
+}
+
 async function startFromBest() {
   $('dlg-from').close();
   const r = state.review;
   const c = currentGame();
   const origin = `${r.white} vs ${r.black}, ${positionLabel().replace(/^After/, 'after')}`;
-  // scale the bot to the side you're playing against; unrated (analysis board, bot games) keeps ~1500
-  const oppColor = fromColor === 'white' ? 'black' : 'white';
-  const oppElo = parseInt(r[`${oppColor}_elo`], 10);
-  let level = { id: 10, name: 'Intermediate (~1500)' };
-  let scaledTo = null;
-  if (oppElo > 0) {
-    try { level = await levelForRating(oppElo); scaledTo = `${r[oppColor]}'s ${oppElo}`; } catch { /* keep the default */ }
-  }
+  const { level, why } = await botLevelFor(fromColor);
   playToken++;
   let review;
   try {
@@ -1968,18 +2001,17 @@ async function startFromBest() {
   const play = { color: fromColor, level: level.id, levelName: level.name, startFen: review.start_fen,
     moves: [], view: 0, over: null, thinking: false };
   setEngineVisible(false);
-  setReview(review, `Playing on from ${origin} against a ${level.name} bot`
-    + `${scaledTo ? `, matched to ${scaledTo} rating` : ''}. You have ${fromColor}.`, play);
+  setReview(review, `Playing on from ${origin} against a ${level.name} bot (${why}). You have ${fromColor}.`, play);
   if (c.turn() !== fromColor[0]) botMove();
   else gmCheck(c);
 }
 
 function startReplay() {
   $('dlg-from').close();
-  const r = state.review;
-  const color = r.player_color || (currentGame().turn() === 'w' ? 'white' : 'black');
+  const color = fromColor;  // the "You play" choice; defaults to your side of the game
   closeDemo(false);
   state.replay = { color, hint: null };
+  state.orientation = color;
   opponentCommentCount = 0;
   setEngineVisible(false);
   addMsg('system', `Replay from ${positionLabel().toLowerCase()}: play your ${color} moves from the game; your opponent plays theirs. I'll step in if there was something special on the board.`);
@@ -2262,14 +2294,12 @@ function renderPlayInfo() {
   if (p.over) {
     status = p.over.text;
     cls = p.over.outcome === 'win' ? 'win' : p.over.outcome === 'loss' ? 'loss' : '';
-  } else if (p.thinking) status = 'Bot is thinking…';
-  else if (p.view < p.moves.length) status = 'Viewing an earlier position; press → or ⏭ to return';
-  else status = 'Your move';
+  } else if (p.view < p.moves.length && !p.thinking) status = 'Viewing an earlier position; press → or ⏭ to return';
   const buttons = p.over
     ? `<button class="btn small" id="pb-review">Review this game</button>
        <button class="btn ghost small" id="pb-again">New game</button>`
     : (p.thinking ? '<button class="btn ghost small" id="pb-stop">Stop bot</button>' : '');
-  $('summary').innerHTML = `<div class="status ${cls}">${esc(status)}</div><div class="play-buttons">${buttons}</div>`;
+  $('summary').innerHTML = `${status ? `<div class="status ${cls}">${esc(status)}</div>` : ''}<div class="play-buttons">${buttons}</div>`;
   $('pb-review')?.addEventListener('click', reviewPlayedGame);
   $('pb-again')?.addEventListener('click', openPlayDialog);
   $('pb-stop')?.addEventListener('click', stopBotThinking);
@@ -2386,6 +2416,7 @@ $('from-color').querySelectorAll('button').forEach((b) => {
   b.onclick = () => {
     fromColor = b.dataset.color;
     $('from-color').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    showFromBot();
   };
 });
 
@@ -2495,17 +2526,88 @@ $('nav-flip').onclick = () => {
 // moves/engine/explorer live in a dropdown off the game panel, closed by default; board + chat
 // stay the main event and never resize when it opens
 function closeGpDropdown() {
-  $('gp-details').classList.add('hidden');
+  const d = $('gp-details');
+  d.classList.add('hidden');
+  d.style.cssText = '';  // forget where it was dragged to; it reopens anchored to the button
   $('gp-toggle').classList.add('collapsed');
 }
+
+// Drag the dropdown by its handle, or resize it from any side/corner. Either one turns it into
+// position: fixed at its current spot first (absolute + the chat panel's overflow: hidden would
+// clip it at the panel's edge), so it can go anywhere in the window. Pointer capture keeps the
+// release on the handle, so the document click-outside handler below doesn't see it as a click off
+// the dropdown. closeGpDropdown() clears all the inline styles set here.
+(() => {
+  const handle = $('gp-drag'), box = $('gp-details');
+  const MIN_W = 260, MIN_H = 160;
+  let grab = null;
+
+  const detach = () => {
+    const r = box.getBoundingClientRect();
+    Object.assign(box.style, { position: 'fixed', margin: '0', right: 'auto', left: `${r.left}px`, top: `${r.top}px` });
+    return r;
+  };
+
+  handle.onpointerdown = (e) => {
+    if (e.button !== 0) return;
+    const r = detach();
+    grab = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    box.classList.add('dragging');
+    handle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  };
+  handle.onpointermove = (e) => {
+    if (!grab) return;
+    // keep the handle inside the window so it can't be dragged out of reach
+    box.style.left = `${Math.min(innerWidth - 60, Math.max(60 - box.offsetWidth, e.clientX - grab.dx))}px`;
+    box.style.top = `${Math.min(innerHeight - 30, Math.max(0, e.clientY - grab.dy))}px`;
+  };
+  handle.onpointerup = handle.onpointercancel = () => { grab = null; box.classList.remove('dragging'); };
+
+  for (const dir of ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']) {
+    const el = document.createElement('div');
+    el.className = 'gp-rs';
+    el.dataset.dir = dir;
+    let start = null;
+    el.onpointerdown = (e) => {
+      if (e.button !== 0) return;
+      const r = detach();
+      // an explicit size replaces the content-sized default and its max-height cap
+      Object.assign(box.style, { width: `${r.width}px`, height: `${r.height}px`, maxHeight: 'none' });
+      start = { x: e.clientX, y: e.clientY, r };
+      el.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    };
+    el.onpointermove = (e) => {
+      if (!start) return;
+      const { r } = start;
+      const px = Math.min(innerWidth, Math.max(0, e.clientX)), py = Math.min(innerHeight, Math.max(0, e.clientY));
+      const dx = px - start.x, dy = py - start.y;
+      let { left, top, right, bottom } = r;
+      if (dir.includes('e')) right = Math.max(left + MIN_W, r.right + dx);
+      if (dir.includes('w')) left = Math.min(right - MIN_W, r.left + dx);
+      if (dir.includes('s')) bottom = Math.max(top + MIN_H, r.bottom + dy);
+      if (dir.includes('n')) top = Math.min(bottom - MIN_H, r.top + dy);
+      Object.assign(box.style, { left: `${left}px`, top: `${top}px`, width: `${right - left}px`, height: `${bottom - top}px` });
+    };
+    el.onpointerup = el.onpointercancel = () => { start = null; };
+    box.appendChild(el);
+  }
+})();
 $('gp-toggle').onclick = (e) => {
   e.stopPropagation();
   const isOpen = !$('gp-toggle').classList.contains('collapsed');
   if (isOpen) closeGpDropdown();
   else { closeFromMoves(); $('gp-details').classList.remove('hidden'); $('gp-toggle').classList.remove('collapsed'); }
 };
+// Moves & engine stays open while you play moves on the board: it closes with its ✕, the toggle,
+// Esc, or a click anywhere that isn't the board or the dropdown itself. ("Play from position"
+// still closes on any single click off it, board included.)
+$('gp-close').onclick = closeGpDropdown;
 document.addEventListener('click', (e) => {
-  if (!$('gp-details').classList.contains('hidden') && !e.target.closest('.game-panel')) closeGpDropdown();
+  if (!$('gp-details').classList.contains('hidden') && !e.target.closest('.game-panel, #board-wrap')) closeGpDropdown();
+});
+document.addEventListener('click', (e) => {
   if (!$('from-moves')?.classList.contains('hidden') && !e.target.closest('.game-panel')) closeFromMoves();
 });
 closeGpDropdown();

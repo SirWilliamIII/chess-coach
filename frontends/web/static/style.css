@@ -74,11 +74,11 @@ main {
 .chat-panel { grid-column: 2; grid-row: 1; }
 
 /* ---------- board ---------- */
-.board-col { display: flex; flex-direction: column; gap: 6px; }
+.board-col { display: flex; flex-direction: column; gap: 6px; --board-w: min(640px, calc(100vh - 170px), calc(100vw - 32px - 34px)); }
 .board-row { display: flex; gap: 6px; }
 .board-wrap {
   position: relative;
-  width: min(640px, calc(100vh - 170px), calc(100vw - 32px - 34px));
+  width: var(--board-w);
   aspect-ratio: 1;
 }
 #board { width: 100%; height: 100%; transition: filter .5s ease; }
@@ -121,15 +121,14 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .evalbar.flipped.black-better span { top: auto; bottom: 4px; }
 .evalbar.off { visibility: hidden; }
 
-.player { font-weight: 600; padding-left: 34px; min-height: 24px; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* max-width = eval bar strip (34px, same as padding-left) + board, so a right-aligned item lines up with the board's right edge */
+.player { max-width: calc(34px + var(--board-w)); box-sizing: border-box; font-weight: 600; padding-left: 34px; min-height: 24px; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .captured { display: inline-flex; align-items: center; gap: 4px; }
 .capgroup { display: inline-flex; }
 .capgroup i { width: 20px; height: 20px; background-size: cover; display: inline-block; opacity: .85; }
 .capgroup i + i { margin-left: -10px; }
 .lead { color: var(--muted); font-size: 13px; font-weight: 600; margin-left: 2px; }
 .player .elo { color: var(--muted); font-weight: 400; }
-/* only your own row (the one holding Takeback) spreads out; the opponent's row keeps its packed layout */
-.player:has(.takeback) { justify-content: space-evenly; }
 .you-pick { border-bottom: 1px dashed transparent; cursor: pointer; }
 .you-pick:hover { border-bottom-color: var(--muted); }
 .you-pick.on { cursor: default; font-weight: 700; }
@@ -175,6 +174,9 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .gp-toggle::before { content: "▾ "; }
 .gp-toggle.collapsed::before { content: "▸ "; }
 
+/* docked in the title slot (left of the header) the dropdown opens rightward instead */
+.game-panel.in-title #gp-details { left: 0; right: auto; }
+
 /* dropdown: floats over whatever's below/beside it instead of pushing the grid around; wider than
    its narrow trigger column so the explorer filters aren't cramped */
 #gp-details {
@@ -184,8 +186,38 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
   width: min(320px, calc(100vw - 48px));
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
   box-shadow: 0 14px 32px rgba(0,0,0,.5);
-  max-height: min(520px, calc(100vh - 220px)); overflow-y: auto;
+  max-height: min(520px, calc(100vh - 220px));
+  display: flex; flex-direction: column;
 }
+/* the scrolling lives in the body, not on #gp-details, so the resize handles (absolute children of
+   #gp-details) stay put instead of scrolling away with the content */
+.gp-body { flex: 1; min-height: 0; overflow-y: auto; }
+
+/* header bar: sticky so the handle and close button stay reachable while the dropdown's own content
+   scrolls. Dragging switches #gp-details to position: fixed (see app.js) so it can leave
+   .chat-panel, which clips absolutely-positioned children (overflow: hidden). The close button is a
+   sibling of the handle, not a child: the handle captures the pointer, which would swallow its click. */
+.gp-bar {
+  flex: none; display: flex; align-items: stretch;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.gp-drag {
+  flex: 1; padding: 5px 10px; cursor: grab; user-select: none; touch-action: none;
+  color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+}
+.gp-drag:hover { color: var(--text); }
+#gp-details.dragging .gp-drag { cursor: grabbing; }
+/* resize handles: thin invisible strips on the four sides and squares on the four corners */
+.gp-rs { position: absolute; z-index: 2; touch-action: none; }
+.gp-rs[data-dir="n"]  { top: -3px;    left: 10px;  right: 10px;  height: 8px; cursor: ns-resize; }
+.gp-rs[data-dir="s"]  { bottom: -3px; left: 10px;  right: 10px;  height: 8px; cursor: ns-resize; }
+.gp-rs[data-dir="w"]  { left: -3px;   top: 10px;   bottom: 10px; width: 8px;  cursor: ew-resize; }
+.gp-rs[data-dir="e"]  { right: -3px;  top: 10px;   bottom: 10px; width: 8px;  cursor: ew-resize; }
+.gp-rs[data-dir="nw"] { top: -3px;    left: -3px;  width: 14px; height: 14px; cursor: nwse-resize; }
+.gp-rs[data-dir="se"] { bottom: -3px; right: -3px; width: 14px; height: 14px; cursor: nwse-resize; }
+.gp-rs[data-dir="ne"] { top: -3px;    right: -3px; width: 14px; height: 14px; cursor: nesw-resize; }
+.gp-rs[data-dir="sw"] { bottom: -3px; left: -3px;  width: 14px; height: 14px; cursor: nesw-resize; }
+.gp-close { padding: 0 10px; font-size: 13px; }
 
 /* "Play from position": same floating-dropdown treatment, its own trigger */
 #from-moves {
@@ -302,7 +334,7 @@ dialog textarea { width: 100%; resize: vertical; }
 @media (max-width: 760px) {
   main { grid-template-columns: 1fr; padding: 12px 16px; }
   .board-col, .chat-panel { grid-column: 1; grid-row: auto; }
-  .board-wrap { width: calc(100vw - 32px - 34px); }
+  .board-col { --board-w: calc(100vw - 32px - 34px); }
   .panel { height: auto; max-height: 520px; }
   .game-panel .moves { max-height: 200px; }
 }
@@ -407,6 +439,9 @@ body.editor-mode .nav { display: none; }
 .from-opt:hover:not(:disabled) { border-color: var(--accent); background: #45433f; }
 .from-opt:disabled { opacity: .45; cursor: default; }
 .from-opt span { color: var(--muted); font-size: 13px; }
+.from-opt .from-bot { color: var(--text); font-weight: 600; }
+.from-opt .from-bot:empty { display: none; }
+#from-color-field { margin: 8px 0 12px; }
 .replay-status { font-size: 13px; color: var(--muted); margin-top: 2px; width: 100%; }
 
 /* ---------- chat message anatomy ---------- */

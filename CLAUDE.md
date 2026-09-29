@@ -83,28 +83,57 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   explorer) to `.game-panel`, both `position: relative` in `style.css`. If either wrapper moves
   again, that CSS rule has to move with it or the dropdown anchors to the wrong element. The
   dropdowns open inside `.chat-panel`, which is `overflow: hidden`, so they must fit within it.
+- **"Moves & engine" panel (`.game-panel` / `#gp-details`) is docked, draggable and resizable.**
+  - *Docking:* `dockGamePanel()` in `app.js` (called first in `renderInfo()` and `updateEditor()`)
+    moves the whole `.game-panel` into `#game-info` on the empty analysis board, where the old
+    "Analysis board" title text was, and back into `.chat-head-right` in every other mode. It must
+    move back *before* anything assigns `#game-info`'s text/innerHTML, or that assignment deletes the
+    panel from the DOM. When docked, `.game-panel.in-title` makes the dropdown open rightward.
+  - *Drag/resize:* a header bar (`.gp-bar`: drag handle `#gp-drag` + ✕ `#gp-close`) and eight
+    `.gp-rs` edge/corner handles (created in JS). The first drag or resize switches `#gp-details` to
+    `position: fixed` at its current rect (absolute would be clipped by `.chat-panel`'s
+    `overflow: hidden`). Scrolling lives on the inner `.gp-body`, not `#gp-details`, so the handles
+    don't scroll away. The ✕ is a sibling of the drag handle because the handle captures the pointer
+    and would swallow its click. Min size 260x160. `closeGpDropdown()` clears all inline styles, so
+    position/size are **not** remembered between openings (deliberate, easy to add via localStorage).
+  - *Closing:* stays open while you play moves. Closes via ✕, the toggle, Esc, or a click anywhere
+    that isn't `.game-panel` or `#board-wrap` (so eval bar, name rows, nav buttons and chat all
+    close it). The "Play from position" `#from-moves` dropdown still closes on any click off it.
+  - Verified with Playwright pointer events; not tested with touch.
+- **The name rows are capped to the board's width.** `--board-w` is defined on `.board-col` and used
+  by both `.board-wrap` and `.player` (`max-width: 34px + --board-w`; 34px = 28px eval bar + 6px
+  gap, same as the rows' `padding-left`). Without the cap the rows span the whole grid column,
+  which is wider than the capped board, so right-aligned items (Takeback) hung off the board's edge.
+  The ≤760px override sets `--board-w` on `.board-col`.
+- **`#summary` in a bot game shows no "Your move" / "Bot is thinking…" text** (removed on purpose).
+  It still shows the game-over result, the "Viewing an earlier position" note, and Stop bot.
 - **Opening explorer has no filter UI.** `explorerFilters()` in `app.js` is a constant: Lichess
   database, all rating bands, all six speeds. The speeds are listed explicitly on purpose —
   `explorer.explore()` turns a *missing* speeds list into blitz+rapid only, so "all" has to be
   sent. Masters is no longer selectable from the UI (the backend still supports `db="masters"`).
-- **Takeback lives on the player's own name row** (`takebackHtml()`, rendered in `renderInfo()`
-  after the name/clock/captured pieces; that row is `justify-content: space-evenly` via
-  `.player:has(.takeback)`), not in `#summary`. It's hidden in demo mode.
+- **Takeback lives at the right end of the `#player-top` row** (`takebackHtml()`, rendered in `renderInfo()`
+  after the name/clock/captured pieces; `#player-top .btn.small` has `margin-left: auto` in `style.css`
+  to push it right). That's the opponent's row in a normal game (your side is at the bottom). It's
+  hidden in demo mode.
 - **One game load at a time.** `POST /api/load` returns 409 while `S.job` is `running` (one
   Stockfish, one global state); the message says to wait and retry. Loading a second game while
   the first is still being analysed is the usual way to see it. A load does *not* cancel the
   running one — see TODOs.
-- **"Play from position → Best moves only" scales the bot to the opponent.** `startFromBest()` in
-  `app.js` reads the rating of the side you're *not* playing from the loaded game
-  (`white_elo`/`black_elo`), and `levelForRating()` picks the closest bot level by parsing the
-  `(~N)` in each level name from `/api/play/levels`. The user's own rating is deliberately
-  ignored (they may be replaying a pro game they aren't in, e.g. a 2895 opponent → Elite GM).
-  No rating (analysis board, earlier bot games) falls back to Intermediate ~1500. `BOT_LEVELS` in
-  `core/engine.py` now has Super-GM (~2700) and Elite GM (~2900) between Master and Full strength
-  (Stockfish 19's `UCI_Elo` goes to 3190); Full strength is only picked from 3050 up. The
-  rating-capped levels use a 0.5 s move limit while Stockfish calibrates `UCI_Elo` at much longer
-  time controls, so they probably play weaker than labelled (inferred, not measured); the ratings
-  are rough guides, and chess.com vs Lichess scales differ.
+- **"Play from position" dialog (`#dlg-from`).** "You play" (White/Black) sits *above* the two
+  options because clicking an option starts immediately and reads `fromColor`. It applies to both:
+  Replay plays `fromColor`'s moves from the game (default: your side) and flips the board to it.
+  **Best moves only** picks its bot in `botLevelFor(color)` in `app.js`, and the dialog previews the
+  choice ("Bot: Improving (~1200), matched to X's 1298 rating") and refreshes it when you toggle the
+  color. Order: the rating of the side you're *not* playing (whoever had it in the game; the user's
+  own rating is deliberately not the first choice, since they may be replaying a pro game they
+  aren't in) → the rating of your own side → the level last used in "Play a game"
+  (`localStorage` `botLevel`) → Intermediate ~1500 only for an analysis board or earlier bot games
+  with no ratings. `levelForRating()` picks the closest bot level by parsing the `(~N)` in each level
+  name from `/api/play/levels`. `BOT_LEVELS` in `core/engine.py` has Super-GM (~2700) and Elite GM
+  (~2900) between Master and Full strength (Stockfish's `UCI_Elo` goes to 3190); Full strength is
+  only picked from 3050 up. The rating-capped levels use a 0.5 s move limit while Stockfish
+  calibrates `UCI_Elo` at much longer time controls, so they probably play weaker than labelled
+  (inferred, not measured); the ratings are rough guides, and chess.com vs Lichess scales differ.
 - **Engine search: time vs depth.** `Engine.lines()`/`evaluate()` take an optional `depth`; with it,
   the search stops at that depth *or* after `seconds`, whichever is first (seconds = ceiling,
   depth = target). Without it, behaviour is time-only as before. The coach's own tool calls
@@ -306,3 +335,13 @@ mistakes" section of `prompts/player.md` (see the review-loop and persona-cost b
 "Best moves only" now scales the bot to the opponent's rating, with two new top bot levels ·
 the coach's engine calls target a search depth instead of a flat time limit (see the two
 bullets above).
+
+## Recent major work (2026-09-28, frontend polish session)
+
+Takeback moved to the right end of the `#player-top` row and the name rows capped to the board's
+width so it lines up with the board's right edge · removed "Your move" / "Bot is thinking…" from
+`#summary` · the Moves & engine panel takes the old "Analysis board" title slot on the empty
+analysis board and became draggable, resizable and stay-open (closes on ✕ / toggle / Esc / a click
+outside board and panel) · "Play from position" dialog reordered (color first), previews the bot it
+will use, Replay honours the chosen color, and Best-moves-only falls back to your own side's rating
+before ~1500 (see the bullets above).

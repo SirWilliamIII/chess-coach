@@ -49,6 +49,11 @@
           <div class="game-panel">
             <button class="gp-toggle" id="gp-toggle">Moves &amp; engine</button>
             <div id="gp-details">
+              <div class="gp-bar">
+                <div class="gp-drag" id="gp-drag" title="Drag to move">⠿ Drag to move</div>
+                <button class="link gp-close" id="gp-close" title="Close (Esc)">✕</button>
+              </div>
+              <div class="gp-body">
               <div class="moves" id="moves"></div>
               <div class="variation hidden" id="variation">
                 <span id="variation-text"></span>
@@ -65,6 +70,7 @@
                   <div id="x-lines-box" class="hidden"></div>
                   <div id="x-body"></div>
                 </div>
+              </div>
               </div>
             </div>
           </div>
@@ -139,19 +145,20 @@
   <dialog id="dlg-from">
     <form method="dialog" class="dlg-head"><h2>Play from position</h2><button class="link">Close</button></form>
     <p class="hint" id="from-where"></p>
+    <div class="field" id="from-color-field">
+      <span class="label">You play</span>
+      <div class="seg" id="from-color"><button data-color="white">White</button><button data-color="black">Black</button></div>
+    </div>
     <div class="from-options">
       <button class="from-opt" id="from-best">
         <b>Best moves only</b>
-        <span>Take over from this position against a bot matched to your opponent's rating (~1500 if unrated). See how it should have gone.</span>
+        <span>Take over from this position in a live game and see how it should have gone.</span>
+        <span class="from-bot" id="from-bot"></span>
       </button>
       <button class="from-opt" id="from-replay">
         <b>Replay exactly as it went</b>
         <span>You play your own moves again, the opponent plays theirs. The coach steps in when there was a GM-level idea on the board.</span>
       </button>
-    </div>
-    <div class="field" id="from-color-field">
-      <span class="label">You play (best-moves mode)</span>
-      <div class="seg" id="from-color"><button data-color="white">White</button><button data-color="black">Black</button></div>
     </div>
   </dialog>
 
