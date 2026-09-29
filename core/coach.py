@@ -14,6 +14,15 @@ from .engine import Engine
 
 MODEL = os.environ.get("COACH_MODEL", "claude-sonnet-5")
 
+# Search depth for the engine lines the coach builds its answers on (candidate moves, the played
+# move's continuation). Depth is the target and TOOL_MAX_SECONDS the per-call ceiling, so quiet
+# positions stop early and sharp ones can't stall an answer. Measured (3 lines, this machine): the
+# old 1.5 s limit reached depth 15-20; depth 22 / 4 s reaches 19-22; depth 24 / 6 s reaches 21-24
+# but costs up to 6 s per tool call and a question can make several. The review pass and eval bar
+# keep their own (shallower, time-only) settings. Override with COACH_ENGINE_DEPTH.
+TOOL_DEPTH = int(os.environ.get("COACH_ENGINE_DEPTH", "22"))
+TOOL_MAX_SECONDS = 4.0
+
 PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
 
 
@@ -324,7 +333,7 @@ class Coach:
     def _candidate(self, board: chess.Board, move: chess.Move) -> dict:
         after = board.copy(stack=False)
         after.push(move)
-        cont = self.engine.lines(after, multipv=1, seconds=1.0)
+        cont = self.engine.lines(after, multipv=1, seconds=TOOL_MAX_SECONDS, depth=TOOL_DEPTH)
         res = {"effects": features.move_effects(board, move)}
         if cont:
             res["eval_after_white_pov"] = cont[0]["eval_white"]
@@ -356,7 +365,7 @@ class Coach:
             "eval_before_white_pov": m["eval_before"],
             "verdict": m["class"] or ("engine's top choice" if m["played_best"] else "fine"),
             "win_pct_lost_by_mover": m["win_pct_lost"],
-            "engine_top_moves_before": self.engine.lines(board, multipv=3, seconds=1.5),
+            "engine_top_moves_before": self.engine.lines(board, multipv=3, seconds=TOOL_MAX_SECONDS, depth=TOOL_DEPTH),
             "played_move": self._candidate(board, move),
         }
         if not m["played_best"] and m["best"]:
@@ -393,7 +402,8 @@ class Coach:
         board, played = self._position(ply, then_moves)
         return {
             "moves_played_from_ply": played,
-            "engine_lines": self.engine.lines(board, multipv=max(1, min(5, multipv)), seconds=1.5),
+            "engine_lines": self.engine.lines(board, multipv=max(1, min(5, multipv)),
+                                              seconds=TOOL_MAX_SECONDS, depth=TOOL_DEPTH),
             "facts": features.describe(board),
         }
 

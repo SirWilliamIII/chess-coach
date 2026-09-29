@@ -1933,23 +1933,43 @@ function openFromDialog() {
   $('dlg-from').showModal();
 }
 
+// The bot's levels are named like "Club (~1400)"; pick the one closest to a rating. Above the top
+// rated level (~2900) only "Full strength" is stronger, so use it from 3050 up.
+let botLevels = null;
+async function levelForRating(elo) {
+  botLevels ??= await api('/api/play/levels');
+  const full = botLevels.find((l) => /full/i.test(l.name));
+  if (full && elo >= 3050) return full;
+  const rated = botLevels.map((l) => ({ ...l, elo: +(l.name.match(/~(\d+)/)?.[1]) })).filter((l) => l.elo);
+  return rated.reduce((a, b) => (Math.abs(b.elo - elo) < Math.abs(a.elo - elo) ? b : a));
+}
+
 async function startFromBest() {
   $('dlg-from').close();
   const r = state.review;
   const c = currentGame();
   const origin = `${r.white} vs ${r.black}, ${positionLabel().replace(/^After/, 'after')}`;
+  // scale the bot to the side you're playing against; unrated (analysis board, bot games) keeps ~1500
+  const oppColor = fromColor === 'white' ? 'black' : 'white';
+  const oppElo = parseInt(r[`${oppColor}_elo`], 10);
+  let level = { id: 10, name: 'Intermediate (~1500)' };
+  let scaledTo = null;
+  if (oppElo > 0) {
+    try { level = await levelForRating(oppElo); scaledTo = `${r[oppColor]}'s ${oppElo}`; } catch { /* keep the default */ }
+  }
   playToken++;
   let review;
   try {
-    review = await api('/api/play/new', { color: fromColor, level: 10, fen: c.fen(), origin });
+    review = await api('/api/play/new', { color: fromColor, level: level.id, fen: c.fen(), origin });
   } catch (e) {
     addMsg('error', esc(e.message));
     return;
   }
-  const play = { color: fromColor, level: 10, levelName: 'Intermediate (~1500)', startFen: review.start_fen,
+  const play = { color: fromColor, level: level.id, levelName: level.name, startFen: review.start_fen,
     moves: [], view: 0, over: null, thinking: false };
   setEngineVisible(false);
-  setReview(review, `Playing on from ${origin} against a ~1500-rated bot. You have ${fromColor}.`, play);
+  setReview(review, `Playing on from ${origin} against a ${level.name} bot`
+    + `${scaledTo ? `, matched to ${scaledTo} rating` : ''}. You have ${fromColor}.`, play);
   if (c.turn() !== fromColor[0]) botMove();
   else gmCheck(c);
 }

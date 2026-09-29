@@ -94,6 +94,30 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   Stockfish, one global state); the message says to wait and retry. Loading a second game while
   the first is still being analysed is the usual way to see it. A load does *not* cancel the
   running one — see TODOs.
+- **"Play from position → Best moves only" scales the bot to the opponent.** `startFromBest()` in
+  `app.js` reads the rating of the side you're *not* playing from the loaded game
+  (`white_elo`/`black_elo`), and `levelForRating()` picks the closest bot level by parsing the
+  `(~N)` in each level name from `/api/play/levels`. The user's own rating is deliberately
+  ignored (they may be replaying a pro game they aren't in, e.g. a 2895 opponent → Elite GM).
+  No rating (analysis board, earlier bot games) falls back to Intermediate ~1500. `BOT_LEVELS` in
+  `core/engine.py` now has Super-GM (~2700) and Elite GM (~2900) between Master and Full strength
+  (Stockfish 19's `UCI_Elo` goes to 3190); Full strength is only picked from 3050 up. The
+  rating-capped levels use a 0.5 s move limit while Stockfish calibrates `UCI_Elo` at much longer
+  time controls, so they probably play weaker than labelled (inferred, not measured); the ratings
+  are rough guides, and chess.com vs Lichess scales differ.
+- **Engine search: time vs depth.** `Engine.lines()`/`evaluate()` take an optional `depth`; with it,
+  the search stops at that depth *or* after `seconds`, whichever is first (seconds = ceiling,
+  depth = target). Without it, behaviour is time-only as before. The coach's own tool calls
+  (`_candidate`, `move_report`'s top moves, `analyze_position`) use `TOOL_DEPTH` (default 22,
+  override `COACH_ENGINE_DEPTH`) with `TOOL_MAX_SECONDS` = 4 in `core/coach.py`. Measured
+  2026-09-28 with 3 lines on this machine: the old flat 1.5 s reached depth 15-20; depth 22/4 s
+  reaches 19-22; depth 24/6 s reaches 21-24 but costs up to 6 s per call and a question can make
+  several. In the three test positions the best move didn't change at any setting, so the benefit
+  is expected in sharp tactical positions but was not demonstrated. Left time-only on purpose:
+  game review (0.3 s/position — depth ~15-20, so classifications of borderline mistakes are
+  noisy), eval bar (0.6 s), and the GM-moment/trick finders, because they run on every move and
+  deeper would multiply review time. Saved exact-match answers are not invalidated by a depth
+  change (the cache key doesn't include it).
 - **`/usage` page** (`static/usage.html`, standalone, reuses `style.css` tokens): this app's own
   spend from `core/usage.py` (`GET /api/usage`, everything the app sent, estimated cost only) plus
   **organization-wide** month-to-date spend, by model, from `core/org_spend.py`
@@ -278,4 +302,7 @@ default — it isn't selectable) · clearer 409 message when a load is already r
 "Or continue one of your own games…" button moved to the bottom of the Play-a-game dialog, just
 above "Start game" · added the unlinked `/lessons` page · added `scripts/lessons_digest.py`, ran
 the first Lessons digest (204 saved answers, 54 habit lines), and turned it into the "Recurring
-mistakes" section of `prompts/player.md` (see the review-loop and persona-cost bullets above).
+mistakes" section of `prompts/player.md` (see the review-loop and persona-cost bullets above) ·
+"Best moves only" now scales the bot to the opponent's rating, with two new top bot levels ·
+the coach's engine calls target a search depth instead of a flat time limit (see the two
+bullets above).

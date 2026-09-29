@@ -100,12 +100,19 @@ class Engine:
     def __exit__(self, *exc):
         self.close()
 
-    def lines(self, board: chess.Board, multipv: int = 3, seconds: float = 1.0) -> list[dict]:
-        """Top engine lines for the side to move."""
+    def lines(self, board: chess.Board, multipv: int = 3, seconds: float = 1.0,
+              depth: int | None = None) -> list[dict]:
+        """Top engine lines for the side to move.
+
+        `seconds` is the time limit. With `depth` set, the search stops at that depth *or* after
+        `seconds`, whichever comes first — so `seconds` becomes a ceiling and `depth` the target.
+        Time alone gives uneven quality (a quiet middlegame can reach only depth ~15 in 0.3 s).
+        """
         check_position(board)
         if board.is_game_over():
             return []
-        infos = self._call(lambda e: e.analyse(board, chess.engine.Limit(time=seconds), multipv=multipv))
+        limit = chess.engine.Limit(time=seconds, depth=depth)
+        infos = self._call(lambda e: e.analyse(board, limit, multipv=multipv))
         out = []
         for info in infos:
             pv = info.get("pv", [])
@@ -122,14 +129,14 @@ class Engine:
             })
         return out
 
-    def evaluate(self, board: chess.Board, seconds: float = 0.3) -> dict:
-        """Single best line; handles finished games."""
+    def evaluate(self, board: chess.Board, seconds: float = 0.3, depth: int | None = None) -> dict:
+        """Single best line; handles finished games. See `lines` for how depth and seconds combine."""
         if board.is_checkmate():
             cp = -MATE_CP if board.turn == chess.WHITE else MATE_CP
             return {"cp_white": cp, "eval_white": "#0", "best": None, "best_uci": None, "line": ""}
         if board.is_game_over():
             return {"cp_white": 0, "eval_white": "0.00", "best": None, "best_uci": None, "line": ""}
-        top = self.lines(board, multipv=1, seconds=seconds)[0]
+        top = self.lines(board, multipv=1, seconds=seconds, depth=depth)[0]
         return {"cp_white": top["cp_white"], "eval_white": top["eval_white"],
                 "best": top["move"], "best_uci": top["uci"], "line": top["line"]}
 
@@ -169,6 +176,8 @@ BOT_LEVELS = [
     {"id": 6, "name": "Strong club (~1700)", "elo": 1700},
     {"id": 7, "name": "Expert (~2000)", "elo": 2000},
     {"id": 8, "name": "Master (~2400)", "elo": 2400},
+    {"id": 11, "name": "Super-GM (~2700)", "elo": 2700},  # UCI_Elo goes to 3190; these let "Play from
+    {"id": 12, "name": "Elite GM (~2900)", "elo": 2900},   # position" match top-GM opponents
     {"id": 9, "name": "Full strength", "full": True},
 ]
 
