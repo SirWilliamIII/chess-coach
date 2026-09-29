@@ -9,7 +9,7 @@ from pathlib import Path
 import anthropic
 import chess
 
-from . import features, openings, tricks
+from . import features, openings, tricks, usage
 from .engine import Engine
 
 MODEL = os.environ.get("COACH_MODEL", "claude-opus-5")
@@ -560,7 +560,7 @@ class Coach:
             text = f"{self._intro}\n\n{text}"
         return text
 
-    def record_cached(self) -> None:
+    def record_cached(self, question: str = "") -> None:
         """A cache-served answer never touches the real conversation: injecting a synthetic turn
         risked corrupting the tool_use/tool_result pairing a later real question depends on (the
         same bug class fixed in 84e28bc). The player still gets the instant answer; the coach just
@@ -568,6 +568,10 @@ class Coach:
         self.last_demos = []
         self.last_quiz = None
         self.progress = []
+        try:
+            usage.record(model=MODEL, api_calls=0, cached=True, question=question)
+        except Exception:  # noqa: BLE001 — telemetry must never cost the player their answer
+            pass
 
     def ask(self, question: str, focus_ply: int | None = None, on_tool=None, context: str | None = None) -> str:
         text = self._user_turn_text(question, focus_ply, context)
@@ -577,47 +581,60 @@ class Coach:
         self.progress = []
 
         parts: list[str] = []  # text written between tool calls counts as part of the answer
-        while True:
-            if self._client is None:
-                self._client = anthropic.Anthropic()
-            response = self._client.beta.messages.create(
-                model=MODEL,
-                max_tokens=16000,
-                system=system_prompt(),
-                tools=self.tools,
-                messages=self.messages,
-                thinking={"type": "adaptive"},
-                cache_control={"type": "ephemeral"},
-                betas=["server-side-fallback-2026-07-01"],
-                fallbacks="default",
-            )
-            self.messages.append({"role": "assistant", "content": response.content})
-            text_now = "".join(b.text for b in response.content if b.type == "text").strip()
-            if text_now:
-                parts.append(text_now)
+        calls = 0
+        tok = {"input_tokens": 0, "output_tokens": 0,
+               "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}
+        try:
+            while True:
+                if self._client is None:
+                    self._client = anthropic.Anthropic()
+                response = self._client.beta.messages.create(
+                    model=MODEL,
+                    max_tokens=16000,
+                    system=system_prompt(),
+                    tools=self.tools,
+                    messages=self.messages,
+                    thinking={"type": "adaptive"},
+                    cache_control={"type": "ephemeral"},
+                    betas=["server-side-fallback-2026-07-01"],
+                    fallbacks="default",
+                )
+                calls += 1
+                for k in tok:
+                    tok[k] += getattr(response.usage, k, 0) or 0
+                self.messages.append({"role": "assistant", "content": response.content})
+                text_now = "".join(b.text for b in response.content if b.type == "text").strip()
+                if text_now:
+                    parts.append(text_now)
 
-            # decide from the content itself, not stop_reason alone: a refusal or a max_tokens cutoff
-            # can still leave tool_use blocks in this response, and every one of them needs a
-            # tool_result appended right after it no matter why the turn ended, or the next API call
-            # for this whole conversation gets flatly rejected ("tool_use ids ... without tool_result")
-            tool_uses = [b for b in response.content if b.type == "tool_use"]
-            if not tool_uses:
-                if response.stop_reason == "refusal":
-                    return "(The model declined to answer that.)"
-                return _final_answer(parts)
+                # decide from the content itself, not stop_reason alone: a refusal or a max_tokens cutoff
+                # can still leave tool_use blocks in this response, and every one of them needs a
+                # tool_result appended right after it no matter why the turn ended, or the next API call
+                # for this whole conversation gets flatly rejected ("tool_use ids ... without tool_result")
+                tool_uses = [b for b in response.content if b.type == "tool_use"]
+                if not tool_uses:
+                    if response.stop_reason == "refusal":
+                        return "(The model declined to answer that.)"
+                    return _final_answer(parts)
 
-            results = []
-            for block in tool_uses:
-                self.progress.append({"name": block.name, "input": block.input})
-                if on_tool:
-                    on_tool(block.name, block.input)
+                results = []
+                for block in tool_uses:
+                    self.progress.append({"name": block.name, "input": block.input})
+                    if on_tool:
+                        on_tool(block.name, block.input)
+                    try:
+                        results.append({"type": "tool_result", "tool_use_id": block.id,
+                                        "content": self._run_tool(block.name, block.input)})
+                    except Exception as e:  # noqa: BLE001 — every tool_use needs a tool_result right
+                        # after it or the next API call is rejected outright; a tool blowing up in some
+                        # way we didn't anticipate (a Lichess 5xx, a Stockfish hiccup) must never corrupt
+                        # the conversation for every question after it in this game
+                        results.append({"type": "tool_result", "tool_use_id": block.id,
+                                        "content": f"Error: {e}", "is_error": True})
+                self.messages.append({"role": "user", "content": results})
+        finally:
+            if calls:
                 try:
-                    results.append({"type": "tool_result", "tool_use_id": block.id,
-                                    "content": self._run_tool(block.name, block.input)})
-                except Exception as e:  # noqa: BLE001 — every tool_use needs a tool_result right
-                    # after it or the next API call is rejected outright; a tool blowing up in some
-                    # way we didn't anticipate (a Lichess 5xx, a Stockfish hiccup) must never corrupt
-                    # the conversation for every question after it in this game
-                    results.append({"type": "tool_result", "tool_use_id": block.id,
-                                    "content": f"Error: {e}", "is_error": True})
-            self.messages.append({"role": "user", "content": results})
+                    usage.record(model=MODEL, api_calls=calls, question=question, **tok)
+                except Exception:  # noqa: BLE001 — telemetry must never cost the player their answer
+                    pass

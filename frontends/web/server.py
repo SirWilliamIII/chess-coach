@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import gm_moments, library, openings
+from core import gm_moments, library, openings, usage
 from core.coach import Coach, prompt_hash
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
 from core.review import CACHE_DIR, load_pgn, review_game
@@ -391,6 +391,13 @@ def current_review():
     return public_review()
 
 
+@app.get("/api/usage")
+def usage_summary(days: int = 30):
+    """This app's own Claude usage — not a substitute for the Anthropic Console's Usage/Cost
+    pages (the authoritative, account-wide source), just what this app itself has sent."""
+    return usage.summary(days)
+
+
 class MeColorReq(BaseModel):
     color: str  # "white" or "black"
 
@@ -453,7 +460,7 @@ def chat(req: ChatReq):
             # exact same question, position, prompt files, and understood player color as when
             # this was last answered — genuinely what the coach would say again, so skip the API
             # call. Doesn't touch the real conversation history (see Coach.record_cached).
-            coach.record_cached()
+            coach.record_cached(req.question)
             answer = cached["answer"]
         else:
             answer = coach.ask(req.question, context=context,
