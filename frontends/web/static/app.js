@@ -683,6 +683,7 @@ function update() {
   renderMoves();
   renderVariation();
   syncLineButtons();
+  syncCards();
   requestEval(c);
   requestExplorer(c);
 }
@@ -2096,6 +2097,107 @@ async function commentOnOpponentMove(c, san) {
     { silent: true, skipEmpty: true, ambient: true, where: positionLabel() });
 }
 
+// ---- the card after each bot move: best move, main line, a sharper try, what they threaten.
+// Built by the engine on the server (/api/opponent_card) — no Claude call; "Why?" is the one
+// button that asks the coach, so cost only happens when you press it. Replays still get the
+// short coach one-liner above, since there you're meant to play your own game move.
+
+let cardToken = 0;
+
+// "12. Nf3 d5 13. Bb5" text for the first few plies of a line
+function lineText(fen, moves, n = 4) {
+  const labels = demoLabels({ start_fen: fen, moves });
+  return moves.slice(0, n).map((m, i) => {
+    const lab = labels[i];
+    return lab.endsWith('...') ? (i === 0 ? `${lab}${m}` : m) : `${lab} ${m}`;
+  }).join(' ');
+}
+
+async function showOpponentCard(c) {
+  const p = state.play;
+  if (!p || c.isGameOver()) return;
+  const fen = c.fen(), token = ++cardToken;
+  let card;
+  try { card = await api('/api/opponent_card', { fen }); } catch { return; }  // a card is a bonus, never an error
+  if (token !== cardToken || state.play !== p || state.demo || currentGame().fen() !== fen) return;
+
+  const origin = linesOrigin();
+  const demoFor = (title, moves) => ({ title, start_fen: fen, moves, notes: [], ply: origin.ply, then_moves: origin.then_moves });
+  const cp = card.cp_white / 100;
+  const mate = card.eval_white.startsWith('#');
+  const pillCls = mate ? 'm' : cp > 0.5 ? 'w' : cp < -0.5 ? 'b' : 'eq';
+  const best = card.best;
+  const rows = [];
+  rows.push(`<div class="card-row"><span class="card-k">Best</span>${moveChip(best.move)}`
+    + `<span class="evalpill ${pillCls}">${esc(best.eval_white)}</span>`
+    + (best.tags ? `<span class="card-sub">${esc(best.tags.join(', '))}</span>` : '') + '</div>');
+  if (best.moves.length > 1) {
+    rows.push(`<div class="card-row"><button class="demo-btn" data-demo="main">▶ Main line</button>`
+      + `<span class="card-sub">${esc(lineText(fen, best.moves))}…</span></div>`);
+  }
+  if (card.aggressive && card.aggressive.moves.length) {
+    const a = card.aggressive;
+    rows.push(`<div class="card-row"><button class="demo-btn sharp" data-demo="sharp">▶ Sharper try: ${esc(a.move)}</button>`
+      + `<span class="card-sub">${esc(a.note)} · ${esc(a.eval_white)}</span></div>`);
+  }
+  if (card.threat) {
+    const gain = card.threat.gain >= 15 ? 'a decisive attack' : `about ${card.threat.gain} pawns`;
+    rows.push(`<div class="card-row warn">⚠ They threaten ${moveChip(card.threat.move)} (${gain} if ignored)</div>`);
+  }
+  for (const [who, list] of [['Yours', card.loose.you], ['Theirs', card.loose.them]]) {
+    if (list.length) rows.push(`<div class="card-row"><span class="card-k">${who} loose</span><span class="card-sub">${esc(list.join('; '))}</span></div>`);
+  }
+  rows.push(`<div class="card-row card-actions"><button class="btn small card-play-btn" data-fen="${esc(fen)}">Play ${esc(best.move)}</button>`
+    + `<button class="btn ghost small card-why" data-fen="${esc(fen)}">Why?</button></div>`);
+
+  document.querySelectorAll('.msg.card:not(.collapsed)').forEach((m) => m.classList.add('collapsed'));  // keep the chat short
+  const msg = addMsg('coach card',
+    `<div class="card-head"><b>Your move</b><span class="card-sub">${esc(positionLabel())}</span><span class="card-caret">▾</span></div>`
+    + `<div class="card-body">${rows.join('')}</div>`);
+  // "If they play A, I play B": a second, slower engine request, filled in once it arrives
+  const slot = document.createElement('div');
+  slot.className = 'card-row card-replies';
+  slot.innerHTML = '<span class="card-k">If they…</span><span class="card-sub">checking their replies…</span>';
+  msg.querySelector('.card-actions').before(slot);
+  api('/api/opponent_card/replies', { fen, uci: best.uci }).then(({ replies }) => {
+    if (!replies.length) { slot.remove(); return; }
+    slot.innerHTML = '<span class="card-k">If they…</span><div class="card-replylist">'
+      + replies.map((r, i) => `<div class="card-reply"><span>${esc(r.reply)}</span>`
+        + (r.answer ? `<span class="card-arrow">→</span><b>${esc(r.answer)}</b><span class="card-sub">${esc(r.answer_eval_white)}</span>` : '')
+        + `<button class="demo-btn" data-reply="${i}" title="Show it on the demo board">▶</button></div>`).join('')
+      + '</div>';
+    slot.querySelectorAll('[data-reply]').forEach((b) => {
+      const r = replies[+b.dataset.reply];
+      b.onclick = () => openDemo(demoFor(`If ${r.reply}: ${r.moves.join(' ')}`, r.moves));
+    });
+  }).catch(() => slot.remove());  // a bonus row: fail quietly
+
+  msg.querySelector('.card-head').onclick = () => msg.classList.toggle('collapsed');
+  msg.querySelectorAll('[data-demo]').forEach((b) => {
+    b.onclick = () => openDemo(b.dataset.demo === 'main' ? demoFor(`Main line: ${best.move}`, best.moves)
+      : demoFor(`Sharper try: ${card.aggressive.move}`, card.aggressive.moves));
+  });
+  msg.querySelector('.card-play-btn').onclick = () => {
+    if (!cardIsCurrent(fen)) return;
+    onPlayMove(best.uci.slice(0, 2), best.uci.slice(2, 4));
+  };
+  msg.querySelector('.card-why').onclick = () => {
+    if (!cardIsCurrent(fen)) return;
+    ask(CHIPS.play[0][1], { hideQuestion: true });  // the same "My plan?" question as the chip, so it shares that answer's cache
+  };
+  syncCards();
+}
+
+// a card's buttons only work while its position is still on the board and it's your move
+function cardIsCurrent(fen) {
+  const p = state.play;
+  return !!p && !state.demo && !p.over && !p.thinking && p.view === p.moves.length && currentGame().fen() === fen;
+}
+
+function syncCards() {
+  document.querySelectorAll('.card-play-btn, .card-why').forEach((b) => { b.disabled = !cardIsCurrent(b.dataset.fen); });
+}
+
 // ---- "only a GM would see this": engine check each time it's the player's turn
 
 let gmToken = 0;
@@ -2194,7 +2296,7 @@ async function botMove() {
       p.thinking = false;
       playView(p.moves.length);
       if (!checkGameOver()) {
-        commentOnOpponentMove(playChess(p), p.moves.at(-1));
+        showOpponentCard(playChess(p));
         gmCheck(playChess(p));
       }
     }
@@ -2632,7 +2734,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'End') $('nav-end').click();
   else if (e.key === 'f') $('nav-flip').click();
   else if (e.key === 'Escape' && !$('gp-details').classList.contains('hidden')) closeGpDropdown();
-  else if (e.key === 'Escape' && !$('from-moves')?.classList.contains('hidden')) closeFromMoves();
+  else if (e.key === 'Escape' && $('from-moves') && !$('from-moves').classList.contains('hidden')) closeFromMoves();
   else if (e.key === 'Escape' && pinnedSquares.size) { pinnedSquares.clear(); paintSquares(); }
   else if (e.key === 'Escape' && state.demo) closeDemo();
   else if (e.key === 'Escape' && state.replay) stopReplay();

@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import gm_moments, library, openings, usage
+from core import gm_moments, library, openings, opponent_card, usage
 from core import org_spend as org_spend_mod
 from core.coach import Coach, prompt_hash
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
@@ -334,6 +334,33 @@ class GmReq(BaseModel):
 def gm_check(req: GmReq):
     """Is there a GM-level resource (sacrifice / forced mate) for the side to move?"""
     return {"moment": gm_moments.find(S.engine, parse_fen(req.fen))}
+
+
+@app.post("/api/opponent_card")
+def opponent_card_endpoint(req: GmReq):
+    """Best move / main line / sharper try / threat for the side to move — engine only, no Claude call."""
+    board = parse_fen(req.fen)
+    if board.is_game_over():
+        raise HTTPException(400, "game is over")
+    try:
+        return opponent_card.build(S.engine, board)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+class CardRepliesReq(BaseModel):
+    fen: str
+    uci: str
+
+
+@app.post("/api/opponent_card/replies")
+def opponent_card_replies(req: CardRepliesReq):
+    """'If they play A, I play B' rows for the card's best move (engine only, no Claude call)."""
+    board = parse_fen(req.fen)
+    try:
+        return {"replies": opponent_card.replies(S.engine, board, req.uci)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 class LinesReq(BaseModel):

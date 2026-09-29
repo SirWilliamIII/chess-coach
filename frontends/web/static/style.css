@@ -563,3 +563,23 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
   0%   { transform: translateY(-5vh) translateX(0) rotate(0deg); opacity: 1; }
   100% { transform: translateY(105vh) translateX(var(--dx)) rotate(var(--spin)); opacity: 0.85; }
 }
+
+/* ---------- opponent-move card (bot games) ---------- */
+.msg.card { align-self: stretch; max-width: 100%; border-left: 3px solid var(--accent); }
+.card-head { display: flex; align-items: baseline; gap: 8px; cursor: pointer; }
+.card-head .card-sub { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-caret { color: var(--muted); transition: transform .15s; }
+.msg.card.collapsed .card-caret { transform: rotate(-90deg); }
+.msg.card.collapsed .card-body { display: none; }
+.card-body { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.card-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; }
+.card-row.warn { color: #ffb3b0; }
+.card-k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; min-width: 78px; }
+.card-sub { color: var(--muted); font-size: 13px; font-weight: 400; }
+.demo-btn.sharp { background: #6b3a1f; }
+.demo-btn.sharp:hover { background: #82461f; }
+.card-actions { margin-top: 2px; }
+.card-replylist { display: flex; flex-direction: column; gap: 4px; }
+.card-reply { display: flex; align-items: center; gap: 8px; }
+.card-arrow { color: var(--muted); }
+.card-reply .demo-btn { padding: 1px 8px; font-size: 12px; }

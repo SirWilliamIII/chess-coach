@@ -3,6 +3,7 @@
 import math
 import os
 import shutil
+import threading
 
 import chess
 import chess.engine
@@ -70,6 +71,9 @@ class Engine:
     def __init__(self, path: str | None = None, threads: int | None = None, hash_mb: int = 256):
         self._path = path or find_stockfish()
         self._options = {"Threads": threads or min(4, os.cpu_count() or 1), "Hash": hash_mb}
+        # One Stockfish process, several request threads (eval bar, GM check, coach tools, the
+        # opponent card). Overlapping searches on it can come back with no lines, so serialize them.
+        self._lock = threading.Lock()
         self._start()
 
     def _start(self):
@@ -78,15 +82,16 @@ class Engine:
 
     def _call(self, fn):
         """Run fn(engine); if Stockfish died, restart it once and retry."""
-        try:
-            return fn(self._engine)
-        except chess.engine.EngineTerminatedError:
+        with self._lock:
             try:
-                self._engine.close()
-            except Exception:
-                pass
-            self._start()
-            return fn(self._engine)
+                return fn(self._engine)
+            except chess.engine.EngineTerminatedError:
+                try:
+                    self._engine.close()
+                except Exception:
+                    pass
+                self._start()
+                return fn(self._engine)
 
     def close(self):
         try:

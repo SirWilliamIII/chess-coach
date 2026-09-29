@@ -83,6 +83,27 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   explorer) to `.game-panel`, both `position: relative` in `style.css`. If either wrapper moves
   again, that CSS rule has to move with it or the dropdown anchors to the wrong element. The
   dropdowns open inside `.chat-panel`, which is `overflow: hidden`, so they must fit within it.
+- **Opponent-move card (bot games only).** After each bot move `botMove()` calls `showOpponentCard()`
+  (`app.js`), which POSTs the FEN to `/api/opponent_card` → `core/opponent_card.build()`: best move +
+  eval (1.5 s / depth 20), main line, a "sharper try" (only when `tricks.find()` tags a non-top
+  candidate as a sound sacrifice / trap / speculative sacrifice — often there isn't one, and if the
+  top move is itself the sacrifice its tag is shown on "Best" instead), what the opponent threatens
+  (`engine.threat()`, only if serious, suppressed when we have a mate), and loose pieces for both
+  sides, plus "If they…" rows (a second request, `/api/opponent_card/replies` →
+  `opponent_card.replies()`: their top 3 replies to the best move, within 150 cp of their best, each
+  with the engine's answer and a demo button; fills in ~2 s after the card). **No Claude call**: the
+  only paid part is the **Why?** button, which sends the exact "My plan?" chip prompt
+  (`CHIPS.play[0]`) as a normal question — cached and saved to Lessons, and it shares the local
+  answer cache with the chip for the same position. Evals on the card are White's point of view, like
+  the rest of the app. **Play X** makes the best move via `onPlayMove`; the buttons
+  disable themselves (`syncCards()`, called from `update()`) once the position moves on or it isn't
+  your turn. Older cards collapse to their header. Takes ~2.5-5.5 s per card here. **Replays still get
+  the short coach one-liner** (`commentOnOpponentMove`, capped at 4), not a card, since there you
+  play your own game move. Tested with Playwright including stubbed responses for the sharper-try /
+  threat / loose rows; the "Why?" click and real threat/loose output in a live game were not run.
+- **`Engine._call` is serialized with a lock** (`core/engine.py`). One Stockfish, several request
+  threads (eval bar, GM check, coach tools, the card): overlapping `analyse` calls returned an empty
+  line list and 500'd the card endpoint. `Bot` has its own process and lock.
 - **Header buttons have a deliberate hierarchy** (`.actions` in `index.html`): Play game + Find game by
   username are `.btn.primary` (green, larger), Analysis board is a grey `.btn.ghost`, and Lessons +
   Load game are quiet `.link` text buttons after an `.actions-sep` divider (hidden ≤760px, where the
