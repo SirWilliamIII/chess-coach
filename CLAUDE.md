@@ -4,6 +4,12 @@ Project-level notes for working in this repo. `README.md` covers setup and user-
 features — this file is architecture gotchas, "need to knows," and open TODOs for whoever
 (human or agent) touches this code next.
 
+## Working conventions
+
+- **Never `git push` without an explicit ask in that message.** Committing on request ("commit")
+  is fine on its own; push only when the user says so directly (e.g. "push" / "commit and push").
+  This holds regardless of what was pushed last time — one approval doesn't carry forward.
+
 ## Architecture need-to-knows
 
 - **Single-user, single global state.** `frontends/web/server.py` keeps one `S` object
