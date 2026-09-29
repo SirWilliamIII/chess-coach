@@ -6,6 +6,7 @@ Single-user by design: one loaded game and one coach conversation at a time.
 """
 
 import argparse
+import functools
 import json
 import os
 import threading
@@ -71,7 +72,7 @@ def parse_fen(fen: str) -> chess.Board:
 
 def make_coach(review: dict, player: str | None = None, player_color: str | None = None) -> Coach:
     return Coach(review, S.engine, player=player, player_color=player_color,
-                 explorer=explorer.explore if explorer.available() else None)
+                 explorer=functools.partial(explorer.explore, patient=True) if explorer.available() else None)
 
 
 def new_analysis(fen: str, note: str | None = None, player_color: str | None = None):
@@ -343,12 +344,47 @@ def gm_check(req: GmReq):
     return {"moment": gm_moments.find(S.engine, parse_fen(req.fen))}
 
 
+_warm_lock = threading.Lock()
+_warm_token = 0  # bumped per request so a stale warm-up stands down when the position moves on
+
+
+def _warm_explorer(fen: str) -> None:
+    """Fetch the coach's default main-lines tree for this position in the background, so a later
+    'Show main lines' finds it on disk instead of walking Lichess at ~1 s per request. Same parameters
+    the coach tool uses (masters, depth 6), so the cache keys match. Never blocks a request: one warm-up
+    at a time, and it stops early if the position changes."""
+    global _warm_token
+    if not explorer.available():
+        return
+    _warm_token += 1
+    mine = _warm_token
+
+    def walk():
+        if not _warm_lock.acquire(timeout=15):  # an older walk is still winding down
+            return
+        try:
+            if _warm_token != mine:
+                return
+            def explore(*a, **k):
+                if _warm_token != mine:
+                    raise RuntimeError("superseded")  # main_lines stops the walk and keeps what it has
+                return explorer.explore(*a, patient=True, **k)
+            openings.main_lines(explore, chess.Board(fen), 6, "masters", None)
+        except Exception:  # noqa: BLE001 - a best-effort warm-up must never surface an error
+            pass
+        finally:
+            _warm_lock.release()
+    threading.Thread(target=walk, daemon=True).start()
+
+
 @app.post("/api/opponent_card")
 def opponent_card_endpoint(req: GmReq):
     """Best move / main line / sharper try / threat for the side to move — engine only, no Claude call."""
     board = parse_fen(req.fen)
     if board.is_game_over():
         raise HTTPException(400, "game is over")
+    if board.fullmove_number <= 8:  # still in the opening: have "Show main lines" ready before it's asked
+        _warm_explorer(req.fen)
     try:
         return opponent_card.build(S.engine, board)
     except ValueError as e:

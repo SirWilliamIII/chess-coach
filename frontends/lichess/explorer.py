@@ -22,6 +22,9 @@ _lock = threading.Lock()  # Lichess asks for one request at a time
 MAX_AGE = 30 * 24 * 3600  # reuse saved answers for a month
 MIN_INTERVAL = 0.35      # seconds between requests, so tree walks don't trip the rate limit
 _last_request = 0.0
+_cooldown_until = 0.0   # monotonic time before which Lichess told us (429) not to ask again
+RATE_LIMIT_WAIT = 61.0   # Lichess asks for a full minute of silence after a 429
+PATIENT_ATTEMPTS = 3
 _memory: dict[str, dict] = {}
 
 
@@ -72,8 +75,12 @@ def masters_pgn(game_id: str) -> str:
 
 
 def explore(fen: str, db: str = "lichess", ratings: list[int] | None = None,
-            speeds: list[str] | None = None) -> dict:
-    """Move statistics for `fen`. db is 'lichess' (filterable) or 'masters' (OTB games of 2200+ players)."""
+            speeds: list[str] | None = None, patient: bool = False) -> dict:
+    """Move statistics for `fen`. db is 'lichess' (filterable) or 'masters' (OTB games of 2200+ players).
+
+    `patient`: when Lichess rate-limits us (429), wait out the cool-down and retry instead of failing.
+    The coach's tree walks use it, since giving up mid-walk returns shortened, unnamed lines (an
+    accuracy loss, not just a slowdown). The interactive explorer panel doesn't: it fails fast."""
     if db not in ("lichess", "masters"):
         raise ValueError("db must be 'lichess' or 'masters'")
     params = {"fen": fen, "moves": 12, "topGames": 4 if db == "masters" else 0}
@@ -94,20 +101,33 @@ def explore(fen: str, db: str = "lichess", ratings: list[int] | None = None,
     try:
         if not token:
             raise RuntimeError("The opening explorer needs a Lichess token: add LICHESS_TOKEN to .env.")
-        global _last_request
-        with _lock:
-            wait = MIN_INTERVAL - (time.monotonic() - _last_request)
-            if wait > 0:
-                time.sleep(wait)
+        global _last_request, _cooldown_until
+        for attempt in range(PATIENT_ATTEMPTS if patient else 1):
+            remaining = _cooldown_until - time.monotonic()
+            if remaining > 0:  # a 429 (ours or another caller's) says stay quiet
+                if not patient:
+                    raise RuntimeError("The opening explorer is rate limiting us; try again in a minute.")
+                time.sleep(remaining)
+            with _lock:
+                wait = MIN_INTERVAL - (time.monotonic() - _last_request)
+                if wait > 0:
+                    time.sleep(wait)
+                try:
+                    r = requests.get(f"{API}/{db}", params=params, timeout=20,
+                                     headers={"Authorization": f"Bearer {token}"})
+                finally:
+                    _last_request = time.monotonic()
+            if r.status_code == 401:
+                raise RuntimeError("Lichess rejected the token in LICHESS_TOKEN; create a new one.")
+            if r.status_code != 429:
+                break
             try:
-                r = requests.get(f"{API}/{db}", params=params, timeout=20,
-                                 headers={"Authorization": f"Bearer {token}"})
-            finally:
-                _last_request = time.monotonic()
-        if r.status_code == 401:
-            raise RuntimeError("Lichess rejected the token in LICHESS_TOKEN; create a new one.")
-        if r.status_code == 429:
-            raise RuntimeError("The opening explorer is rate limiting us; try again in a minute.")
+                delay = float(r.headers.get("Retry-After", ""))
+            except ValueError:
+                delay = RATE_LIMIT_WAIT
+            _cooldown_until = time.monotonic() + delay
+            if attempt + 1 >= (PATIENT_ATTEMPTS if patient else 1):
+                raise RuntimeError("The opening explorer is rate limiting us; try again in a minute.")
         r.raise_for_status()
     except (requests.ConnectionError, requests.Timeout, requests.HTTPError, RuntimeError) as e:
         if cached.exists():  # offline (or a hiccup): use what we saw last time
