@@ -17,6 +17,7 @@
       <button id="btn-play" class="btn primary">Play game</button>
       <button id="btn-games" class="btn primary">Find game by username</button>
       <button id="btn-analysis" class="btn ghost">Analysis board</button>
+      <button id="btn-study" class="btn ghost">Learn openings</button>
       <span class="actions-sep" aria-hidden="true"></span>
       <button id="btn-library" class="link">📚 Lessons</button>
       <button id="btn-load" class="link">Load game</button>
@@ -91,6 +92,18 @@
     </section>
   </main>
 
+  <dialog id="dlg-study">
+    <form method="dialog" class="dlg-head"><h2>Learn an opening</h2><button class="link">Close</button></form>
+    <p class="hint">Lines come from master games, every move is checked by the engine, and the coach writes the notes. A lesson is built once (a few minutes, a few cents), then learning and drilling it is free.</p>
+    <div class="row"><input id="study-q" placeholder="Search: najdorf, dragon, caro-kann, london…" autocomplete="off"></div>
+    <div id="study-list" class="games-list study-picker"></div>
+    <div class="field"><span class="label">You play</span>
+      <div class="seg" id="study-color"><button data-color="white">White</button><button data-color="black" class="on">Black</button></div>
+    </div>
+    <p class="hint" id="study-status"></p>
+    <div class="row end"><button class="btn" id="study-go" disabled>Pick an opening</button></div>
+  </dialog>
+
   <dialog id="dlg-games">
     <form method="dialog" class="dlg-head"><h2>Find game by username</h2><button class="link">Close</button></form>
     <div class="seg" id="games-tabs">
@@ -144,26 +157,6 @@
     <p class="hint">Ask the coach for ideas and plans at any point. It will teach the idea rather than just give away the move, unless you ask for the move.</p>
     <div class="field" id="play-continue-row"></div>
     <div class="row end"><button class="btn" id="play-go">Start game</button></div>
-  </dialog>
-
-  <dialog id="dlg-from">
-    <form method="dialog" class="dlg-head"><h2>Play from position</h2><button class="link">Close</button></form>
-    <p class="hint" id="from-where"></p>
-    <div class="field" id="from-color-field">
-      <span class="label">You play</span>
-      <div class="seg" id="from-color"><button data-color="white">White</button><button data-color="black">Black</button></div>
-    </div>
-    <div class="from-options">
-      <button class="from-opt" id="from-best">
-        <b>Best moves only</b>
-        <span>Take over from this position in a live game and see how it should have gone.</span>
-        <span class="from-bot" id="from-bot"></span>
-      </button>
-      <button class="from-opt" id="from-replay">
-        <b>Replay exactly as it went</b>
-        <span>You play your own moves again, the opponent plays theirs. The coach steps in when there was a GM-level idea on the board.</span>
-      </button>
-    </div>
   </dialog>
 
   <dialog id="dlg-library" class="wide">

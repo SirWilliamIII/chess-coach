@@ -8,7 +8,8 @@
 - **Level:** about 850 rapid on chess.com (roughly 1200-1400 on the Lichess scale). An improving
   club beginner: knows the rules and basic tactics, still misses back-rank ideas, loose pieces and
   multi-move combinations.
-- **Working on:** tactics and tricks, the Vienna Gambit, endgames (rook endings, king and pawn).
+- **Working on:** tactics and tricks, the Vienna Gambit, endgames (rook endings, king and pawn), and
+  learning the Najdorf and Dragon Sicilians as Black.
 - **Likes:** clever, practical, aggressive chess. Wants to learn the tricks and high-risk,
   high-reward ideas that win games at this level, not just the safest engine move.
 
@@ -35,3 +36,12 @@ Watch for these. Name one only when the position actually shows the flag; don't 
 - **Converting.** When a pawn up I keep pushing it instead of trading pieces, especially the one
   that could win it back.
 - **Checks.** When in check I don't list move, block and capture, or check each king square for mate.
+
+# Results by opening as White (chess.com Insights, rapid, Sep 2026)
+
+Small samples: treat as hints, and bring one up only when the game is actually in that opening.
+
+- **Good:** Queen's Gambit (1.d4 d5 2.c4, 66% won, 73 games), Scotch (63%), Vienna (61%).
+- **Weak:** 1.d4 games that don't become a Queen's Gambit (London-style setups without c4, or
+  other replies): 33% won, 60% lost over 40 games. Worth showing how 2.c4 or a sharper plan looks.
+- **Weak:** against the Philidor (1.e4 e5 2.Nf3 d6): 33% won over 18 games. Show how to punish it.

@@ -30,9 +30,18 @@ terminal version.
   Ask the coach for ideas mid-game ("what idea should I aim for?"); it teaches the plan rather
   than giving away the move unless you ask. Takeback is always available, even after the game
   ends; then **Review this game**.
-- **Play from here** (in a reviewed game): **Best moves only** takes over the position against a
-  full-strength bot; **Replay exactly as it went** has you replay your own moves while the opponent
-  plays theirs, and the coach steps in at GM moments (and warns you before the opponent's).
+- **Replay** (a loaded game): pick **Replay as White/Black** and play your moves from the game while
+  the opponent plays theirs; the arrow keys step through it, and the coach steps in at GM moments (and
+  warns you before the opponent's). Play a *different* move and you're offered to play on from there
+  against a bot matched to your opponent's rating, keeping the game's moves so far; **Back to the
+  game** returns to the replay.
+- **Learn openings**: pick any named opening (Najdorf, Dragon, Caro-Kann, London…) and a side. The
+  first time, a lesson is built from master games (Lichess masters database, needs `LICHESS_TOKEN`),
+  every move checked by Stockfish, with notes written by Claude from the engine's facts (a few minutes,
+  about $0.25). After that it's free: **Learn** walks the lines with a card per move (the idea, the
+  opponent's tries, what to wait for), **Drill** has you play your side while the app answers with
+  the replies masters play, catches wrong moves (a hint first, then the answer) and tracks which lines
+  you've mastered. **Walk me through this** asks the coach about the position with the lesson's line.
 - **⚡ GM alerts**: Stockfish checks each position where it's your turn in bot games and replays for
   a sacrifice or forced mate that beats everything else; only then does the coach speak up.
 - **Show me**: when the coach explains a line it attaches a demo; the button plays it on a
@@ -98,6 +107,7 @@ core/review.py     one engine pass over a game, cached in data/reviews/
 core/gm_moments.py sacrifice / forced-mate detector (static exchange evaluation)
 core/tricks.py     traps and high-risk/high-reward candidates (what if they take the bait?)
 core/openings.py   main lines from real-game statistics (explorer tree walk)
+core/study.py      opening lessons: master-game tree + engine + notes, saved in data/studies/
 core/library.py    saved coach answers: SQLite + full-text search, auto-tags
 core/coach.py      Claude + tools (move_report, compare_moves, analyze_position, find_tricks,
                    show_on_board, opening_explorer)

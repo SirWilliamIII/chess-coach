@@ -77,12 +77,23 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   `#game-info`, `#summary`, and the "Moves & engine" panel (`.game-panel`, now a plain `<div>`
   inside `.chat-head-right` next to "New chat", no longer a `.panel` grid item) are all there, and
   `main` is a two-column grid (board + chat; one column ≤1150px with chat below the board).
-  `renderInfo()` targets everything by ID, so moving things needs no JS change — but two dropdowns
-  are `position: absolute` and anchor to their nearest positioned ancestor: `#from-moves` (the
-  "Play from position" picker) to `.summary`, and `#gp-details` (moves list, engine lines,
-  explorer) to `.game-panel`, both `position: relative` in `style.css`. If either wrapper moves
-  again, that CSS rule has to move with it or the dropdown anchors to the wrong element. The
-  dropdowns open inside `.chat-panel`, which is `overflow: hidden`, so they must fit within it.
+  `renderInfo()` targets everything by ID, so moving things needs no JS change — but the
+  `#gp-details` dropdown (moves list, engine lines, explorer) is `position: absolute` and anchors to
+  `.game-panel` (`position: relative` in `style.css`). If that wrapper moves again, the CSS rule has
+  to move with it. The dropdown opens inside `.chat-panel`, which is `overflow: hidden`, so it must
+  fit within it.
+- **Per-move cards when stepping through a loaded game** (review and replay; `noteMove()` in `app.js`,
+  called from `update()`). Same markup/CSS as the bot-game card (`.msg.card`, older ones collapse) but
+  built from the saved review, no engine call: header = move + verdict (Best move / Fine / A little loose /
+  inaccuracy…), Played + eval pill, Best + eval-before pill (hidden under 1% lost), ▶ Best/Main line demo
+  from the saved `best_line` (added to `public_review()`), Why?, Back to my game. Once per move per game;
+  jumping creates a card only where you land. Why? uses `.note-why`, not `.card-why`, because
+  `syncCards()` disables `.card-why` outside bot games. Paid: a move with >= 10% win chance lost
+  (`BIG_MOMENT_PCT`) also gets an automatic "⚠ Big moment" coach answer (`explainBigMoment()`), only
+  after you stay on it 1.2 s, max 8 per game; it and Why? send the same fixed question per move
+  (`moveQuestion()`), so they share the answer cache (not `ambient`, so saved to Lessons). `ask()` takes
+  `opts.at` so the question stays pinned to that ply if you step on while it waits. The replay's paid
+  opening one-liner skips a move that gets a big-moment answer. Tested with a stubbed `/api/chat`.
 - **Opponent-move card (bot games only).** After each bot move `botMove()` calls `showOpponentCard()`
   (`app.js`), which POSTs the FEN to `/api/opponent_card` → `core/opponent_card.build()`: best move +
   eval (1.5 s / depth 20), main line, a "sharper try" (only when `tricks.find()` tags a non-top
@@ -144,7 +155,7 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
     position/size are **not** remembered between openings (deliberate, easy to add via localStorage).
   - *Closing:* stays open while you play moves. Closes via ✕, the toggle, Esc, or a click anywhere
     that isn't `.game-panel` or `#board-wrap` (so eval bar, name rows, nav buttons and chat all
-    close it). The "Play from position" `#from-moves` dropdown still closes on any click off it.
+    close it).
   - Verified with Playwright pointer events; not tested with touch.
 - **The name rows are capped to the board's width.** `--board-w` is defined on `.board-col` and used
   by both `.board-wrap` and `.player` (`max-width: 34px + --board-w`; 34px = 28px eval bar + 6px
@@ -167,13 +178,25 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   Stockfish, one global state); the message says to wait and retry. Loading a second game while
   the first is still being analysed is the usual way to see it. A load does *not* cancel the
   running one — see TODOs.
-- **"Play from position" dialog (`#dlg-from`).** "You play" (White/Black) sits *above* the two
-  options because clicking an option starts immediately and reads `fromColor`. It applies to both:
-  Replay plays `fromColor`'s moves from the game (default: your side) and flips the board to it.
-  **Best moves only** picks its bot in `botLevelFor(color)` in `app.js`, and the dialog previews the
-  choice ("Bot: Improving (~1200), matched to X's 1298 rating") and refreshes it when you toggle the
-  color. Order: the rating of the side you're *not* playing (whoever had it in the game; the user's
-  own rating is deliberately not the first choice, since they may be replaying a pro game they
+- **A loaded game is a replay; a different move branches off to the bot** (2026-09-29; the old
+  "Play from position" button, its move dropdown and the `#dlg-from` dialog are gone). The review
+  summary shows "Replay as [White][Black]" (plus "you were X"); picking a side calls `startReplay(color)`,
+  which also sets the coach's player color (`setYou`) and starts **paused** at the current move, so
+  nothing plays or costs anything until you move or press ▶. Exit replay drops to plain review (free
+  exploration of both sides) and shows the picker again. In a replay the nav buttons / arrow keys step
+  through the game (`replayView()`); stepping *pauses* it, so the opponent's move waits for ▶ instead of a
+  timer (else stepping back past their move would bounce forward). Playing your game move resumes
+  auto-play. A *different* move snaps back and sets `state.replay.deviation`: the summary offers
+  "Play X vs bot" (`branchToBot()`) or "Take it back". The bot game starts from the game's own start
+  position with the game's moves up to the branch preloaded (`play.prefix` = their count), then plays
+  your move: ◀/⏮ step back through the original game, "Review this game" gets the whole game, and
+  Takeback stops at the branch point (`takeback()`/`syncTakeback()` floor on `prefix`). The bot game keeps `play.back = {game_id, ply, color}` and shows "Back to the game"
+  (`backToGame()`: `/api/saved/open`, no re-analysis, replay paused at that move). Branching resets
+  the chat (one global state, a new coach), and so does coming back. The bot is picked automatically,
+  no dialog; no clock. Replays and branched games keep the eval bar / engine lines per the saved
+  `engineOn` setting (default on); the Play-a-game dialog's "Show engine eval" box defaults to checked.
+  The branch's bot level (`botLevelFor(color)` in `app.js`) is announced in the chat note. Order: the
+  rating of the player the bot replaces (the side you're *not* playing; the user's own rating is deliberately not the first choice, since they may be replaying a pro game they
   aren't in) → the rating of your own side → the level last used in "Play a game"
   (`localStorage` `botLevel`) → Intermediate ~1500 only for an analysis board or earlier bot games
   with no ratings. `levelForRating()` picks the closest bot level by parsing the `(~N)` in each level
@@ -182,6 +205,43 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   only picked from 3050 up. The rating-capped levels use a 0.5 s move limit while Stockfish
   calibrates `UCI_Elo` at much longer time controls, so they probably play weaker than labelled
   (inferred, not measured); the ratings are rough guides, and chess.com vs Lichess scales differ.
+- **Opening lessons ("Learn openings", 2026-09-29).** `core/study.py` builds a lesson once per
+  (opening, side) and saves it to `data/studies/<slug>.json` (gitignored like all of `data/`, so each
+  clone rebuilds its own). Build = (1) the named line's move order from the vendored ECO table (the
+  "trunk"), (2) a breadth-first walk of the **masters** explorer from there (`EXTRA_PLIES` 10,
+  `MAX_NODES` 90, opponent width `OPP_WIDTH` 3/3/2/2/1, tries ≥ `MIN_SHARE` 8%, stop under `MIN_GAMES`
+  30): on the student's turn one move — the masters' most popular, **unless** the engine's top move is
+  also a master move (≥ 8%) and ≥ `PREFER_GAP` 20 cp better (then that one, `source: masters+engine`),
+  or the popular move is > `ENGINE_SLACK` 60 cp worse (then the engine's move, `source: engine`);
+  (3) an engine eval per node; (4) **one** structured-output call (`output_config.format`, schema
+  `NOTES_SCHEMA`) that writes the overview + a note per node. Rating is deliberately *not* a factor (user's
+  call: theory first). Lichess gives castling as king-takes-rook (`e8h8`); moves go through
+  `board.parse_uci()` so stored UCI is `e8g8`.
+  **Notes quality, what was learned:** Sonnet 5 with just the move list wrote chess-wrong notes ("…e5 hits
+  the bishop on e3", "a protected passed pawn on d5"). Two fixes: each row carries **board facts** from
+  `features.move_effects` (captures / attacks / pins / loose pieces / structure changes) plus the
+  engine's top choices, and the prompt limits concrete claims to those; and the notes model is
+  `STUDY_MODEL` (default `claude-opus-5-5`, one call per lesson, ~$0.25, ~90 s). Opus's notes checked out
+  on a read-through; Sonnet's still had errors with the facts. Remaining guard: `_verified()` drops a note
+  that names a move not in the tree and not legal anywhere along that node's own line (either side to
+  move). Claims about plans aren't machine-checked — read new lessons with that in mind.
+  A cold build is ~3 min (≈1-2 s per explorer lookup, patient on 429s) + ~1 min engine + the notes call;
+  rebuilds reuse the explorer disk cache. `POST /api/study/build` runs it in a thread (`STUDY_JOB`, one at a
+  time), `/api/study/start` opens it as a fresh analysis board whose coach gets `study.coach_note()` (the
+  overview) as its session note; `board_context()` then calls the moves "on the board in the opening lesson".
+  **Frontend** (`app.js`, "opening lessons" section): `state.study` on top of the analysis board
+  (`state.extra` = moves from the start, `studyNodeHere()` maps them to a node). **Learn**: any move; a
+  lesson move follows the tree, anything else is free analysis ("not in this lesson"); a card per node
+  (`studyCard`, once per session) with the note and either "Your move" or "Their tries" buttons.
+  **Drill**: you play your side (`canMove`), the opponent answers after 650 ms, picking among the
+  tries weighted by master share × unmastered lines under each; wrong move = circle on the piece first,
+  the arrow + note on the second miss (one mistake counted per position). A line is **mastered** after
+  2 clean runs in a row (`localStorage` `study-m:<slug>`); ◀ in a drill steps back to your own move.
+  Chips: "Walk me through this" sends the lesson's next moves and the opponent's tries with the question
+  (so the coach explains *this* line), plus My plan / Guess / Why / Main lines. Ideas noted but not built:
+  standalone "find the key move" puzzles from a lesson (…h5, …b5, …Qa3), move symbols (!, !?) on cards.
+  Built and read through: Najdorf and Dragon as Black. Tested with Playwright (stubbed chat): picker,
+  Learn branches, back/forward, off-lesson moves, the walkthrough question, a drill with a wrong move.
 - **Engine search: time vs depth.** `Engine.lines()`/`evaluate()` take an optional `depth`; with it,
   the search stops at that depth *or* after `seconds`, whichever is first (seconds = ceiling,
   depth = target). Without it, behaviour is time-only as before. The coach's own tool calls
@@ -254,6 +314,10 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   before `...e6`, converting a pawn up by trading, and listing all answers when in check. It says
   to name one only when the position shows the flag. If the coach starts raising these in
   positions that don't show them, tighten that sentence.
+  A **"Results by opening as White"** section (added 2026-09-29) comes from the user's chess.com Insights
+  screenshots (not the API; Insights needs their login): QG/Scotch/Vienna good, 1.d4 without c4 and the
+  Philidor weak. Samples are 18-73 games, so it's framed as hints, raised only in that opening. The Black
+  tab wasn't captured yet.
 - **`.env` is gitignored** and must be recreated on every machine/clone
   (`ANTHROPIC_API_KEY`, `LICHESS_TOKEN`, optional `CHESS_USER`, optional `ANTHROPIC_ADMIN_KEY` +
   `MONTHLY_SPEND_LIMIT` for the `/usage` page's org-spend card). This machine has two local
@@ -375,6 +439,28 @@ quality, `web_search` trust-tier framing, real-vs-hypothetical divergence tracki
 quality drop. Override via the `COACH_MODEL` env var if needed, but the code default is what
 actually ships to a fresh clone or a wiped `.env`.
 
+**Sonnet 5.5 (`claude-sonnet-5-5`) tried and not adopted (2026-09-29).** Same price as Sonnet 5 and
+`core/usage.py` already prices it, but it is **not a drop-in swap for this app**: it returns text written
+*between tool calls* as `thinking` blocks (empty by default) instead of `text`, and `Coach.ask()` only
+collects `text`. The coach usually writes its explanation before a closing tool call (`show_on_board`,
+`move_quiz`), so answers came back as a one-line closer ("Look to play Bxf4 next…"), empty, or starting
+"One correction:…" about text the player never saw. Tried `thinking: {type: "adaptive", display:
+"updates"}` (beta `thinking-display-updates-2026-08-18`) and reading non-empty thinking blocks as answer
+text: that returns only *summaries* of those notes ("I've laid out a response plan…" without the plan), so
+it doesn't fix it; reverted. What a switch would need: (1) a prompt rule to write the whole answer after
+the last tool call (edits `prompts/coach.md`, so one answer-cache reset), or (2) a "send the player a
+message" tool for anything shown mid-answer (Anthropic's recommendation for UIs that don't render
+thinking); then rerun the comparison and check answers arrive whole. `COACH_THINKING=off` on 5.5 uses
+`between_tools` (already handled in `_thinking_kwargs()`), whose notes are also summaries.
+Measured (3 positions of `cc184224792278` × "Best move"/"My plan?", one sample each, moves graded against
+Stockfish at depth 22): both models named the engine's top move 6/6; Sonnet 5.5 was faster ("My plan?"
+37-48 s vs 43-91 s) but wrote fewer visible words, so part of that may vanish once answers are whole.
+Decision: stay on Sonnet 5 (no accuracy gain shown; speed alone wasn't worth a new failure mode). Revisit
+if Sonnet 5 gets a retirement date or latency becomes the priority. The throwaway comparison script
+wasn't kept: it built `Coach(review, Engine(), player=...)` per question, asked with
+`context=coach.board_context(ply - 1, [])`, took the first legal SAN in the answer, and needs `os._exit(0)`
+at the end (the engine thread keeps the process alive otherwise).
+
 Indicators it's time to reconsider a more powerful model (watch for these in normal use, not an
 audit):
 - A claim that doesn't match what the tools would actually show (an invented-feeling eval, a
@@ -421,8 +507,8 @@ audit):
   load at a time"). Nicer option not built: let a new load cancel/replace the running one, which
   needs a way to abort the in-flight `review_game` engine pass.
 - **Clock is scoped to fresh bot games only.** The "Use a clock" option lives in the
-  "Play a game" dialog (`dlg-play` → `startGame()`). "Play from here" / Replay (`dlg-from`)
-  don't have a clock option — that was out of scope for the original ask, not an oversight,
+  "Play a game" dialog (`dlg-play` → `startGame()`). Branching off a replay
+  doesn't have a clock option — that was out of scope for the original ask, not an oversight,
   but worth adding if wanted later.
 - **Named/"trick" sidelines are prompt-driven, not systematic.** `prompts/coach.md` ("Tricks, not just
   the engine line") tells the coach not to bury famous sidelines (Traxler, Halloween/Alien Gambit,

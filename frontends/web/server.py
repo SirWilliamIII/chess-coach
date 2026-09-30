@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import eco, gm_moments, library, openings, opening_quips, opponent_card, usage
+from core import eco, gm_moments, library, openings, opening_quips, opponent_card, study, usage
 from core import org_spend as org_spend_mod
 from core.coach import Coach, prompt_hash
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
@@ -90,7 +90,7 @@ def public_review() -> dict:
         "opening": r["opening"], "start_fen": r["start_fen"],
         "player_color": S.coach.player_color if S.coach else None,
         "moves": [{k: m[k] for k in ("ply", "label", "color", "san", "uci", "fen_after",
-                                     "eval_before", "eval_after", "best", "class", "played_best",
+                                     "eval_before", "eval_after", "best", "best_line", "class", "played_best",
                                      "win_pct_lost")} for m in r["moves"]],
     }
 
@@ -261,6 +261,63 @@ def analysis(req: AnalysisReq):
     with S.lock:
         new_analysis(fen)
     return public_review()
+
+
+# ---------- opening studies (core/study.py): build once, then walk and drill for free ----------
+
+STUDY_JOB = {"status": "idle", "message": "", "error": None, "slug": None}
+
+
+@app.get("/api/study/openings")
+def study_openings(q: str = ""):
+    return {"openings": study.search(q)}
+
+
+class StudyReq(BaseModel):
+    name: str
+    color: str
+
+
+def _study_job(name: str, color: str):
+    try:
+        def progress(msg):
+            STUDY_JOB["message"] = msg
+        s = study.build(name, color, S.engine, functools.partial(explorer.explore, patient=True), progress)
+        STUDY_JOB.update(status="done", slug=s["slug"])
+    except Exception as e:  # surfaced to the UI
+        STUDY_JOB.update(status="error", error=str(e))
+
+
+@app.post("/api/study/build")
+def study_build(req: StudyReq):
+    if study.load(req.name, req.color):
+        return {"status": "done"}
+    if not explorer.available():
+        raise HTTPException(400, "Building a lesson needs LICHESS_TOKEN in .env (it reads the masters database).")
+    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        raise HTTPException(400, "Building a lesson needs ANTHROPIC_API_KEY (the coach writes the notes).")
+    if STUDY_JOB["status"] == "running":
+        raise HTTPException(409, "Another lesson is still being built; try again when it's done.")
+    STUDY_JOB.update(status="running", message="Starting…", error=None, slug=None)
+    threading.Thread(target=_study_job, args=(req.name, req.color), daemon=True).start()
+    return {"status": "running"}
+
+
+@app.get("/api/study/job")
+def study_job():
+    return STUDY_JOB
+
+
+@app.post("/api/study/start")
+def study_start(req: StudyReq):
+    """Open a built study: a fresh analysis board from the start position with a coach that knows
+    the lesson. Returns the study and the review, like the other mode switches."""
+    s = study.load(req.name, req.color)
+    if not s:
+        raise HTTPException(404, "that lesson hasn't been built yet")
+    with S.lock:
+        new_analysis(chess.STARTING_FEN, study.coach_note(s), player_color=req.color)
+    return {"study": s, "review": public_review()}
 
 
 # ---------- playing against the bot ----------

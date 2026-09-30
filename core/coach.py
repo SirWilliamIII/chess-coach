@@ -633,8 +633,10 @@ class Coach:
             where = f"the game position after {m['label']} {m['san']} (ply {after_ply})"
         diverges = ""
         if played:
-            how = "these moves were played in the practice game" if self.review.get("note") else \
-                "the player tried these moves on the board"
+            note = self.review.get("note") or ""
+            how = ("these moves are on the board in the opening lesson" if "opening trainer" in note
+                   else "these moves were played in the practice game" if note
+                   else "the player tried these moves on the board")
             where += f", then {how}: {' '.join(played)}"
             last = f"the last move tried ({played[-1]})"
             # a real game (not a practice session) that actually continues here: say plainly what
