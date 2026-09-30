@@ -2726,6 +2726,29 @@ function moveQuestion(m) {
     + 'In two or three sentences, say what the move missed or allowed and what the better move does. Verify with the tools.]';
 }
 
+// ---- known traps from the user's own opening collection (data/openings.md, indexed on the server,
+// no Claude call). A row on a card: `html` is the text, `demo` what the ▶ button shows.
+function trapRow(kind, t, mine) {
+  const ref = t.punish.length ? moveChip(t.punish[0]) : null;
+  const line = esc(t.punish.slice(0, 6).join(' '));
+  const src = `<span class="card-sub">known trap · ${esc(t.section)}</span>`;
+  const btn = t.punish.length ? '<button class="demo-btn" data-demo="trap">▶ Refutation</button>' : '';
+  if (kind === 'fell') {
+    return mine
+      ? `<div class="card-row warn">⚠ You walked into a known trap${ref ? `: ${ref} wins for them` : ''}. ${btn}${src}</div>`
+      : `<div class="card-row good">🎯 They walked into a known trap${ref ? `: ${ref} wins` : ''}. ${btn}${src}</div>`;
+  }
+  if (kind === 'punished') return `<div class="card-row good">✓ That's the known refutation of the trap. ${src}</div>`;
+  if (kind === 'missed') {
+    return mine
+      ? `<div class="card-row warn">⚠ Missed the refutation of a known trap: ${ref} (${line}). ${btn}${src}</div>`
+      : `<div class="card-row good">Lucky: they missed the refutation ${ref}. ${btn}${src}</div>`;
+  }
+  // 'warn': the side to move (you) can walk into it right here
+  return `<div class="card-row warn">⚠ Known trap: ${moveChip(t.move)} here loses to ${ref}. `
+    + `<button class="demo-btn" data-demo="trap">▶ Show it</button>${src}</div>`;
+}
+
 // Same look as the bot-game card (showOpponentCard), but read off the saved review: no engine call.
 function noteMove() {
   if (state.play || state.demo || state.editor || state.extra.length || !state.review) return;
@@ -2751,6 +2774,11 @@ function noteMove() {
     rows.push(`<div class="card-row"><button class="demo-btn" data-demo="best">▶ ${m.played_best ? 'Main' : 'Best'} line</button>`
       + `<span class="card-sub">${esc(m.best_line.split(/\s+/).slice(0, 6).join(' '))}…</span></div>`);
   }
+  if (m.trap) {
+    const kind = m.trap.kind;
+    // 'fell' is about this move's mover; 'punished'/'missed' about the setter, who made this move
+    rows.push(trapRow(kind, m.trap, m.color === state.review.player_color));
+  }
   rows.push('<div class="card-row card-actions"><button class="btn ghost small note-why">Why?</button>'
     + '<button class="btn ghost small card-back" title="Close the demo board and return to the game">Back to my game</button></div>');
 
@@ -2759,7 +2787,14 @@ function noteMove() {
     + `<span class="card-caret">▾</span></div><div class="card-body">${rows.join('')}</div>`);
   msg.querySelector('.card-head').onclick = () => msg.classList.toggle('collapsed');
   msg.querySelector('.card-back').onclick = () => closeDemo();
-  const demoBtn = msg.querySelector('[data-demo]');
+  const trapBtn = msg.querySelector('[data-demo="trap"]');
+  if (trapBtn) {
+    // 'fell': show the refutation from after this move; 'missed': from before it (the move that should have been played)
+    const from = m.trap.kind === 'fell' ? m.fen_after : ply > 1 ? state.review.moves[ply - 2].fen_after : state.review.start_fen;
+    trapBtn.onclick = () => openDemo({ title: `Refutation: ${m.trap.punish.join(' ')}`, start_fen: from,
+      moves: m.trap.punish, notes: [], ply, then_moves: [] });
+  }
+  const demoBtn = msg.querySelector('[data-demo="best"]');
   if (demoBtn) {
     const startFen = ply > 1 ? state.review.moves[ply - 2].fen_after : state.review.start_fen;
     demoBtn.onclick = () => openDemo({ title: `${m.played_best ? 'Main' : 'Best'} line: ${best || name}`, start_fen: startFen,
@@ -2823,6 +2858,9 @@ async function showOpponentCard(c) {
     rows.push(`<div class="card-row"><button class="demo-btn sharp" data-demo="sharp">▶ Sharper try: ${esc(a.move)}</button>`
       + `<span class="card-sub">${esc(a.note)} · ${esc(a.eval_white)}</span></div>`);
   }
+  // in a bot game "they" are the bot: trap_punish = it just walked into one, trap_warn = you might
+  if (card.trap_punish) rows.push(trapRow('fell', card.trap_punish, false));
+  if (card.trap_warn) rows.push(trapRow('warn', card.trap_warn, true));
   if (card.threat) {
     const gain = card.threat.gain >= 15 ? 'a decisive attack' : `about ${card.threat.gain} pawns`;
     rows.push(`<div class="card-row warn">⚠ They threaten ${moveChip(card.threat.move)} (${gain} if ignored)</div>`);
@@ -2858,8 +2896,14 @@ async function showOpponentCard(c) {
 
   msg.querySelector('.card-head').onclick = () => msg.classList.toggle('collapsed');
   msg.querySelectorAll('[data-demo]').forEach((b) => {
-    b.onclick = () => openDemo(b.dataset.demo === 'main' ? demoFor(`Main line: ${best.move}`, best.moves)
-      : demoFor(`Sharper try: ${card.aggressive.move}`, card.aggressive.moves));
+    const d = b.dataset.demo;
+    const w = card.trap_warn, p = card.trap_punish;
+    // the warn row is the only trap row styled .warn on this card
+    const demo = d === 'main' ? demoFor(`Main line: ${best.move}`, best.moves)
+      : d === 'trap' && b.closest('.warn') ? demoFor(`Trap: ${w.move}?? ${w.punish.join(' ')}`, [w.move, ...w.punish])
+      : d === 'trap' ? demoFor(`Refutation: ${p.punish.join(' ')}`, p.punish)
+      : demoFor(`Sharper try: ${card.aggressive.move}`, card.aggressive.moves);
+    b.onclick = () => openDemo(demo);
   });
   msg.querySelector('.card-back').onclick = () => closeDemo();
   msg.querySelector('.card-play-btn').onclick = () => {

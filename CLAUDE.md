@@ -124,6 +124,37 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   move). Guards: game started from the standard position, ply ≤ 16, max 3 per game, only for a new
   family or a variation that has its own line, and bland names ("King's Pawn Game") are skipped.
   Not built: tactic reactions ("nice fork") — only openings.
+- **Known traps from the user's opening collection** (`core/repertoire.py`, 2026-09-30). Sources:
+  `data/openings.md` plus any `data/openings/*.md` (gitignored; the first batch is course material, so it
+  must not be committed), each with `##`/`###` section headers followed by a JSON list of `{"name", "pgn"}`
+  — line names are ignored, only moves matter. A trap is labelled with the ECO name of the last named
+  position before it (`_label()`); the section header is the fallback only if it starts with a real ECO
+  family name, since course titles ("Win EVERY Game as Black", "Full Black Repertoire with 1...Nf6", "E4 / E5
+  MASTERFILE") span many openings; otherwise the label is "from your opening files". A background thread
+  (started from the server's `lifespan`, or by hand: `python -m core.repertoire -v`) evaluates every
+  position (0.15 s, cached per EPD in `data/openings_evals.json`, so a new batch only pays for new
+  positions) and marks a move in a line as a **trap** when it throws away ≥ `TRAP_SWING` 150 cp and
+  leaves the other side ≥ `TRAP_EDGE` +2 — then re-checks that move at depth 20 (shallow evals misjudge
+  gambits). Index: `data/openings_index.json`, rebuilt when the sources' combined hash changes; lookups return
+  nothing until the first build is done. Keyed by EPD, so transpositions match. Shown on: the review's
+  per-move cards (`public_review()` adds `trap`: `fell` on the trap move, then `punished`/`missed` on the
+  reply) and the bot-game opponent card (`trap_punish`: the bot just fell in; `trap_warn`: you could fall
+  in with the move you're about to play). Both are `trapRow()` in `app.js`, with a ▶ refutation demo.
+  No Claude call. The source format also accepts files with no header (the file name is then the fallback
+  section); a pgn with `{comments}`, `$n`/`!?` glyphs or `(variations)` is cut at the first such token.
+  **State 2026-09-30:** `openings.md` (472 lines: Caro-Kann, Scotch, QGA, KID, Vienna, Vienna Gambit,
+  Scandinavian, Traxler) + `openings/openings2.md` (1,401 lines, 23 sections) = 1,842 unique lines, 16,779
+  positions, **403 traps** (196 set by White, 207 by Black; most in Italian/Traxler 72, Elephant 44, Vienna 34,
+  Alekhine 32, Scotch 31). Cold build of the second batch: 58 min (≈380 new positions/min, then the depth-20
+  recheck); the first batch alone took 15 min. The server keeps serving the old index while a rebuild runs.
+  **Tested:** a review of a Scotch game with 5...Nf6?? 6.Nc3 (card rows "fell"/"missed", refutation demo, no
+  page errors, Playwright with stubbed chat) and `/api/opponent_card` on both sides of that trap. **Not
+  tested:** a live bot game reaching a trap (plain Stockfish rarely plays these lines, so the bot-card rows
+  will be rare until the opening-book idea below). Some labels are odd where a line passes through a
+  position the ECO table names unexpectedly (one Vienna-file trap is labelled "Benoni Defense: King's Pawn Line").
+  Next idea, not built: use the same lines as an opening book for the bot (deeper and trap-seeking at higher
+  levels, occasionally walking into traps at low levels) — check the setter's own moves for soundness first,
+  since "Win every game"-style lines can rely on dubious gambits.
 - **`Engine._call` is serialized with a lock** (`core/engine.py`). One Stockfish, several request
   threads (eval bar, GM check, coach tools, the card): overlapping `analyse` calls returned an empty
   line list and 500'd the card endpoint. `Bot` has its own process and lock.
@@ -504,8 +535,6 @@ audit):
   through this" in a lesson, "⚠ Big moment" answers, Why? on a move card.
 - **"Review this game" after branching** off a replay (should analyse the whole game from move 1).
 - **chess.com Insights, Black tab**: ask for the screenshot and extend `player.md`'s results section.
-- **`lessons-view.js`** (chess.com's minified bundle, 1.1 MB) sits untracked in the repo root. Never
-  commit it; ask the user to delete it or gitignore it.
 - **Lesson ideas not built:** "find the key move" puzzles pulled from a lesson (…h5, …b5, …Qa3), move
   symbols (!, !?) on cards. Known quirk: a bare pawn move in lesson text ("g3") renders as a square, not a
   move button, because only numbered/"..." pawn moves are unambiguous.

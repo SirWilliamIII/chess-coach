@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import eco, gm_moments, library, openings, opening_quips, opponent_card, study, usage
+from core import eco, gm_moments, library, openings, opening_quips, opponent_card, repertoire, study, usage
 from core import org_spend as org_spend_mod
 from core.coach import Coach, prompt_hash
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
@@ -52,6 +52,7 @@ async def lifespan(app):
     S.engine = Engine()
     S.bot = Bot()
     new_analysis(chess.STARTING_FEN)
+    repertoire.index()  # loads the trap index, or starts building it if data/openings.md changed
     yield
     S.engine.close()
     S.bot.close()
@@ -84,6 +85,7 @@ def new_analysis(fen: str, note: str | None = None, player_color: str | None = N
 
 def public_review() -> dict:
     r = S.review
+    traps = repertoire.annotate_game(r["start_fen"], r["moves"])
     return {
         "game_id": r["game_id"], "white": r["white"], "black": r["black"],
         "white_elo": r["white_elo"], "black_elo": r["black_elo"], "result": r["result"],
@@ -91,7 +93,7 @@ def public_review() -> dict:
         "player_color": S.coach.player_color if S.coach else None,
         "moves": [{k: m[k] for k in ("ply", "label", "color", "san", "uci", "fen_after",
                                      "eval_before", "eval_after", "best", "best_line", "class", "played_best",
-                                     "win_pct_lost")} for m in r["moves"]],
+                                     "win_pct_lost")} | {"trap": traps.get(m["ply"])} for m in r["moves"]],
     }
 
 
@@ -443,9 +445,13 @@ def opponent_card_endpoint(req: GmReq):
     if board.fullmove_number <= 8:  # still in the opening: have "Show main lines" ready before it's asked
         _warm_explorer(req.fen)
     try:
-        return opponent_card.build(S.engine, board)
+        card = opponent_card.build(S.engine, board)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    # known traps from data/openings.md: the one just played against you, or one you could walk into
+    card["trap_punish"] = next(iter(repertoire.after_mistake(board)), None)
+    card["trap_warn"] = next(iter(repertoire.before_mistake(board)), None)
+    return card
 
 
 @app.post("/api/opening")

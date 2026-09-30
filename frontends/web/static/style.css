@@ -567,6 +567,7 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .card-body { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
 .card-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; }
 .card-row.warn { color: #ffb3b0; }
+.card-row.good { color: var(--accent); }
 .card-k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; min-width: 78px; }
 .card-sub { color: var(--muted); font-size: 13px; font-weight: 400; }
 .demo-btn.sharp { background: #6b3a1f; }
