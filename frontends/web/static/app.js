@@ -219,7 +219,7 @@ function onBoardMove(orig, dest) {
 function canMove(c, turn) {
   if (c.isGameOver()) return false;
   if (state.demo) return true;
-  if (state.study?.mode === 'drill') return !state.study.waiting && turn === state.study.data.color[0] && !!studyNodeHere();
+  if (state.study?.mode === 'drill') return !state.study.waiting && turn === state.study.data.color && studyNodeHere() !== null;
   if (state.replay) return turn === state.replay.color && state.ply < state.review.moves.length && !state.extra.length;
   const p = state.play;
   if (!p) return true;
@@ -2305,11 +2305,13 @@ async function startStudyFromDialog() {
   $('study-go').disabled = true;
   try {
     const job = await api('/api/study/build', req);
+    const started = Date.now();
     while (job.status !== 'done') {
       await new Promise((r) => setTimeout(r, 1500));
       const j = await api('/api/study/job');
       if (j.status === 'error') throw new Error(j.error);
-      $('study-status').textContent = j.message;
+      const secs = Math.round((Date.now() - started) / 1000);
+      $('study-status').textContent = `${j.message} · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')} so far (usually 4-6 minutes in all)`;
       if (j.status === 'done') break;
     }
     const { study, review } = await api('/api/study/start', req);
@@ -2322,6 +2324,104 @@ async function startStudyFromDialog() {
   }
 }
 
+// ---- lesson text: moves become buttons that play that spot of the lesson on the demo board,
+// squares get the chat's hover highlight, opening names are italic, a lead phrase before ":" is bold
+
+// a move token: "3...d5", "5.cxd5", "...b5", "Qc2", "O-O", or the long form "e2-e4" / "c4xd5".
+// A bare pawn push ("d5") only counts as a move with a number or "..." in front; otherwise it's a square.
+const LESSON_TOKEN_RE = new RegExp([
+  String.raw`(\b[a-h][1-8][-x][a-h][1-8]\b)`,                                                   // 1 long form
+  String.raw`((?:\b\d+\.(?:\.\.)?\s?|\.\.\.)(?:O-O(?:-O)?|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?)[+#]?)`, // 2 numbered/dotted
+  String.raw`(\bO-O(?:-O)?[+#]?|\b[KQRBN][a-h]?[1-8]?x?[a-h][1-8][+#]?|\b[a-h]x[a-h][1-8](?:=[QRBN])?[+#]?)`, // 3 piece move / capture
+  String.raw`(\b[a-h][1-8]\b)`,                                                                  // 4 square
+  String.raw`(\b(?:(?:Open|Closed|Classical|Modern|Main|English|Yugoslav|Poisoned|Queen's|King's|Bogo|Nimzo|Old|Accelerated|Hyperaccelerated|Exchange|Advance)[ -])*(?:Catalan|Indian|Benoni|Gambit|Attack|Defen[cs]e|Variation|System|Sicilian|Dragon|Najdorf|Pawn|Opening|Structure)\b)`, // 5 name
+].join('|'), 'g');
+
+function studySanIndex() {
+  const st = state.study;
+  if (!st.bySan) {
+    st.bySan = {};
+    for (const n of Object.values(studyNodes())) {
+      if (!n.san) continue;
+      (st.bySan[n.san.replace(/[+#]$/, '')] ||= []).push(n.id);
+    }
+  }
+  return st.bySan;
+}
+
+// the lesson node a mentioned move refers to: same move (and move number, if given), preferring the
+// line the note belongs to, then the earliest occurrence
+function studyFindMove(tok, contextId) {
+  const nodes = studyNodes();
+  let ids;
+  let ply = null, blackOnly = false;
+  const long = tok.match(/^([a-h][1-8])[-x]([a-h][1-8])$/);
+  if (long) {
+    ids = Object.values(nodes).filter((n) => n.uci && n.uci.slice(0, 4) === long[1] + long[2]).map((n) => n.id);
+  } else {
+    const m = tok.match(/^(?:(\d+)\.(\.\.)?\s?|(\.\.\.))?(.+?)[+#]?$/);
+    if (m[1]) ply = m[2] ? 2 * +m[1] : 2 * +m[1] - 1;
+    blackOnly = !!m[3];
+    ids = studySanIndex()[m[4]] || [];
+  }
+  const depth = (id) => studyLine(id).length;
+  ids = ids.filter((id) => (ply === null || depth(id) === ply) && (!blackOnly || depth(id) % 2 === 0));
+  if (!ids.length) return null;
+  const related = new Set();
+  if (contextId !== null && contextId !== undefined) {
+    for (let k = contextId; k !== null; k = nodes[k].parent) related.add(k);
+    const todo = [...nodes[contextId].children];
+    while (todo.length) { const k = todo.pop(); related.add(k); todo.push(...nodes[k].children); }
+  }
+  ids.sort((a, b) => (related.has(b) - related.has(a)) || (depth(a) - depth(b)));
+  return ids[0];
+}
+
+function lessonInline(text, contextId) {
+  let out = '', last = 0;
+  for (const m of text.matchAll(LESSON_TOKEN_RE)) {
+    out += esc(text.slice(last, m.index));
+    last = m.index + m[0].length;
+    const tok = m[0];
+    if (m[1] || m[2] || m[3]) {
+      const id = studyFindMove(tok.trim(), contextId);
+      out += id !== null
+        ? `<button class="lm" data-node="${id}" title="Show ${esc(studyMoveName(id))} on the demo board">${esc(tok)}</button>`
+        : `<b class="lm-off">${esc(tok)}</b>`;
+    } else if (m[4]) {
+      out += `<span class="sq" data-sq="${tok}">${tok}</span>`;
+    } else {
+      out += `<em class="lm-name">${esc(tok)}</em>`;
+    }
+  }
+  return out + esc(text.slice(last));
+}
+
+// a list item or note: the phrase before the first ": " is its headline
+function lessonText(text, contextId) {
+  const lead = text.match(/^([^:]{3,90}?):\s(.*)$/s);
+  return lead ? `<b class="lm-lead">${lessonInline(lead[1], contextId)}:</b> ${lessonInline(lead[2], contextId)}` : lessonInline(text, contextId);
+}
+
+// play the lesson up to a node on the demo board: jump to just before the move, then play it,
+// with the lesson's notes as the demo's per-move notes
+function studyShowNode(id) {
+  const line = studyLine(id);
+  const ids = [];
+  for (let k = id; studyNodes()[k].parent !== null; k = studyNodes()[k].parent) ids.unshift(k);
+  openDemo({ title: `Lesson: ${studyMoveName(id)}`, start_fen: START_FEN, moves: line,
+    notes: ids.map((k) => studyNodes()[k].note || ''), ply: 1, then_moves: [] });
+  demoStep(line.length - 1);
+  const d = state.demo;
+  setTimeout(() => { if (state.demo === d && d.step === line.length - 1) demoStep(line.length); }, 450);
+}
+
+function wireLessonMoves(root) {
+  root.querySelectorAll('.lm[data-node]').forEach((b) => {
+    b.onclick = (e) => { e.stopPropagation(); if (state.study) studyShowNode(b.dataset.node); };
+  });
+}
+
 function startStudy(study, review) {
   setReview(review, null);
   state.study = { data: study, mode: 'learn', node: study.root, waiting: false, mistakes: 0 };
@@ -2329,12 +2429,16 @@ function startStudy(study, review) {
   studyShown.clear();
   renderChips();
   const o = study.overview;
-  const list = (title, items) => items.length ? `<div class="card-row study-list"><span class="card-k">${title}</span><ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
-  const msg = addMsg('coach card study-card', `<div class="card-head"><b>${esc(study.name)}</b><span class="card-sub">you play ${esc(study.color)} · ${studyLeaves().length} lines</span><span class="card-caret">▾</span></div>`
-    + `<div class="card-body"><div class="card-row">${esc(o.summary)}</div>${list('Key ideas', o.key_ideas)}${list('Pawn breaks', o.pawn_breaks)}`
-    + `${list('Wait for', o.wait_for)}${list('Mistakes', o.common_mistakes)}`
+  const list = (kind, title, items) => items.length
+    ? `<div class="study-sec ${kind}"><div class="study-sec-title">${title}</div><ul>${items.map((x) => `<li>${lessonText(x, study.root)}</li>`).join('')}</ul></div>` : '';
+  const msg = addMsg('coach card study-card study-overview', `<div class="card-head"><b>${esc(study.name)}</b><span class="card-sub">you play ${esc(study.color)} · ${studyLeaves().length} lines</span><span class="card-caret">▾</span></div>`
+    + `<div class="card-body"><div class="study-summary">${lessonInline(o.summary, study.root)}</div>`
+    + `${list('ideas', '💡 Key ideas', o.key_ideas)}${list('breaks', '♟ Pawn breaks', o.pawn_breaks)}`
+    + `${list('wait', '👀 Wait for', o.wait_for)}${list('mistakes', '⚠ Mistakes', o.common_mistakes)}`
+    + '<div class="card-hint">Click any move to see it on the demo board.</div>'
     + '<div class="card-row card-actions"><button class="btn small" data-go="learn">Learn the main line</button><button class="btn ghost small" data-go="drill">Drill me</button></div></div>');
   msg.querySelector('.card-head').onclick = () => msg.classList.toggle('collapsed');
+  wireLessonMoves(msg);
   msg.querySelector('[data-go=learn]').onclick = () => setStudyMode('learn');
   msg.querySelector('[data-go=drill]').onclick = () => setStudyMode('drill');
   update();
@@ -2433,8 +2537,9 @@ function onStudyMove(orig, dest) {
   cg.setAutoShapes([{ orig: n.uci.slice(0, 2), dest: n.uci.slice(2, 4), brush: 'blue' }]);
   const alt = (studyNodes()[here].alternatives || []).includes(mv.san)
     ? ` ${mv.san} is also played by masters, but this lesson plays ${n.san}.` : '';
-  addMsg('coach card study-card', `<div class="card-head"><b>Not ${esc(mv.san)}: the lesson plays ${esc(studyMoveName(right))}</b></div>`
-    + `<div class="card-body">${n.note ? `<div class="card-row">${esc(n.note)}</div>` : ''}${alt ? `<div class="card-row card-sub">${esc(alt.trim())}</div>` : ''}</div>`);
+  const miss = addMsg('coach card study-card', `<div class="card-head"><b>Not ${esc(mv.san)}: the lesson plays ${esc(studyMoveName(right))}</b></div>`
+    + `<div class="card-body">${n.note ? `<div class="card-row study-note">${lessonText(n.note, right)}</div>` : ''}${alt ? `<div class="card-row card-sub">${esc(alt.trim())}</div>` : ''}</div>`);
+  wireLessonMoves(miss);
 }
 
 function studyDrillStep() {
@@ -2484,7 +2589,7 @@ function studyCard(id) {
   if (studyShown.has(id) || n.parent === null) return;
   const mine = studyMine(n.fen);  // after this move, is it your turn?
   const rows = [];
-  if (n.note) rows.push(`<div class="card-row">${esc(n.note)}</div>`);
+  if (n.note) rows.push(`<div class="card-row study-note">${lessonText(n.note, id)}</div>`);
   if (st.mode === 'learn' && n.children.length) {
     if (mine && n.main !== null) {
       rows.push(`<div class="card-row"><span class="card-k">Your move</span><button class="demo-btn" data-go="${n.main}">${esc(studyMoveName(n.main))}</button>`
@@ -2502,6 +2607,7 @@ function studyCard(id) {
     + `<div class="card-body">${rows.join('')}</div>`);
   msg.querySelector('.card-head').onclick = () => msg.classList.toggle('collapsed');
   msg.querySelectorAll('[data-go]').forEach((b) => { b.onclick = () => { if (state.study === st && studyNodeHere() === id) studyGo(b.dataset.go); }; });
+  wireLessonMoves(msg);
 }
 
 function renderStudyInfo() {

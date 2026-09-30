@@ -398,7 +398,7 @@ def build(name: str, color: str, engine: Engine, explore, progress=lambda msg: N
     if color not in ("white", "black"):
         raise ValueError("color must be white or black")
     tree = _build_tree(opening, color, engine, explore, progress)
-    progress("The coach is writing the notes… (about a minute)")
+    progress("The coach is writing the notes… (1-2 minutes)")
     overview, dropped = _write_notes(opening, color, tree)
     study = {"name": name, "eco": opening["eco"], "color": color, "slug": slug(name, color),
              "built": time.strftime("%Y-%m-%d"), "model": STUDY_MODEL, "overview": overview,

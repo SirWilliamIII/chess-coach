@@ -225,7 +225,8 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   on a read-through; Sonnet's still had errors with the facts. Remaining guard: `_verified()` drops a note
   that names a move not in the tree and not legal anywhere along that node's own line (either side to
   move). Claims about plans aren't machine-checked — read new lessons with that in mind.
-  A cold build is ~3 min (≈1-2 s per explorer lookup, patient on 429s) + ~1 min engine + the notes call;
+  A cold build is ~3 min (≈1-2 s per explorer lookup, patient on 429s) + ~1 min engine + the notes call
+  (76-126 s measured on Opus 5.5), so 4-6 min in all; the dialog shows elapsed time;
   rebuilds reuse the explorer disk cache. `POST /api/study/build` runs it in a thread (`STUDY_JOB`, one at a
   time), `/api/study/start` opens it as a fresh analysis board whose coach gets `study.coach_note()` (the
   overview) as its session note; `board_context()` then calls the moves "on the board in the opening lesson".
@@ -238,7 +239,15 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   the arrow + note on the second miss (one mistake counted per position). A line is **mastered** after
   2 clean runs in a row (`localStorage` `study-m:<slug>`); ◀ in a drill steps back to your own move.
   Chips: "Walk me through this" sends the lesson's next moves and the opponent's tries with the question
-  (so the coach explains *this* line), plus My plan / Guess / Why / Main lines. Ideas noted but not built:
+  (so the coach explains *this* line), plus My plan / Guess / Why / Main lines. **Lesson text rendering**
+  (`lessonText()` / `lessonInline()`, overview + notes + wrong-move cards): its own tokenizer, not the chat's
+  `markdown()`, because moves must resolve to *lesson nodes*: `studyFindMove()` matches "3...d5", "Qc2",
+  "...b5" and long forms like "e2-e4" to a node (move number if given; prefers the note's own line, then
+  the earliest), rendered as `.lm` buttons that open the demo board just before that move and play it,
+  with the lesson's notes as per-move demo notes (`studyShowNode()`). A bare pawn push without a number
+  or "..." ("d5") is treated as a square (`.sq`, gold dotted inside lesson cards, hover-highlights via
+  `addMsg`), so "g3" in prose is a square, not a button. Unmatched moves are bold, not clickable. Lead
+  phrase before ":" is bold; opening names (Catalan, Benoni, Open Catalan…) italic. Ideas noted but not built:
   standalone "find the key move" puzzles from a lesson (…h5, …b5, …Qa3), move symbols (!, !?) on cards.
   Built and read through: Najdorf and Dragon as Black. Tested with Playwright (stubbed chat): picker,
   Learn branches, back/forward, off-lesson moves, the walkthrough question, a drill with a wrong move.
@@ -480,6 +489,27 @@ audit):
   still real language-model work.
 
 ## TODOs / open decisions
+
+### Revisit next session (from 2026-09-29)
+
+- **Finish `TESTING-2026-09-29.md`.** Only part of it was run. The user's two priorities: does each
+  "⚠ Big moment" explanation match its card (section 3), and are the lesson notes chess-correct (section 5).
+- **Branch chat note without a rating.** The user reported that "Play X vs bot" showed no Elo in chat;
+  not reproduced (a 2026-09-29 repro with game `cc184578823450`, user kustomkings, printed "matched to
+  VincentxPenzXX's 1019 rating"). Their message cut off before what they saw. Get a screenshot and the game,
+  and check for a stale cached `app.js` first.
+- **Read the English and Catalan lessons' notes** (built by the user, not read through yet; only the
+  Najdorf and Dragon were). Same checks as before: claims about what a move attacks/pins must match.
+- **Live coach runs** in the new features, all tested only with a stubbed `/api/chat` so far: "Walk me
+  through this" in a lesson, "⚠ Big moment" answers, Why? on a move card.
+- **"Review this game" after branching** off a replay (should analyse the whole game from move 1).
+- **chess.com Insights, Black tab**: ask for the screenshot and extend `player.md`'s results section.
+- **`lessons-view.js`** (chess.com's minified bundle, 1.1 MB) sits untracked in the repo root. Never
+  commit it; ask the user to delete it or gitignore it.
+- **Lesson ideas not built:** "find the key move" puzzles pulled from a lesson (…h5, …b5, …Qa3), move
+  symbols (!, !?) on cards. Known quirk: a bare pawn move in lesson text ("g3") renders as a square, not a
+  move button, because only numbered/"..." pawn moves are unambiguous.
+
 
 - **Duplicate board-link buttons.** Decide whether to drop the bottom "Show me: ..." row now
   that inline per-point buttons cover almost everything, keep both, or something else. User
