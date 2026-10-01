@@ -344,6 +344,7 @@ class PlayNewReq(BaseModel):
     level: int
     fen: str | None = None
     origin: str | None = None  # e.g. "sirwill3rd vs X, after 23. Nf5", when playing on from a game
+    lesson: str | None = None  # an opening lesson's name, when playing on after its theory ends
 
 
 @app.post("/api/play/new")
@@ -355,7 +356,10 @@ def play_new(req: PlayNewReq):
     if board.is_game_over():
         raise HTTPException(400, "that position is already game over")
     note = PRACTICE_NOTE.format(level=level["name"], color=req.color)
-    if req.origin:
+    if req.lesson:
+        note += (f" The player has just played through the {req.lesson} lesson's theory in the app's opening "
+                 "trainer and is now playing the position out; the game's first moves are that lesson line.")
+    elif req.origin:
         note += f" The player is playing on from a real game ({req.origin}) to see how it could have gone."
     elif req.fen:
         note += f" The game started from a set-up position (FEN {board.fen()}), e.g. to practise an endgame."

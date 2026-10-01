@@ -38,6 +38,13 @@ MIN_GAMES = 30         # below this many master games there's no theory left to 
 MAX_NODES = 90
 ENGINE_SLACK = 60      # cp: a masters move this much worse than the engine's best is replaced
 PREFER_GAP = 20        # cp: ...and when the engine's best is itself a master move, a smaller gap is enough
+# Family lessons ("Scotch Game"): one lesson takes in the family's named lines (opponent sidelines, and your
+# own alternatives when sound) instead of a picker row per variation. Families bigger than FAMILY_MAX
+# (Sicilian, Ruy Lopez, French…) are really several openings and stay split by variation.
+FAMILY_MAX = 60          # names in a family
+FAMILY_MAX_NODES = 220
+SEED_EXTRA = 4           # plies of master play kept past each named position
+ALT_SLACK = 45           # cp: your named alternative must be this close to the engine's best to be taught
 
 # quick picks for the dialog (the names chess.com's opening course uses, mapped to the ECO table's)
 POPULAR = [
@@ -160,6 +167,39 @@ def _group(name: str) -> str:
     return name.split(",")[0].strip()
 
 
+def family(name: str) -> str:
+    return name.split(":")[0].strip()
+
+
+def family_members(name: str) -> list[dict]:
+    return [o for o in openings() if family(o["name"]) == name]
+
+
+def lesson_key(name: str) -> str:
+    """The picker row (and lesson) a name belongs to: its family when the family is lesson-sized and has
+    its own ECO entry ("Scotch Game: Schmidt Variation" → "Scotch Game"), else its variation group."""
+    f = family(name)
+    if f in _by_name() and len(_family_sizes().get(f, ())) <= FAMILY_MAX:
+        return f
+    return _group(name)
+
+
+_family_cache: dict[str, list[str]] | None = None
+
+
+def _family_sizes() -> dict[str, list[str]]:
+    global _family_cache
+    if _family_cache is None:
+        _family_cache = {}
+        for o in openings():
+            _family_cache.setdefault(family(o["name"]), []).append(o["name"])
+    return _family_cache
+
+
+def is_family_lesson(name: str) -> bool:
+    return lesson_key(name) == name and family(name) == name and len(_family_sizes().get(name, ())) > 1
+
+
 def _entry(o: dict) -> dict:
     color = side(o["name"])
     return {**o, "color": color, "built": (STUDY_DIR / f"{slug(o['name'], color)}.json").exists()}
@@ -174,7 +214,7 @@ def search(q: str, limit: int = 30) -> list[dict]:
     match = lambda name: all(w in name.lower() for w in words)
     by_group: dict[str, list[dict]] = {}
     for o in openings():
-        by_group.setdefault(_group(o["name"]), []).append(o)
+        by_group.setdefault(lesson_key(o["name"]), []).append(o)
     rows = []
     for g, members in by_group.items():
         g_hit = match(g) if words else g in POPULAR
@@ -197,7 +237,7 @@ def search(q: str, limit: int = 30) -> list[dict]:
             b = chess.Board()
             for san in o["moves"]:
                 b.push_san(san)
-            sub_rows.append({**_entry(o), "short": o["name"][len(g):].lstrip(", "), "in_lesson": b.epd() in epds})
+            sub_rows.append({**_entry(o), "short": o["name"][len(g):].lstrip(":, "), "in_lesson": b.epd() in epds})
         out.append({**head, "subs": sub_rows})
     return out
 
@@ -247,62 +287,70 @@ def _build_tree(opening: dict, color: str, engine: Engine, explore, progress) ->
         cur = child
     trunk_end = cur
 
-    # the branches: breadth-first from the named position
-    frontier = [(trunk_end, 0, 0)]   # node id, plies past the name, opponent branch points so far
     looked = 0
-    while frontier and len(nodes) < MAX_NODES:
-        nid, depth, opp_branches = frontier.pop(0)
-        if depth >= EXTRA_PLIES:
-            continue
-        b = chess.Board(nodes[nid]["fen"])
-        if b.is_game_over():
-            continue
-        try:
-            data = explore(b.fen(), "masters")
-        except RuntimeError:
-            data = None
-        looked += 1
-        progress(f"Reading master games… ({looked} positions)")
-        if not data or data["total"] < MIN_GAMES:
-            continue
-        nodes[nid]["games"] = data["total"]
-        if b.turn == mine:
-            # one move to learn: the masters' choice, unless the engine says it's clearly worse
-            top = engine.lines(b, multipv=2, seconds=3, depth=20)
-            pick = data["moves"][0]
-            source = "masters"
-            if top:
-                nodes[nid]["engine_top"] = [f"{t['move']} ({t['eval_white']})" for t in top]
-                best_cp = top[0]["cp_white"] * (1 if mine == chess.WHITE else -1)
-                ours = next((t for t in top if t["uci"] == pick["uci"]), None)
-                if ours is None:
-                    nb = b.copy(stack=False)
-                    nb.push_uci(pick["uci"])
-                    ours_cp = engine.evaluate(nb, seconds=2, depth=18)["cp_white"] * (1 if mine == chess.WHITE else -1)
-                else:
-                    ours_cp = ours["cp_white"] * (1 if mine == chess.WHITE else -1)
-                # theory stays master-based: among the moves masters really play, teach the soundest
-                played = next((m for m in data["moves"] if b.parse_uci(m["uci"]) == b.parse_uci(top[0]["uci"])
-                               and m["share"] >= MIN_SHARE), None)
-                if played and played is not pick and best_cp - ours_cp >= PREFER_GAP:
-                    pick, source = played, "masters+engine"
-                elif best_cp - ours_cp > ENGINE_SLACK:
-                    pick = {"uci": top[0]["uci"], "share": None, "games": None}
-                    source = "engine"
-            child = add(b, nid, b.parse_uci(pick["uci"]), share=pick.get("share"),
-                        games_move=pick.get("games"), source=source)
-            nodes[nid]["main"] = child
-            nodes[nid]["alternatives"] = [m["san"] for m in data["moves"][:3]
-                                          if m["share"] >= MIN_SHARE and m["uci"] != pick["uci"]][:2]
-            frontier.append((child, depth + 1, opp_branches))
-        else:
-            width = OPP_WIDTH[opp_branches] if opp_branches < len(OPP_WIDTH) else 1
-            tries = [m for m in data["moves"] if m["share"] >= MIN_SHARE][:width] or data["moves"][:1]
-            for m in tries:
-                child = add(b, nid, b.parse_uci(m["uci"]), share=m["share"], games_move=m["games"],
-                            results=[m["white"], m["draws"], m["black"]])
-                frontier.append((child, depth + 1, opp_branches + (len(tries) > 1)))
-            nodes[nid]["main"] = nodes[nid]["children"][0]
+
+    def walk(frontier: list, max_depth: int, cap: int) -> None:
+        """Breadth-first through master games: frontier items are (node id, plies so far, opponent
+        branch points so far)."""
+        nonlocal looked
+        while frontier and len(nodes) < cap:
+            nid, depth, opp_branches = frontier.pop(0)
+            if depth >= max_depth or nodes[nid]["children"]:
+                continue
+            b = chess.Board(nodes[nid]["fen"])
+            if b.is_game_over():
+                continue
+            try:
+                data = explore(b.fen(), "masters")
+            except RuntimeError:
+                data = None
+            looked += 1
+            progress(f"Reading master games… ({looked} positions)")
+            if not data or data["total"] < MIN_GAMES:
+                continue
+            nodes[nid]["games"] = data["total"]
+            if b.turn == mine:
+                # one move to learn: the masters' choice, unless the engine says it's clearly worse
+                top = engine.lines(b, multipv=2, seconds=3, depth=20)
+                pick = data["moves"][0]
+                source = "masters"
+                if top:
+                    nodes[nid]["engine_top"] = [f"{t['move']} ({t['eval_white']})" for t in top]
+                    best_cp = top[0]["cp_white"] * (1 if mine == chess.WHITE else -1)
+                    ours = next((t for t in top if t["uci"] == pick["uci"]), None)
+                    if ours is None:
+                        nb = b.copy(stack=False)
+                        nb.push_uci(pick["uci"])
+                        ours_cp = engine.evaluate(nb, seconds=2, depth=18)["cp_white"] * (1 if mine == chess.WHITE else -1)
+                    else:
+                        ours_cp = ours["cp_white"] * (1 if mine == chess.WHITE else -1)
+                    # theory stays master-based: among the moves masters really play, teach the soundest
+                    played = next((m for m in data["moves"] if b.parse_uci(m["uci"]) == b.parse_uci(top[0]["uci"])
+                                   and m["share"] >= MIN_SHARE), None)
+                    if played and played is not pick and best_cp - ours_cp >= PREFER_GAP:
+                        pick, source = played, "masters+engine"
+                    elif best_cp - ours_cp > ENGINE_SLACK:
+                        pick = {"uci": top[0]["uci"], "share": None, "games": None}
+                        source = "engine"
+                child = add(b, nid, b.parse_uci(pick["uci"]), share=pick.get("share"),
+                            games_move=pick.get("games"), source=source)
+                nodes[nid]["main"] = child
+                nodes[nid]["alternatives"] = [m["san"] for m in data["moves"][:3]
+                                              if m["share"] >= MIN_SHARE and m["uci"] != pick["uci"]][:2]
+                frontier.append((child, depth + 1, opp_branches))
+            else:
+                width = OPP_WIDTH[opp_branches] if opp_branches < len(OPP_WIDTH) else 1
+                tries = [m for m in data["moves"] if m["share"] >= MIN_SHARE][:width] or data["moves"][:1]
+                for m in tries:
+                    child = add(b, nid, b.parse_uci(m["uci"]), share=m["share"], games_move=m["games"],
+                                results=[m["white"], m["draws"], m["black"]])
+                    frontier.append((child, depth + 1, opp_branches + (len(tries) > 1)))
+                nodes[nid]["main"] = nodes[nid]["children"][0]
+
+    # the branches: breadth-first from the named position
+    walk([(trunk_end, 0, 0)], EXTRA_PLIES, MAX_NODES)
+    if is_family_lesson(opening["name"]):
+        _seed_family(opening, nodes, add, walk, mine, engine, progress)
 
     # evals for the pills, and ply numbers
     progress("Checking every position with the engine…")
@@ -311,6 +359,46 @@ def _build_tree(opening: dict, color: str, engine: Engine, explore, progress) ->
         n["ply"] = _ply_of(nodes, n)
         n["eval_white"] = engine.evaluate(b, seconds=0.5, depth=16)["eval_white"] if not b.is_game_over() else None
     return {"root": "0", "trunk_end": trunk_end, "nodes": nodes}
+
+
+def _seed_family(opening: dict, nodes: dict, add, walk, mine: bool, engine: Engine, progress) -> None:
+    """Family lesson: add every named line of the family that passes through the lesson's own position.
+    The opponent's named moves go in however rare (they're the sidelines you explore); your own named
+    alternatives only when the engine rates them within ALT_SLACK of its best (Scotch Gambit yes, Relfsson
+    no), marked `alt` so Drill keeps to the main line. Each named line then runs SEED_EXTRA plies on."""
+    trunk = opening["moves"]
+    seeds = sorted((o for o in family_members(opening["name"])
+                    if o["name"] != opening["name"] and o["moves"][:len(trunk)] == trunk),
+                   key=lambda o: (len(o["moves"]), o["name"]))
+    sign = 1 if mine == chess.WHITE else -1
+    ends = []
+    for i, o in enumerate(seeds):
+        progress(f"Adding the named variations… ({i + 1}/{len(seeds)})")
+        b, nid = chess.Board(), "0"
+        for san in o["moves"]:
+            mv = b.parse_san(san)
+            kid = next((k for k in nodes[nid]["children"] if nodes[k]["uci"] == mv.uci()), None)
+            if kid is None:
+                if len(nodes) >= FAMILY_MAX_NODES:
+                    break
+                extra = {"source": "named"}
+                if b.turn == mine:
+                    best = engine.lines(b, multipv=1, seconds=1.5, depth=18)
+                    nb = b.copy(stack=False)
+                    nb.push(mv)
+                    ours = engine.evaluate(nb, seconds=1.5, depth=18)
+                    if not best or sign * (best[0]["cp_white"] - ours["cp_white"]) > ALT_SLACK:
+                        break   # an unsound move of yours isn't taught; the rest of this line goes with it
+                    if nodes[nid]["main"] is not None:
+                        extra["alt"] = True
+                kid = add(b, nid, mv, **extra)
+                if nodes[nid]["main"] is None:
+                    nodes[nid]["main"] = kid
+            b.push(mv)
+            nid = kid
+        else:
+            ends.append((nid, 0, 99))   # 99 branch points: one opponent try per position from here
+    walk(ends, SEED_EXTRA, FAMILY_MAX_NODES)
 
 
 def _ply_of(nodes: dict, n: dict) -> int:
@@ -409,6 +497,10 @@ def _notes_prompt(opening: dict, color: str, tree: dict) -> str:
         bits = [f"id {n['id']}", f"move {label}", f"line {numbered(line)}", f"({who}{', the student' if mine else ''})"]
         if n.get("share") is not None:
             bits.append(f"{n['share']}% of master games")
+        if n.get("alt"):
+            bits.append("a named alternative the student may choose instead of the lesson's main move")
+        elif n.get("source") == "named" and not mine:
+            bits.append("a named sideline (rare in master games)")
         if n.get("source") == "engine":
             bits.append("engine's choice over the masters' most popular move")
         elif n.get("source") == "masters+engine":

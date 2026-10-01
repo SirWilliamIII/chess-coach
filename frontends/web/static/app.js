@@ -1575,7 +1575,7 @@ function resetChatUi(note) {
 
 // ---------------------------------------------------------------- loading games
 
-function setReview(review, note, play = null) {
+function setReview(review, note, play = null, { keepChat = false } = {}) {
   closeDemo(false);
   state.replay = null;
   state.study = null;
@@ -1591,7 +1591,7 @@ function setReview(review, note, play = null) {
   state.ply = 0;  // every load starts from the beginning of the game
   state.extra = [];
   state.orientation = play ? play.color : (review.player_color || 'white');
-  resetChatUi(note);
+  if (keepChat) { if (note) addMsg('system', esc(note)); } else resetChatUi(note);  // keepChat: lesson ↔ its play-out
   update();
 }
 
@@ -2266,7 +2266,7 @@ function studyNextSquares() {
   if (id === null) return [];
   const n = studyNodes()[id];
   const mine = studyMine(n.fen);
-  const kids = mine ? (n.main !== null ? [n.main] : []) : n.children;
+  const kids = n.children;
   return kids.map((k) => [studyNodes()[k].uci.slice(0, 2), mine ? 'sq-next' : 'sq-next-opp']);
 }
 
@@ -2276,10 +2276,10 @@ function studyGuideShapes() {
   const n = studyNodes()[id];
   const shapes = studyThreatShapes(n);
   const mineNext = studyMine(n.fen);
+  // the lesson move solid; the opponent's other tries pale blue, your named alternatives pale green
   for (const k of n.children) {
-    if (mineNext && k !== n.main) continue;  // your side: the one lesson move
     const u = studyNodes()[k].uci;
-    shapes.push({ orig: u.slice(0, 2), dest: u.slice(2, 4), brush: k === n.main ? (mineNext ? 'green' : 'blue') : 'paleBlue' });
+    shapes.push({ orig: u.slice(0, 2), dest: u.slice(2, 4), brush: k === n.main ? (mineNext ? 'green' : 'blue') : (mineNext ? 'paleGreen' : 'paleBlue') });
   }
   return shapes;
 }
@@ -2325,9 +2325,13 @@ function studyNodeHere() {
   return id;
 }
 
+// the lines Drill can reach (and mastery counts): your main move only, all of the opponent's tries.
+// A family lesson's alternatives for you (Scotch Gambit…) are explored in Learn, not drilled.
 function studyLeaves(id = state.study.data.root) {
   const n = studyNodes()[id];
-  return n.children.length ? n.children.flatMap((k) => studyLeaves(k)) : [id];
+  if (!n.children.length) return [id];
+  const kids = studyMine(n.fen) && n.main !== null ? [n.main] : n.children;
+  return kids.flatMap((k) => studyLeaves(k));
 }
 
 // mastery per line (leaf id -> clean runs in a row), kept per device; 2 in a row = mastered
@@ -2613,6 +2617,58 @@ function studyGo(id, { quiet = false } = {}) {
   update();
   if (!quiet) studyCard(id);
   if (st.mode === 'drill') studyDrillStep(); else studyLearnStep();
+  // Learn: when the theory runs out, the game carries on against a bot (after a moment to read the card)
+  if (st.mode === 'learn' && !studyNodes()[id].children.length && st.noPlayOn !== id) {
+    const token = studyToken;
+    setTimeout(() => { if (token === studyToken && state.study === st && st.node === id && !state.demo) studyPlayOn(id); }, PLAY_ON_DELAY_MS);
+  }
+}
+
+// ---- playing on after the theory: a bot game from the lesson position, chat kept, with a way back
+const PLAY_ON_DELAY_MS = 1500;
+const PLAY_ON_ELO = [1500, 2000];  // the bot is picked at random from the levels in this range
+
+async function studyPlayOn(id) {
+  const st = state.study;
+  const line = studyLine(id);
+  const color = st.data.color;
+  botLevels ??= await api('/api/play/levels').catch(() => []);
+  const pool = botLevels.map((l) => ({ ...l, elo: +(l.name.match(/~(\d+)/)?.[1]) }))
+    .filter((l) => l.elo >= PLAY_ON_ELO[0] && l.elo <= PLAY_ON_ELO[1]);
+  const level = pool.length ? pool[Math.floor(Math.random() * pool.length)] : { id: 10, name: 'Intermediate (~1500)' };
+  if (state.study !== st) return;
+  playToken++;
+  let review;
+  try {
+    review = await api('/api/play/new', { color, level: level.id, lesson: st.data.name });
+  } catch (e) {
+    addMsg('error', esc(e.message));
+    return;
+  }
+  const play = { color, level: level.id, levelName: level.name, startFen: review.start_fen,
+    moves: line, prefix: line.length, view: line.length, over: null, thinking: false, backLesson: { study: st, at: id } };
+  setEngineVisible(recall('engineOn') !== '0');
+  setReview(review, `That's the end of the lesson's theory. Play it out against a ${level.name} bot; you have ${color}. "Back to the lesson" returns you here.`, play, { keepChat: true });
+  if ((line.length % 2 ? 'black' : 'white') !== color) botMove();  // the line ended on your move: the bot replies
+}
+
+async function backToLesson() {
+  const bl = state.play?.backLesson;
+  if (!bl) return;
+  playToken++;
+  let res;
+  try {
+    res = await api('/api/study/start', { name: bl.study.data.name });
+  } catch (e) {
+    addMsg('error', esc(e.message));
+    return;
+  }
+  setReview(res.review, 'Back in the lesson, where its theory ended. ◀ to explore other lines.', null, { keepChat: true });
+  state.study = bl.study;
+  state.study.noPlayOn = bl.at;  // don't bounce straight back into a game from the same spot
+  state.orientation = bl.study.data.color;
+  renderChips();
+  studyGo(bl.at);
 }
 
 // Learn: on the opponent's turn, leave their arrows up for a moment, then play one of their tries,
@@ -2799,11 +2855,24 @@ function studyLineDone(leaf) {
   const status = st.mistakes ? `${st.mistakes} mistake${st.mistakes > 1 ? 's' : ''}, so this line starts over`
     : streak >= MASTERED ? 'no mistakes · mastered' : `no mistakes · ${MASTERED - streak} more clean run to master it`;
   const msg = addMsg('coach card study-card', `<div class="card-head"><b>Line complete ✓</b><span class="card-sub">${status} · ${studyMasteredCount()}/${studyLeaves().length} lines mastered</span></div>`
-    + '<div class="card-body"><div class="card-row card-actions"><button class="btn small" data-again>Drill again</button><button class="btn ghost small" data-learn>Learn this line</button></div></div>');
+    + '<div class="card-body"><div class="card-row card-actions"><button class="btn small" data-again>Drill again</button><button class="btn ghost small" data-learn>Learn this line</button><button class="btn ghost small" data-playon>Play it out vs a bot</button></div></div>');
+  msg.querySelector('[data-playon]').onclick = () => { if (state.study === st && st.node === leaf) studyPlayOn(leaf); };
   msg.querySelector('[data-again]').onclick = () => setStudyMode('drill');
   msg.querySelector('[data-learn]').onclick = () => { st.mode = 'learn'; renderChips(); studyShown.clear(); studyGo(st.data.root); };
   st.mistakes = 0;
   update();
+}
+
+// the named variation a move leads into, for labels on choices: its own position's name, or the first
+// name a few moves down its main line (named positions are often a move or two past the choice)
+function studyVariationOf(id) {
+  const lesson = state.study.data.name;
+  let k = id;
+  for (let i = 0; i < 4 && k !== null; i++, k = studyNodes()[k].main) {
+    const o = studyNodes()[k].opening;
+    if (o && o !== lesson) return o.startsWith(lesson + ', ') || o.startsWith(lesson + ': ') ? o.slice(lesson.length + 2) : o;
+  }
+  return '';
 }
 
 // the variation this move enters, when the opening table names this exact position and the name is
@@ -2815,7 +2884,7 @@ function studyOpeningName(id) {
     if (studyNodes()[k].opening) { if (studyNodes()[k].opening === n.opening) return ''; break; }
   }
   const lesson = state.study.data.name;
-  if (n.opening.startsWith(lesson + ', ')) return n.opening.slice(lesson.length + 2);
+  if (n.opening.startsWith(lesson + ', ') || n.opening.startsWith(lesson + ': ')) return n.opening.slice(lesson.length + 2);
   // before the lesson's own position the general names ("Sicilian Defense") are just noise; after it, a
   // name from outside the lesson means the line transposed into another opening
   return n.trunk || n.opening === lesson ? '' : n.opening;
@@ -2832,12 +2901,17 @@ function studyCard(id) {
   if (st.mode === 'learn' && n.children.length) {
     // moves are named, not buttons: you play them on the board, following the arrow
     if (mine && n.main !== null) {
+      const alts = n.children.filter((k) => k !== n.main);
       rows.push(`<div class="card-row"><span class="card-k">Your move</span><b>${esc(studyMoveName(n.main))}</b>`
-        + (n.alternatives?.length ? `<span class="card-sub">also played: ${esc(n.alternatives.join(', '))}</span>` : '') + '</div>');
+        + (alts.length ? `<span class="card-sub">or explore: ${alts.map((k) => `${esc(studyMoveName(k))}${studyVariationOf(k) ? ` (${esc(studyVariationOf(k))})` : ''}`).join(' · ')}</span>`
+          : n.alternatives?.length ? `<span class="card-sub">also played: ${esc(n.alternatives.join(', '))}</span>` : '') + '</div>');
     } else if (!mine) {
+      // their tries are buttons: pick one to see that sideline (otherwise they choose by popularity)
       rows.push(`<div class="card-row"><span class="card-k">${n.children.length > 1 ? 'Their tries' : 'They play'}</span>`
-        + n.children.map((k) => `<b>${esc(studyNodes()[k].san)}</b>${studyNodes()[k].share ? ` <span class="card-sub">${studyNodes()[k].share}%</span>` : ''}`).join(' · ')
-        + (n.children.length > 1 ? '<span class="card-sub">they\'ll play one of these; ◀ back to your move to see another</span>' : '') + '</div>');
+        + n.children.map((k) => n.children.length > 1
+          ? `<button class="demo-btn study-try" data-try="${k}">${esc(studyNodes()[k].san)}${studyNodes()[k].share ? ` <span class="card-sub">${studyNodes()[k].share}%</span>` : studyVariationOf(k) ? ` <span class="card-sub">${esc(studyVariationOf(k))}</span>` : ''}</button>`
+          : `<b>${esc(studyNodes()[k].san)}</b>`).join(' ')
+        + (n.children.length > 1 ? '<span class="card-sub">click one to see it, or let them choose</span>' : '') + '</div>');
     }
   }
   if (st.mode === 'learn') {
@@ -2875,6 +2949,13 @@ function studyCard(id) {
     + `<div class="card-body">${rows.join('')}</div>`);
   msg.querySelector('.card-head').onclick = () => msg.classList.toggle('collapsed');
   wireLessonMoves(msg);
+  msg.querySelectorAll('.study-try').forEach((b) => {
+    // works during their pause, or right after their reply (swaps it for this one)
+    b.onclick = () => {
+      const here = state.study === st && !state.demo ? studyNodeHere() : null;
+      if (here !== null && (here === id || studyNodes()[here].parent === id)) studyGo(b.dataset.try);
+    };
+  });
   msg.querySelectorAll('.study-chip').forEach((b) => {
     const [, q, , action] = CHIPS.study[+b.dataset.i];
     b.onclick = () => { if (studyChipLive(b)) (action ? action() : ask(q, { hideQuestion: true })); };
@@ -3412,9 +3493,11 @@ function renderPlayInfo() {
     ? `<button class="btn small" id="pb-review">Review this game</button>
        <button class="btn ghost small" id="pb-again">New game</button>`
     : (p.thinking ? '<button class="btn ghost small" id="pb-stop">Stop bot</button>' : '');
-  const back = p.back ? '<button class="btn ghost small" id="pb-back">Back to the game</button>' : '';
+  const back = p.back ? '<button class="btn ghost small" id="pb-back">Back to the game</button>'
+    : p.backLesson ? '<button class="btn ghost small" id="pb-lesson">Back to the lesson</button>' : '';
   $('summary').innerHTML = `${status ? `<div class="status ${cls}">${esc(status)}</div>` : ''}<div class="play-buttons">${buttons}${back}</div>`;
   $('pb-back')?.addEventListener('click', backToGame);
+  $('pb-lesson')?.addEventListener('click', backToLesson);
   $('pb-review')?.addEventListener('click', reviewPlayedGame);
   $('pb-again')?.addEventListener('click', openPlayDialog);
   $('pb-stop')?.addEventListener('click', stopBotThinking);

@@ -343,6 +343,34 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   standalone "find the key move" puzzles from a lesson (…h5, …b5, …Qa3), move symbols (!, !?) on cards.
   Built and read through: Najdorf and Dragon as Black. Tested with Playwright (stubbed chat): picker,
   Learn branches, back/forward, off-lesson moves, the walkthrough question, a drill with a wrong move.
+  **Playing on after the theory (2026-10-01).** In Learn, reaching a leaf starts a bot game from that
+  position after `PLAY_ON_DELAY_MS` 1.5 s (`studyPlayOn()`): level random among bot levels with ~Elo in
+  `PLAY_ON_ELO` [1500, 2000] (Intermediate / Strong club / Expert), the lesson line preloaded as `play.prefix`
+  (Takeback floors there), bot moves first if the line ended on your move. `/api/play/new` takes `lesson`
+  (coach note says it's a play-out of that lesson). `setReview(..., {keepChat: true})` keeps the lesson
+  cards in the chat. The game header has "Back to the lesson" (`play.backLesson` → `backToLesson()`:
+  `/api/study/start`, restores the same `state.study` object at the leaf, `noPlayOn` stops it bouncing
+  straight back into a game). Drill's line-complete card has a "Play it out vs a bot" button instead.
+  **Family lessons (2026-10-01; user: "type scotch and you get overloaded… build the lesson to encapsulate
+  more of these variations and explore them within the lesson").** `lesson_key(name)`: a name's picker
+  row/lesson is its *family* (before ":") when the family has its own ECO entry and ≤ `FAMILY_MAX` 60 names
+  (139 of 149 families), else its variation group (the 10 big ones: Sicilian, Ruy Lopez, French, Italian,
+  KID, Caro-Kann, Nimzo, QGD, English, King's Gambit Accepted). "scotch": 4 rows (Scotch Game with 47
+  variations + three other families' Scotch-named lines). Building a family name (`is_family_lesson()`)
+  runs `_seed_family()` after the usual master walk (`walk()`, now a reusable closure in `_build_tree()`):
+  every family line that passes through the lesson's own position is added — opponent moves however rare
+  (`source: "named"`), your own moves only if within `ALT_SLACK` 45 cp of the engine's best (then `alt:
+  true` when a main move exists; 70 let the Relfsson 4.Bb5 in) — then `SEED_EXTRA` 4 plies of master play
+  with one opponent try. Cap `FAMILY_MAX_NODES` 220. Scotch dry run (tree only): 163 nodes, 38/48 names
+  (missing: Benima — other move order — and lines behind a White move the engine rejects), 6 min, so a full
+  family build is ~10-12 min and a bigger notes call (estimate $0.30-0.50, not measured). Transpositions
+  from other families aren't merged. Frontend: your alternatives are pale-green arrows (+ squares), the
+  card says "or explore: 4. c3 (Göring Gambit) · 4. Bc4 (Scotch Gambit)" (`studyVariationOf()` looks up to
+  4 plies down for a name); opponent tries are `.study-try` buttons (work during the pause or right after
+  their reply, swapping it); `studyLeaves()` follows only your main move, so Drill and mastery ignore
+  alternatives. Tested in Playwright with a temporary notes-less Scotch lesson from the dry run (deleted).
+  No family lesson has been built for real yet; lessons already built under a family name (Vienna Game,
+  Catalan Opening, QGA, Scandinavian…) are the old single-path kind until rebuilt.
   **Grouped picker (2026-10-01; user: "search 'dragon' and you get every one-off variation").**
   `study.search()` returns one row per *variation group* = the ECO name before the first comma
   (`_group()`: "Sicilian Defense: Dragon Variation"), with its comma sub-variations in `subs` (3,174 names →
