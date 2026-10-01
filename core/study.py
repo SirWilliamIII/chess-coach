@@ -109,6 +109,16 @@ def _gambit_balance(moves: list[str]) -> int:
     return bal + (gain if b.turn == chess.WHITE else -gain)
 
 
+_by_name_cache: dict[str, dict] | None = None
+
+
+def _by_name() -> dict[str, dict]:
+    global _by_name_cache
+    if _by_name_cache is None:
+        _by_name_cache = {o["name"]: o for o in openings()}
+    return _by_name_cache
+
+
 def side(name: str) -> str:
     """The one side a lesson is built for: whoever chose this named line. Read from the most specific
     part of the name back ("Sicilian Defense: Najdorf Variation, English Attack" → English Attack →
@@ -116,7 +126,7 @@ def side(name: str) -> str:
     the side that's material down at the end of its named line (the table often names a gambit only
     once it's been taken, e.g. Hamppe-Muzio ends on ...gxf3), else whoever moved last; any other part
     with its own table entry ("Najdorf Variation", "Closed") → whoever made that entry's last move."""
-    by_name = {o["name"]: o for o in openings()}
+    by_name = _by_name()
     cuts = [m.end() for m in re.finditer(r"[^:,]+", name)]
     for end in reversed(cuts):
         prefix = name[:end].strip()
@@ -144,21 +154,67 @@ def slug(name: str, color: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") + "-" + color
 
 
-def search(q: str, limit: int = 40) -> list[dict]:
+def _group(name: str) -> str:
+    """ECO names run "Family: Variation, Sub-variation, …"; a lesson-sized group is the part before the
+    first comma ("Sicilian Defense: Dragon Variation"), and everything after it is a sub-variation."""
+    return name.split(",")[0].strip()
+
+
+def _entry(o: dict) -> dict:
+    color = side(o["name"])
+    return {**o, "color": color, "built": (STUDY_DIR / f"{slug(o['name'], color)}.json").exists()}
+
+
+def search(q: str, limit: int = 30) -> list[dict]:
+    """Openings grouped for the picker: one row per variation group, with its sub-variations under it.
+    A group is listed when its own name matches (then with all its sub-variations) or when some of its
+    sub-variations do (then with just those). `in_lesson` marks a sub-variation whose position the
+    group's built lesson already plays through."""
     words = q.lower().split()
-    hits = [o for o in openings() if all(w in o["name"].lower() for w in words)] if words \
-        else [o for o in openings() if o["name"] in POPULAR]
-    hits.sort(key=lambda o: (o["name"] not in POPULAR, len(o["moves"]), o["name"]))
+    match = lambda name: all(w in name.lower() for w in words)
+    by_group: dict[str, list[dict]] = {}
+    for o in openings():
+        by_group.setdefault(_group(o["name"]), []).append(o)
+    rows = []
+    for g, members in by_group.items():
+        g_hit = match(g) if words else g in POPULAR
+        subs = [o for o in members if o["name"] != g and (g_hit or (words and match(o["name"])))]
+        if not g_hit and not subs:
+            continue
+        base = _by_name().get(g)
+        rows.append((not g_hit, g not in POPULAR, len((base or min(members, key=lambda o: len(o["moves"])))["moves"]), g, base, subs))
+    rows.sort(key=lambda r: r[:4])
     out = []
-    for o in hits[:limit]:
-        color = side(o["name"])
-        out.append({**o, "color": color, "built": (STUDY_DIR / f"{slug(o['name'], color)}.json").exists()})
+    for _, _, _, g, base, subs in rows[:limit]:
+        head = _entry(base) if base else {"name": g, "eco": subs[0]["eco"], "moves": min(subs, key=lambda o: len(o["moves"]))["moves"],
+                                          "color": None, "built": False, "no_entry": True}
+        epds = set()
+        if head["built"]:
+            lesson = load(g, head["color"])
+            epds = {chess.Board(n["fen"]).epd() for n in lesson["nodes"].values()}
+        sub_rows = []
+        for o in sorted(subs, key=lambda o: (len(o["moves"]), o["name"])):
+            b = chess.Board()
+            for san in o["moves"]:
+                b.push_san(san)
+            sub_rows.append({**_entry(o), "short": o["name"][len(g):].lstrip(", "), "in_lesson": b.epd() in epds})
+        out.append({**head, "subs": sub_rows})
     return out
 
 
 def load(name: str, color: str) -> dict | None:
+    """A saved lesson, with each node's opening name (where the ECO table names that exact position)
+    filled in, so the app can say "Yugoslav Attack" when the lesson reaches it."""
     f = STUDY_DIR / f"{slug(name, color)}.json"
-    return json.loads(f.read_text()) if f.exists() else None
+    if not f.exists():
+        return None
+    study = json.loads(f.read_text())
+    from core import eco
+    for n in study["nodes"].values():
+        hit = eco.lookup(chess.Board(n["fen"]))
+        if hit:
+            n["opening"] = hit["name"]
+    return study
 
 
 # ---------------------------------------------------------------- the tree
@@ -475,8 +531,16 @@ def build(name: str, color: str, engine: Engine, explore, progress=lambda msg: N
     study = {"name": name, "eco": opening["eco"], "color": color, "slug": slug(name, color),
              "built": time.strftime("%Y-%m-%d"), "model": STUDY_MODEL, "overview": overview,
              "dropped_notes": dropped, **tree}
-    STUDY_DIR.mkdir(parents=True, exist_ok=True)
-    (STUDY_DIR / f"{study['slug']}.json").write_text(json.dumps(study, indent=1))
+    try:
+        add_curveballs(study, engine, explore, progress)
+    except Exception:  # noqa: BLE001 — curveballs are extra; the lesson works without them
+        pass
+    progress("Placing the overview's ideas on the board…")
+    try:
+        tag_overview(study)
+    except Exception:  # noqa: BLE001 — the lesson still works without moments (overview shown whole)
+        pass
+    save(study)
     return study
 
 
@@ -488,3 +552,211 @@ def coach_note(study: dict) -> str:
             f"{o['summary']} Key ideas: {'; '.join(o['key_ideas'])}. Pawn breaks: {'; '.join(o['pawn_breaks'])}. "
             f"What to wait for: {'; '.join(o['wait_for'])}. Keep answers consistent with this lesson and "
             f"teach: explain the why, the plans, and what the opponent is trying, not just the moves.")
+
+
+# ---------------------------------------------------------------- curveballs
+# Mistakes club players really make in the lesson's positions, so the app can throw one in now and then
+# and make you find the punishment instead of following arrows. Per position where the opponent moves:
+# the Lichess database's moves by 1000-1800 players (blitz/rapid/classical) that aren't lesson moves,
+# kept when the engine says they throw away at least CURVE_MIN_LOSS; stored with the replies that punish
+# them (the engine's best, plus any within CURVE_ACCEPT of it). Engine + Lichess only, no Claude call.
+
+CURVE_RATINGS = [1000, 1200, 1400, 1600]
+CURVE_SPEEDS = ["blitz", "rapid", "classical"]
+CURVE_MIN_GAMES = 20     # a move this rare isn't a mistake people actually make
+CURVE_CANDIDATES = 4     # most-played non-lesson moves checked per position
+CURVE_MIN_LOSS = 120     # cp the mistake must throw away (with best play after it)
+CURVE_ACCEPT = 50        # cp: a reply this close to the engine's best also counts as punishing it
+CURVE_KEEP = 3
+
+
+def add_curveballs(study: dict, engine: Engine, explore, progress=lambda msg: None) -> int:
+    """Set node["curveballs"] on the lesson's opponent-to-move positions; returns how many were found."""
+    nodes = study["nodes"]
+    mine = chess.WHITE if study["color"] == "white" else chess.BLACK
+    todo = [n for n in nodes.values() if n["children"] and chess.Board(n["fen"]).turn != mine]
+    found = 0
+    for i, n in enumerate(todo):
+        progress(f"Finding club players' mistakes… ({i + 1}/{len(todo)} positions)")
+        b = chess.Board(n["fen"])
+        try:
+            data = explore(b.fen(), "lichess", ratings=CURVE_RATINGS, speeds=CURVE_SPEEDS)
+        except RuntimeError:
+            continue
+        lesson = {nodes[k]["uci"] for k in n["children"]}
+        cands = [m for m in data["moves"] if m["games"] >= CURVE_MIN_GAMES
+                 and b.parse_uci(m["uci"]).uci() not in lesson][:CURVE_CANDIDATES]
+        if not cands:
+            continue
+        sign = 1 if b.turn == chess.WHITE else -1   # the opponent's point of view
+        top = engine.lines(b, multipv=1, seconds=1.0, depth=18)
+        if not top:
+            continue
+        best = sign * top[0]["cp_white"]
+        balls = []
+        for m in cands:
+            mv = b.parse_uci(m["uci"])
+            nb = b.copy(stack=False)
+            nb.push(mv)
+            if nb.is_game_over():
+                continue
+            replies = engine.lines(nb, multipv=3, seconds=1.0, depth=18)
+            if not replies:
+                continue
+            after = sign * replies[0]["cp_white"]
+            loss = best - after
+            if loss < CURVE_MIN_LOSS:
+                continue
+            ok = [r for r in replies if sign * (r["cp_white"] - replies[0]["cp_white"]) <= CURVE_ACCEPT]
+            balls.append({"san": b.san(mv), "uci": mv.uci(), "games": m["games"], "loss": loss,
+                          "eval_white": replies[0]["eval_white"], "line": replies[0]["line"],
+                          "pv": replies[0]["pv"],
+                          "punish": [{"san": r["move"], "uci": r["uci"], "eval_white": r["eval_white"]} for r in ok]})
+        if balls:
+            n["curveballs"] = sorted(balls, key=lambda x: -x["games"])[:CURVE_KEEP]
+            found += len(n["curveballs"])
+        else:
+            n.pop("curveballs", None)
+    study["curveballs_built"] = time.strftime("%Y-%m-%d")
+    return found
+
+
+# ---------------------------------------------------------------- overview → moments
+# The overview is written all at once; in the app each bullet should appear when its situation is on the
+# board. One small call tags every bullet with a short title and the lesson positions it belongs to,
+# saved as study["moments"] (the overview text itself is unchanged). Run for new builds and, by hand,
+# for lessons built before this existed: python -m core.study tag [slug ...]
+
+OVERVIEW_KINDS = ["key_ideas", "pawn_breaks", "wait_for", "common_mistakes"]
+MAX_MOMENT_NODES = 4
+
+MOMENTS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": OVERVIEW_KINDS},
+                    "index": {"type": "integer"},
+                    "title": {"type": "string"},
+                    "nodes": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["kind", "index", "title", "nodes"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["items"],
+    "additionalProperties": False,
+}
+
+
+def _moments_prompt(study: dict) -> str:
+    nodes = study["nodes"]
+    rows = []
+    for n in nodes.values():
+        if n["parent"] is None:
+            continue
+        line = _line(nodes, n["id"])
+        who = "White" if len(line) % 2 else "Black"
+        rows.append(f"id {n['id']} · {numbered(line)} · last move by {who}"
+                    f"{' (the student)' if who.lower() == study['color'] else ''}"
+                    f"{' · end of a line' if not n['children'] else ''}")
+    bullets = []
+    for kind in OVERVIEW_KINDS:
+        for i, text in enumerate(study["overview"][kind]):
+            bullets.append(f"{kind} #{i}: {text}")
+    return f"""This is an opening lesson on the {study['name']} for a student who plays {study['color']}. The student walks through it one move at a time, and each overview bullet below should be shown at the moment its situation is on the board instead of all at once at the start.
+
+For every bullet, return:
+- kind and index exactly as given;
+- title: 3-6 words naming the idea, in the student's terms (e.g. "Meet the English Attack with ...h5", "Don't grab b2 twice");
+- nodes: the ids of the positions where this bullet should appear: the position right after that id's move, when the situation the bullet talks about has just arisen (the setup appears, the break becomes possible, the mistake is tempting on the student's next move). Prefer the first position in each line where it applies; at most {MAX_MOMENT_NODES} ids. A bullet about the whole opening that no single position triggers gets an empty list (it's shown when a line ends, as the plan from there).
+
+Bullets:
+""" + "\n".join(bullets) + "\n\nLesson positions (id · moves from the start · who just moved):\n" + "\n".join(rows)
+
+
+def tag_overview(study: dict, model: str = STUDY_MODEL) -> dict:
+    """Add study["moments"] = [{kind, index, title, nodes}] and return the study (not saved)."""
+    client = anthropic.Anthropic()
+    t0 = time.monotonic()
+    with client.beta.messages.stream(
+        model=model,
+        max_tokens=16000,
+        thinking={"type": "adaptive"},
+        output_config={"effort": "high", "format": {"type": "json_schema", "schema": MOMENTS_SCHEMA}},
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",
+        messages=[{"role": "user", "content": _moments_prompt(study)}],
+    ) as stream:
+        response = stream.get_final_message()
+    try:
+        u = response.usage
+        usage.record(model=model, input_tokens=u.input_tokens, output_tokens=u.output_tokens,
+                     cache_creation_input_tokens=u.cache_creation_input_tokens or 0,
+                     cache_read_input_tokens=u.cache_read_input_tokens or 0,
+                     question=f"[study tag] {study['name']} ({study['color']})", api_seconds=time.monotonic() - t0)
+    except Exception:  # noqa: BLE001 — telemetry never blocks the build
+        pass
+    if response.stop_reason == "refusal":
+        raise RuntimeError("The model declined to tag this lesson's overview.")
+    items = json.loads(next(b.text for b in response.content if b.type == "text"))["items"]
+    nodes = study["nodes"]
+    moments, seen = [], set()
+    for it in items:
+        key = (it["kind"], it["index"])
+        if it["kind"] not in study["overview"] or not 0 <= it["index"] < len(study["overview"][it["kind"]]) or key in seen:
+            continue  # an id the model invented, or a duplicate
+        seen.add(key)
+        ids = [k for k in it["nodes"] if k in nodes and nodes[k]["parent"] is not None][:MAX_MOMENT_NODES]
+        moments.append({"kind": it["kind"], "index": it["index"], "title": it["title"].strip(), "nodes": ids})
+    # a bullet the model skipped still gets shown, as an end-of-line plan
+    for kind in OVERVIEW_KINDS:
+        for i, text in enumerate(study["overview"][kind]):
+            if (kind, i) not in seen:
+                moments.append({"kind": kind, "index": i, "title": text.split(":")[0][:60], "nodes": []})
+    study["moments"] = moments
+    return study
+
+
+def save(study: dict) -> None:
+    STUDY_DIR.mkdir(parents=True, exist_ok=True)
+    (STUDY_DIR / f"{study['slug']}.json").write_text(json.dumps(study, indent=1))
+
+
+if __name__ == "__main__":
+    import functools
+    import sys
+    if sys.argv[1:2] == ["curveballs"]:
+        from frontends.lichess import explorer
+        slugs = sys.argv[2:] or [f.stem for f in sorted(STUDY_DIR.glob("*.json"))]
+        engine = Engine(threads=2, hash_mb=128)
+        try:
+            for s in slugs:
+                study = json.loads((STUDY_DIR / f"{s}.json").read_text())
+                t0 = time.monotonic()
+                found = add_curveballs(study, engine, functools.partial(explorer.explore, patient=True))
+                save(study)
+                print(f"{s}: {found} curveballs ({time.monotonic() - t0:.0f} s)")
+                for n in study["nodes"].values():
+                    for c in n.get("curveballs", []):
+                        print(f"  after {' '.join(_line(study['nodes'], n['id'])[-2:])}: {c['san']}?? "
+                              f"({c['games']} club games, -{c['loss'] / 100:.1f}) → {', '.join(p['san'] for p in c['punish'])}")
+        finally:
+            engine.close()
+        sys.stdout.flush()
+        os._exit(0)  # the engine thread keeps the process alive otherwise
+    if sys.argv[1:2] == ["tag"]:
+        slugs = sys.argv[2:] or [f.stem for f in sorted(STUDY_DIR.glob("*.json"))]
+        for s in slugs:
+            study = json.loads((STUDY_DIR / f"{s}.json").read_text())
+            tag_overview(study)
+            save(study)
+            placed = sum(1 for m in study["moments"] if m["nodes"])
+            print(f"{s}: {len(study['moments'])} bullets, {placed} placed on positions")
+            for m in study["moments"]:
+                where = ", ".join(" ".join(_line(study["nodes"], k)[-2:]) + f" (id {k})" for k in m["nodes"]) or "end of line"
+                print(f"  [{m['kind']} #{m['index']}] {m['title']} → {where}")

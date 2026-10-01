@@ -294,6 +294,9 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px 0; }
 .chip { background: #3c3a37; color: var(--text); border: 0; border-radius: 14px; padding: 4px 10px; font-size: 13px; }
+.card-chips { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px; }
+.card-chips[hidden] { display: none; }
+.chips[hidden] { display: none; }
 .chip:hover { background: #4b4845; }
 .chip { position: relative; }
 .chip[data-tip]:not([data-tip=""]):hover::after {
@@ -488,8 +491,6 @@ ol.points li:nth-child(3n+3) .pt-title .san { color: #e6b450; border-color: #906
 .protip-h { font-size: 12px; font-weight: 800; color: #8aa8e6; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 3px; }
 .protip p { margin: 0; }
 .alert-ico { margin-right: 6px; }
-.special-tag { display: block; background: #e5484d; color: #fff; border: 0; border-radius: 12px; font-size: 12px;
-  font-weight: 800; padding: 3px 10px; margin-bottom: 8px; animation: alert-pulse 1.2s ease-out 2; }
 .steps { margin-top: 6px; font-size: 12px; color: var(--muted); font-style: normal; display: flex; flex-direction: column; gap: 2px; }
 .msg .mh { font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: #a9d67a; margin: 10px 0 4px; }
 .msg .lbl { display: block; font-weight: 600; font-size: 13px; color: var(--accent); margin-bottom: 2px; }
@@ -593,6 +594,13 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 /* opening lessons (studyCard / startStudy in app.js): the bot-game card look */
 .study-picker { max-height: 42vh; }
 .study-row.on { background: #3a3835; box-shadow: inset 3px 0 0 var(--accent); }
+.card-open { font-size: 12px; font-style: italic; color: #c9b47a; margin-left: 6px; }
+.study-group { border-bottom: 1px solid rgba(255,255,255,.04); padding-bottom: 2px; }
+.study-subs-toggle { font-size: 12px; padding: 0 12px 6px; }
+.study-subs { padding-left: 16px; border-left: 2px solid rgba(255,255,255,.07); margin-left: 12px; }
+.study-sub .who { font-weight: 500; }
+.study-row.no-entry { cursor: default; }
+.study-row.no-entry:hover { background: none; }
 .study-row .hint { grid-column: 1 / -1; margin: 0; }
 .study-mode button { padding: 4px 12px; }
 
@@ -617,6 +625,26 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .study-sec li { margin: 4px 0; line-height: 1.5; }
 .study-sec li::marker { color: var(--sec); }
 .study-note { display: block; line-height: 1.5; }
+/* overview bullets: callouts on the move card, and the start card's checklist */
+.study-sec.moment { margin-top: 6px; }
+.study-sec.moment > summary { cursor: pointer; list-style: none; margin-bottom: 0; }
+.study-sec.moment[open] > summary { margin-bottom: 4px; }
+.study-sec.moment > summary::-webkit-details-marker, .moment-all > summary::-webkit-details-marker { display: none; }
+.study-sec.moment:not([open]) > summary::after, .moment-all:not([open]) > summary::after { content: ' ▸'; }
+.moment-all > summary { cursor: pointer; list-style: none; }
+.study-sec.moment .moment-text { line-height: 1.5; }
+.study-sec.recap { --sec: var(--muted); }
+.moment-list { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.moment-count { color: var(--muted); }
+.moment-item summary { cursor: pointer; list-style: none; padding: 2px 0; color: var(--muted); }
+.moment-item summary::-webkit-details-marker { display: none; }
+.moment-item[data-locked] summary { cursor: default; opacity: .7; }
+.moment-item.seen summary { color: var(--text); }
+.moment-item.ideas.seen summary { color: #81b64c; }
+.moment-item.breaks.seen summary { color: #e6b450; }
+.moment-item.wait.seen summary { color: #5aa9e6; }
+.moment-item.mistakes.seen summary { color: #e5534b; }
+.moment-item .moment-text { padding: 2px 0 6px 18px; line-height: 1.5; }
 .card-hint { color: var(--muted); font-size: 12px; font-style: italic; }
 /* squares in lesson text: gold and dotted, so they don't read as clickable moves */
 .study-card .sq { color: #f0d58a; font-weight: 600; border-bottom: 1px dotted #b08a3a; background: none; }

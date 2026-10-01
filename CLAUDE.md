@@ -294,14 +294,37 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   square hovers/pins go on top of it). You play only your side (`canMove` = your colour, as in Drill)
   and advance only by playing the arrowed move; anything else snaps back with one nudge per position. The
   opponent's reply is automatic (`studyLearnStep()`): their try arrows stay up for `LEARN_PAUSE_MS` 1 s, then
-  a random pick among tries within `LEARN_SIMILAR` 0.3 pawns of their best by the node's stored eval, so ◀
-  back to your move and replaying can show another reply. `startStudy()` calls it too (a lesson opens in
-  Learn, so as Black White's first move plays itself without clicking "Learn the main line"); that first
+  a pick weighted by master share (`weightedPick()`; was "random within 0.3 pawns by eval" until the user
+  asked for popularity — the stored evals are depth-16, so 0.3 was within noise), so ◀ back to your move and
+  replaying can show another reply.
+  **Curveballs (2026-10-01; user: "a random curveball keeps me engaged", they autopilot otherwise).**
+  `add_curveballs()` in `core/study.py`: per opponent-to-move node, the Lichess DB's moves by 1000-1800
+  players (blitz/rapid/classical, ≥ `CURVE_MIN_GAMES` 20, top `CURVE_CANDIDATES` 4 non-lesson moves) that lose
+  ≥ `CURVE_MIN_LOSS` 120 cp at depth 18; stored as `node.curveballs` = `[{san, uci, games, loss, eval_white,
+  line, pv, punish: [{san, uci, eval_white}]}]` (punish = engine best + any within `CURVE_ACCEPT` 50 cp). No
+  Claude call. Runs in new builds; existing lessons: `python -m core.study curveballs [slug…]`. Najdorf: 7
+  found, e.g. 7.f3/7.Be2/7.O-O?? leaving the d4 knight to …exd4 (1,500-2,500 club games each), 8.e5? in the
+  Poisoned Pawn. Frontend (Learn and Drill): `studyCurveball()` fires with `CURVE_CHANCE` 0.3 at a node that
+  has one, max one per run through a line (`st.curveUsed`, reset at the root / mode switch), never on the
+  opponent's first move. `studyThrowCurve()` puts the move on the board (off the tree: `st.curve`, no guide
+  arrows), you must play a `punish` move (`studyCurveAnswer()`; miss 1 circles the piece, miss 2 draws the
+  arrow, via `curveShapes()` in `baseShapes()`), then a card with the engine line, ▶ Show the line (demo from
+  the curveball position), Why? (paid, only on click) and Back to the lesson; ◀ during a curveball also
+  resumes the lesson at that node (the opponent then plays a lesson move). Curveballs don't count for
+  mastery. Tested with Playwright (forced and natural via `Math.random` stub, both modes, right/wrong
+  answers, ◀). Only the Najdorf has curveballs so far. `startStudy()` calls it too (a lesson opens in
+  Learn, so as Black White's first move plays itself; the start card has no "Learn" button, only Drill me); that first
   card doesn't fold the overview. ◀ in Learn, like Drill, lands on your own move. ▶/⏭ are disabled
   in a lesson (`update()`); ◀/⏮ still work. These arrows go through `baseShapes()`, which `renderBoard()`,
   `renderShapes()` (hover / right-click arrows) and `previewMove()` all include, so hovering doesn't wipe
   them. Cards name the moves as text (no buttons, so the card can't skip the board). A card per node
-  (`studyCard`, once per session) with the note and "Your move" or "Their tries". Tested with Playwright via
+  (`studyCard`, once per session) with the note and "Your move" or "Their tries". **Cards no longer
+  auto-fold** (user: they reread them afterwards); a header click still folds one. **Coach chips live on the
+  cards in Learn** (`CHIPS.study`, on your-move cards and line ends): the bottom `#chips` row is hidden in
+  Learn (`renderChips()`; `setStudyMode()` re-renders it, Drill keeps the bottom row since it posts no move
+  cards), and `syncCards()` shows a card's chip row only while the board is on that card's position
+  (`studyChipLive()`), so ◀ brings an older card's chips back. `studyGo()` bumps `studyToken` and clears
+  `waiting`, so any jump cancels a pending automatic reply. Tested with Playwright via
   a temporary `window.__debug` hook (Catalan: wrong move, forward, main line, 3...Bb4+ check arrow).
   **Drill**: you play your side (`canMove`), the opponent answers after 650 ms, picking among the
   tries weighted by master share × unmastered lines under each; wrong move = circle on the piece first,
@@ -320,6 +343,35 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   standalone "find the key move" puzzles from a lesson (…h5, …b5, …Qa3), move symbols (!, !?) on cards.
   Built and read through: Najdorf and Dragon as Black. Tested with Playwright (stubbed chat): picker,
   Learn branches, back/forward, off-lesson moves, the walkthrough question, a drill with a wrong move.
+  **Grouped picker (2026-10-01; user: "search 'dragon' and you get every one-off variation").**
+  `study.search()` returns one row per *variation group* = the ECO name before the first comma
+  (`_group()`: "Sicilian Defense: Dragon Variation"), with its comma sub-variations in `subs` (3,174 names →
+  1,427 groups; "dragon" 45 → 7 rows). A group is listed when its name matches (with all subs) or a sub
+  matches (with just those); 69 groups have no ECO entry of their own (`no_entry`, not buildable, subs
+  only). Every sub is still buildable as its own lesson. `in_lesson` marks a sub whose position (EPD) the
+  group's built lesson already contains (Dragon: 11 of 31). The dialog folds subs under "▸ N variations ·
+  K already in this lesson" (open by default when the match came from a sub). `study.load()` now fills
+  `node.opening` from `eco.lookup()` on every load (no rebuild), and `studyOpeningName()` puts a new
+  name on the card header ("Yugoslav Attack, Main Line"): only names inside the lesson's group, or a
+  different opening after the trunk (a transposition); the trunk's general names are skipped. Side of a
+  sub can differ from its group (Yugoslav Attack → White by `side()`); Dragon players get it inside the
+  Dragon lesson as Black.
+  **Overview → moments (2026-10-01; user: the overview was too dense all at once).** `tag_overview()` in
+  `core/study.py` makes one extra call (`STUDY_MODEL`, structured output `MOMENTS_SCHEMA`) that gives each
+  overview bullet a 3-6 word title and up to 4 lesson node ids where its situation has just arisen, saved as
+  `study["moments"]` = `[{kind, index, title, nodes}]`; the overview text is unchanged (the coach's session
+  note still uses it). Bullets the model skips get `nodes: []`. New builds run it after the notes call (a
+  failure leaves the lesson without moments, not broken); older lessons: `python -m core.study tag [slug…]`
+  (prints where each bullet landed). Najdorf: 22 s, $0.085, 21/21 bullets placed, placements read as right.
+  Frontend: with moments, the start card is the summary + a folded "Ideas you'll meet on the board · n/N
+  seen" checklist (seen titles open to the text); in Learn each move card gets that node's not-yet-seen
+  bullets as callouts (`momentCallout()`, first one open, the rest folded titles); a line's last card adds
+  "Your plan from here" (titles met along the line + untagged bullets). Lessons without moments show the
+  overview whole as before. Moves inside lesson text (`studyShowNode()`) now play on the demo board from
+  where your board and that line split, stepping forward every `LESSON_STEP_MS` 650 ms, instead of
+  jumping from move 1; hovering a lesson move that's playable right now draws its arrow. Not built yet:
+  Drill questions from moments ("What's White going for?", find the break, avoid the mistake). Only the
+  Najdorf is tagged so far.
 - **Engine search: time vs depth.** `Engine.lines()`/`evaluate()` take an optional `depth`; with it,
   the search stops at that depth *or* after `seconds`, whichever is first (seconds = ceiling,
   depth = target). Without it, behaviour is time-only as before. The coach's own tool calls

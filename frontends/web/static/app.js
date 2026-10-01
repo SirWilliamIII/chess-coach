@@ -220,7 +220,10 @@ function canMove(c, turn) {
   if (c.isGameOver()) return false;
   if (state.demo) return true;
   // a lesson: you play your side, the app plays theirs (Learn and Drill alike)
-  if (state.study) return !state.study.waiting && turn === state.study.data.color && studyNodeHere() !== null;
+  if (state.study) {
+    const cv = state.study.curve;
+    return !state.study.waiting && turn === state.study.data.color && (cv ? !cv.solved : studyNodeHere() !== null);
+  }
   if (state.replay) return turn === state.replay.color && state.ply < state.review.moves.length && !state.extra.length;
   const p = state.play;
   if (!p) return true;
@@ -1277,16 +1280,6 @@ function addMsg(kind, html, where) {
     el.onblur = () => el.classList.remove('open');
   });
   if (kind.startsWith('coach')) div.querySelector(':scope > p')?.classList.add('lead');
-  // special-move alerts stay in context; if one is further down, flag it at the top
-  const alert = div.querySelector('.alert-red');
-  const blocks = [...div.children].filter((el) => !el.matches('.where, .gm-label'));
-  if (alert && blocks.indexOf(alert) > 1) {
-    const tag = document.createElement('button');
-    tag.className = 'special-tag';
-    tag.textContent = '⚡ Special move inside ↓';
-    tag.onclick = () => alert.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    div.insertBefore(tag, blocks[0]);
-  }
   $('chat-log').appendChild(div);
   if (kind.startsWith('coach') && div.offsetHeight > $('chat-log').clientHeight * 0.8) {
     div.scrollIntoView({ block: 'start' });  // long answer: start reading at the top
@@ -1540,8 +1533,10 @@ async function openEntry(id) {
 }
 
 function renderChips() {
-  const chips = CHIPS[state.play ? 'play' : state.study ? 'study' : 'review']
+  // in a lesson's Learn mode the chips live on the move cards instead (studyCard)
+  const chips = state.study?.mode === 'learn' ? [] : CHIPS[state.play ? 'play' : state.study ? 'study' : 'review']
     .filter(([, , needs]) => needs !== 'game' || (state.review && state.review.moves.length));
+  $('chips').hidden = !chips.length;
   $('chips').innerHTML = chips.map(([label], i) =>
     `<button class="chip" data-i="${i}" data-tip="${esc(CHIP_TIPS[label] || '')}">${esc(label)}</button>`).join('');
   $('chips').querySelectorAll('.chip').forEach((el) => {
@@ -2215,6 +2210,43 @@ function renderReplayInfo() {
 // weighted by how often masters play them, and a wrong move is caught with the right one and its note.
 
 const studyShown = new Set();   // node ids whose card has been posted this session
+const momentsSeen = new Set();  // "kind:index" of overview bullets already shown on the board this session
+
+// overview bullets, each placed on the lesson positions where it applies (core/study.py tag_overview);
+// lessons built before that have none, and show their overview whole as before
+const MOMENT_KIND = {
+  key_ideas: { cls: 'ideas', label: '💡 Idea' },
+  pawn_breaks: { cls: 'breaks', label: '♟ Break' },
+  wait_for: { cls: 'wait', label: '👀 Watch for' },
+  common_mistakes: { cls: 'mistakes', label: '⚠ Avoid' },
+};
+const momentKey = (m) => `${m.kind}:${m.index}`;
+const momentText = (m) => state.study.data.overview[m.kind][m.index];
+const studyMoments = () => state.study.data.moments || [];
+
+// the first idea on a move opens in full; any others are titles you click to open, so one move
+// never turns into a wall of text
+function momentCallout(m, contextId, open) {
+  const k = MOMENT_KIND[m.kind];
+  return `<details class="study-sec moment ${k.cls}"${open ? ' open' : ''}><summary class="study-sec-title">${k.label}: ${esc(m.title)}</summary>`
+    + `<div class="moment-text">${lessonText(momentText(m), contextId)}</div></details>`;
+}
+
+// the start card's checklist: titles tick off as their moment comes up; seen ones open to the full text
+function renderMomentChecklist() {
+  const box = document.querySelector('.study-overview .moment-list');
+  if (!box || !state.study) return;
+  const ms = studyMoments();
+  const wasOpen = box.querySelector('details.moment-all')?.open;
+  box.innerHTML = `<details class="moment-all"${wasOpen ? ' open' : ''}><summary class="study-sec-title moment-count">Ideas you'll meet on the board · ${ms.filter((m) => momentsSeen.has(momentKey(m))).length}/${ms.length} seen</summary>`
+    + ms.map((m) => {
+      const seen = momentsSeen.has(momentKey(m));
+      return `<details class="moment-item ${MOMENT_KIND[m.kind].cls}${seen ? ' seen' : ''}"${seen ? '' : ' data-locked'}>`
+        + `<summary>${seen ? '✓' : '○'} ${esc(m.title)}</summary>${seen ? `<div class="moment-text">${lessonText(momentText(m), state.study.data.root)}</div>` : ''}</details>`;
+    }).join('') + '</details>';
+  box.querySelectorAll('details[data-locked]').forEach((d) => { d.querySelector('summary').onclick = (e) => e.preventDefault(); });
+  wireLessonMoves(box);
+}
 let studyToken = 0;             // invalidates a pending drill reply
 
 const studyNodes = () => state.study.data.nodes;
@@ -2222,7 +2254,9 @@ const studyMine = (fen) => fen.split(' ')[1] === state.study.data.color[0];
 
 // arrows that belong to the position rather than to a hover: the Learn guide (empty elsewhere)
 function baseShapes() {
-  return state.study && state.study.mode === 'learn' && !state.demo ? studyGuideShapes() : [];
+  if (!state.study || state.demo) return [];
+  if (state.study.curve) return curveShapes();
+  return state.study.mode === 'learn' ? studyGuideShapes() : [];
 }
 
 // Learn: the square of the piece about to move (green for yours, blue for each of their tries)
@@ -2318,10 +2352,9 @@ const studyMasteredCount = () => {
 };
 
 function studyMoveName(id) {
-  const n = studyNodes()[id];
-  const ply = studyLine(id).length;  // plies from the start position, so move numbers are plain
-  return `${Math.ceil(ply / 2)}.${ply % 2 ? '' : '..'}${ply % 2 ? ' ' : ''}${n.san}`;
+  return plyName(studyLine(id).length, studyNodes()[id].san);  // plies from the start, so move numbers are plain
 }
+const plyName = (ply, san) => `${Math.ceil(ply / 2)}.${ply % 2 ? '' : '..'}${ply % 2 ? ' ' : ''}${san}`;
 
 async function openStudyDialog() {
   $('study-status').textContent = '';
@@ -2338,13 +2371,35 @@ async function searchStudies(q) {
   let res;
   try { res = await api(`/api/study/openings?q=${encodeURIComponent(q)}`); } catch (e) { $('study-list').innerHTML = `<p class="hint">${esc(e.message)}</p>`; return; }
   if (token !== studySearchToken) return;
-  $('study-list').innerHTML = res.openings.map((o, i) => `<div class="game-row study-row" data-i="${i}">
-      <span class="who">${esc(o.name)}</span><span class="res">${o.built ? '✓ built' : ''}</span>
-      <span class="hint">${esc(o.eco)} · you play ${o.color === 'white' ? 'White' : 'Black'} · ${esc(numberedLine(o.moves))}</span></div>`).join('')
-    || '<p class="hint">No opening by that name.</p>';
+  // one row per variation group; its sub-variations fold open under it (each still buildable on its own)
+  const items = [];
+  const row = (o, sub) => {
+    const i = items.push(o) - 1;
+    const tag = o.built ? '✓ built' : sub && o.in_lesson ? 'in this lesson' : '';
+    return `<div class="game-row study-row${sub ? ' study-sub' : ''}${o.no_entry ? ' no-entry' : ''}" data-i="${i}">`
+      + `<span class="who">${esc(sub ? o.short : o.name)}</span><span class="res">${tag}</span>`
+      + `<span class="hint">${o.no_entry ? 'a group of variations, pick one below' : `${esc(o.eco)} · you play ${o.color === 'white' ? 'White' : 'Black'} · ${esc(numberedLine(o.moves))}`}</span></div>`;
+  };
+  $('study-list').innerHTML = res.openings.map((g) => {
+    if (!g.subs.length) return row(g, false);
+    const inLesson = g.subs.filter((x) => x.in_lesson).length;
+    const open = g.no_entry || g.subs.length <= 2 || !!q.trim() && !g.name.toLowerCase().includes(q.trim().toLowerCase());
+    return `<div class="study-group">${row(g, false)}`
+      + `<button class="link study-subs-toggle">${open ? '▾' : '▸'} ${g.subs.length} variation${g.subs.length > 1 ? 's' : ''}${inLesson ? ` · ${inLesson} already in this lesson` : ''}</button>`
+      + `<div class="study-subs"${open ? '' : ' hidden'}>${g.subs.map((x) => row(x, true)).join('')}</div></div>`;
+  }).join('') || '<p class="hint">No opening by that name.</p>';
+  $('study-list').querySelectorAll('.study-subs-toggle').forEach((b) => {
+    b.onclick = () => {
+      const box = b.nextElementSibling;
+      box.hidden = !box.hidden;
+      b.textContent = (box.hidden ? '▸' : '▾') + b.textContent.slice(1);
+    };
+  });
   $('study-list').querySelectorAll('.study-row').forEach((el) => {
     el.onclick = () => {
-      studyPick = res.openings[+el.dataset.i];
+      const o = items[+el.dataset.i];
+      if (o.no_entry) return;
+      studyPick = o;
       $('study-list').querySelectorAll('.study-row').forEach((x) => x.classList.toggle('on', x === el));
       $('study-go').disabled = false;
       $('study-go').textContent = studyPick.built ? 'Start lesson' : 'Build lesson (a few minutes)';
@@ -2460,22 +2515,40 @@ function lessonText(text, contextId) {
   return lead ? `<b class="lm-lead">${lessonInline(lead[1], contextId)}:</b> ${lessonInline(lead[2], contextId)}` : lessonInline(text, contextId);
 }
 
-// play the lesson up to a node on the demo board: jump to just before the move, then play it,
-// with the lesson's notes as the demo's per-move notes
+// play the lesson up to a node on the demo board, with the lesson's notes as the demo's per-move notes.
+// It starts from the board you're looking at (or, on another branch, where the two lines split) and
+// steps forward one move at a time, instead of jumping from the start
+const LESSON_STEP_MS = 650;
 function studyShowNode(id) {
   const line = studyLine(id);
   const ids = [];
   for (let k = id; studyNodes()[k].parent !== null; k = studyNodes()[k].parent) ids.unshift(k);
+  const here = state.demo ? [] : state.extra;
+  let from = 0;
+  while (from < line.length && from < here.length && line[from] === here[from]) from++;
+  from = Math.min(from, line.length - 1);  // at least the move itself is played
   openDemo({ title: `Lesson: ${studyMoveName(id)}`, start_fen: START_FEN, moves: line,
     notes: ids.map((k) => studyNodes()[k].note || ''), ply: 1, then_moves: [] });
-  demoStep(line.length - 1);
+  stopAutoplay();  // openDemo's own autoplay starts from move 1
+  state.demo.step = from;
+  update();
   const d = state.demo;
-  setTimeout(() => { if (state.demo === d && d.step === line.length - 1) demoStep(line.length); }, 450);
+  demoTimer = setInterval(() => {
+    if (state.demo !== d || d.step >= line.length) return stopAutoplay();
+    d.step++;
+    update();
+  }, LESSON_STEP_MS);
 }
 
 function wireLessonMoves(root) {
   root.querySelectorAll('.lm[data-node]').forEach((b) => {
     b.onclick = (e) => { e.stopPropagation(); if (state.study) studyShowNode(b.dataset.node); };
+    // the move that's playable on your board right now: hovering shows its arrow
+    b.onmouseenter = () => {
+      const n = state.study && !state.demo && studyNodes()[b.dataset.node];
+      if (n && n.parent === studyNodeHere()) cg.setAutoShapes([...baseShapes(), { orig: n.uci.slice(0, 2), dest: n.uci.slice(2, 4), brush: 'yellow' }]);
+    };
+    b.onmouseleave = () => { if (state.study && !state.demo) cg.setAutoShapes(baseShapes()); };
   });
 }
 
@@ -2488,15 +2561,20 @@ function startStudy(study, review) {
   const o = study.overview;
   const list = (kind, title, items) => items.length
     ? `<div class="study-sec ${kind}"><div class="study-sec-title">${title}</div><ul>${items.map((x) => `<li>${lessonText(x, study.root)}</li>`).join('')}</ul></div>` : '';
+  momentsSeen.clear();
+  // with moments, the start card is just the summary + a checklist; each idea shows up on the board
+  // when its position comes up. Older lessons (no moments) keep the whole overview here.
+  const body = study.moments?.length
+    ? '<div class="moment-list"></div>'
+    : `${list('ideas', '💡 Key ideas', o.key_ideas)}${list('breaks', '♟ Pawn breaks', o.pawn_breaks)}`
+      + `${list('wait', '👀 Wait for', o.wait_for)}${list('mistakes', '⚠ Mistakes', o.common_mistakes)}`
+      + '<div class="card-hint">Click any move to see it on the demo board.</div>';
   const msg = addMsg('coach card study-card study-overview', `<div class="card-head"><b>${esc(study.name)}</b><span class="card-sub">you play ${esc(study.color)} · ${studyLeaves().length} lines</span><span class="card-caret">▾</span></div>`
-    + `<div class="card-body"><div class="study-summary">${lessonInline(o.summary, study.root)}</div>`
-    + `${list('ideas', '💡 Key ideas', o.key_ideas)}${list('breaks', '♟ Pawn breaks', o.pawn_breaks)}`
-    + `${list('wait', '👀 Wait for', o.wait_for)}${list('mistakes', '⚠ Mistakes', o.common_mistakes)}`
-    + '<div class="card-hint">Click any move to see it on the demo board.</div>'
-    + '<div class="card-row card-actions"><button class="btn small" data-go="learn">Learn the main line</button><button class="btn ghost small" data-go="drill">Drill me</button></div></div>');
+    + `<div class="card-body"><div class="study-summary">${lessonInline(o.summary, study.root)}</div>${body}`
+    + '<div class="card-row card-actions"><button class="btn ghost small" data-go="drill">Drill me</button></div></div>');
   msg.querySelector('.card-head').onclick = () => msg.classList.toggle('collapsed');
   wireLessonMoves(msg);
-  msg.querySelector('[data-go=learn]').onclick = () => setStudyMode('learn');
+  renderMomentChecklist();
   msg.querySelector('[data-go=drill]').onclick = () => setStudyMode('drill');
   update();
   studyLearnStep();  // the lesson opens in Learn: as Black, White's first move plays itself
@@ -2508,7 +2586,10 @@ function setStudyMode(mode) {
   studyToken++;
   closeDemo(false);
   st.mode = mode;
+  renderChips();
   st.waiting = false;
+  st.curve = null;
+  st.curveUsed = false;
   st.mistakes = 0;
   st.hint = null;
   st.missAt = null;
@@ -2522,6 +2603,10 @@ function setStudyMode(mode) {
 
 function studyGo(id, { quiet = false } = {}) {
   const st = state.study;
+  studyToken++;  // a reply still pending for the position we're leaving must not land here
+  st.waiting = false;
+  st.curve = null;
+  if (id === st.data.root) st.curveUsed = false;  // one curveball per run through a line
   st.node = id;
   st.hint = null;
   state.extra = studyLine(id);
@@ -2530,11 +2615,16 @@ function studyGo(id, { quiet = false } = {}) {
   if (st.mode === 'drill') studyDrillStep(); else studyLearnStep();
 }
 
-// Learn: on the opponent's turn, leave their arrows up for a moment, then play one of their tries —
-// any whose engine eval is within LEARN_SIMILAR of their best, at random, so replaying a line
-// (◀ back to your move) can show a different reply
+// Learn: on the opponent's turn, leave their arrows up for a moment, then play one of their tries,
+// picked by how often masters play it (so replaying a line with ◀ can show another), or now and then
+// a curveball (studyCurveball)
 const LEARN_PAUSE_MS = 1000;
-const LEARN_SIMILAR = 0.3;  // pawns
+
+function weightedPick(items, weights) {
+  let r = Math.random() * weights.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < items.length; i++) { r -= weights[i]; if (r <= 0) return items[i]; }
+  return items[0];
+}
 function studyLearnStep() {
   const st = state.study;
   const n = studyNodes()[st.node];
@@ -2544,24 +2634,81 @@ function studyLearnStep() {
   update();
   setTimeout(() => {
     if (token !== studyToken || state.study !== st || st.mode !== 'learn') return;
-    const sign = st.data.color === 'white' ? -1 : 1;  // the opponent's point of view
-    const val = (k) => {
-      const e = String(studyNodes()[k].eval_white ?? '');
-      const v = e.includes('#') ? (e.includes('-') ? -100 : 100) : parseFloat(e);
-      return Number.isNaN(v) ? null : sign * v;
-    };
-    const vals = n.children.map(val);
-    const best = Math.max(...vals.filter((v) => v !== null));
-    const near = n.children.filter((k, i) => vals[i] !== null && vals[i] >= best - LEARN_SIMILAR);
-    const pool = near.length ? near : [n.main];
     st.waiting = false;
-    studyGo(pool[Math.floor(Math.random() * pool.length)]);
+    const cb = studyCurveball(n);
+    if (cb) return studyThrowCurve(n, cb);
+    studyGo(weightedPick(n.children, n.children.map((k) => Math.max(1, studyNodes()[k].share || 1))));
   }, LEARN_PAUSE_MS);
+}
+
+// ---- curveballs: now and then the opponent leaves the lesson with a mistake club players really make
+// (node.curveballs, from core/study.py add_curveballs) and you have to find the punishment, with no arrow.
+// At most one per run through a line, never on their first move; ◀ or "Back to the lesson" resumes.
+const CURVE_CHANCE = 0.3;  // per opponent move that has one (only a few positions do)
+
+function studyCurveball(n) {
+  const st = state.study;
+  if (!n.curveballs?.length || st.curveUsed || studyLine(n.id).length < 2 || Math.random() >= CURVE_CHANCE) return null;
+  return n.curveballs[Math.floor(Math.random() * n.curveballs.length)];
+}
+
+function studyThrowCurve(n, cb) {
+  const st = state.study;
+  const ply = studyLine(n.id).length + 1;
+  st.curve = { at: n.id, cb, name: plyName(ply, cb.san), misses: 0, solved: false };
+  st.curveUsed = true;
+  state.extra = [...studyLine(n.id), cb.san];
+  update();
+  addMsg('coach card study-card curve-card', `<div class="card-head"><b>⚡ Curveball: ${esc(st.curve.name)}</b>`
+    + `<span class="card-sub">not in the lesson · played in ${cb.games.toLocaleString()} club games</span></div>`
+    + '<div class="card-body"><div class="card-row">They left the lesson with a mistake. Find the move that punishes it.</div></div>');
+}
+
+function curveShapes() {
+  const cv = state.study.curve;
+  if (cv.solved || !cv.misses) return [];
+  const u = cv.cb.punish[0].uci;
+  return cv.misses === 1 ? [{ orig: u.slice(0, 2), brush: 'yellow' }] : [{ orig: u.slice(0, 2), dest: u.slice(2, 4), brush: 'blue' }];
+}
+
+function studyCurveAnswer(mv) {
+  const st = state.study;
+  const cv = st.curve;
+  if (cv.solved) return update();
+  const uci = mv.from + mv.to + (mv.promotion && mv.piece === 'p' && /[18]$/.test(mv.to) ? mv.promotion : '');
+  const hit = cv.cb.punish.find((p) => p.uci === uci);
+  if (!hit) {
+    cv.misses++;
+    update();  // snaps back; curveShapes now hints (the piece first, then the move)
+    addMsg('system', cv.misses === 1
+      ? `Not ${mv.san}: ${cv.cb.san} can be punished. Look at the circled piece.`
+      : `Not ${mv.san}. The arrow shows it: ${cv.cb.punish[0].san}.`);
+    return;
+  }
+  cv.solved = true;
+  const before = [...state.extra];
+  state.extra.push(mv.san);
+  update();
+  const replyName = plyName(before.length + 1, hit.san);
+  const msg = addMsg('coach card study-card curve-card', `<div class="card-head"><b>${cv.misses ? '' : '✓ '}${esc(replyName)} punishes ${esc(cv.name)}</b>${evalPill(hit.eval_white)}</div>`
+    + `<div class="card-body"><div class="card-row card-sub">${esc(cv.cb.line)}</div>`
+    + '<div class="card-row card-actions"><button class="demo-btn" data-line>▶ Show the line</button>'
+    + '<button class="demo-btn" data-why>Why?</button><button class="btn small" data-back>Back to the lesson</button></div></div>');
+  msg.querySelector('[data-line]').onclick = () => {
+    const g = new Chess();
+    before.forEach((san) => g.move(san));
+    const fen = g.fen();
+    const moves = cv.cb.pv.map((u) => g.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] }).san);
+    openDemo({ title: `Punishing ${cv.name}`, start_fen: fen, moves, notes: moves.map(() => ''), ply: 1, then_moves: [] });
+  };
+  msg.querySelector('[data-why]').onclick = () => ask(`In this lesson the opponent played ${cv.name}, which isn't a lesson move. Why is it a mistake, and how does ${replyName} punish it?`);
+  msg.querySelector('[data-back]').onclick = () => { if (state.study === st && st.curve === cv) { closeDemo(false); studyGo(cv.at); } };
 }
 
 // nav buttons: back/start move along the lesson (or undo off-lesson moves); forward follows the main line
 function studyGoTo(n) {
   const st = state.study;
+  if (st.curve) return studyGo(st.curve.at);  // ◀ out of a curveball = back into the lesson where it left
   studyToken++;
   st.waiting = false;
   let target = Math.max(0, Math.min(n, state.extra.length));
@@ -2581,6 +2728,7 @@ function onStudyMove(orig, dest) {
   const c = currentGame();
   let mv;
   try { mv = c.move({ from: orig, to: dest, promotion: 'q' }); } catch { update(); return; }
+  if (st.curve) return studyCurveAnswer(mv);
   const here = studyNodeHere();
   const child = here === null ? undefined : studyNodes()[here].children.find((k) => studyNodes()[k].san === mv.san);
   if (st.mode === 'learn') {
@@ -2638,11 +2786,10 @@ function studyDrillStep() {
       const open = studyLeaves(k.id).filter((l) => (prog[l] || 0) < MASTERED).length;
       return Math.max(1, k.share || 1) * (open ? 1 + open : 0.15);
     });
-    let r = Math.random() * weights.reduce((a, b) => a + b, 0);
-    let pick = kids[0];
-    for (let i = 0; i < kids.length; i++) { r -= weights[i]; if (r <= 0) { pick = kids[i]; break; } }
     st.waiting = false;
-    studyGo(pick.id);
+    const cb = studyCurveball(n);
+    if (cb) return studyThrowCurve(n, cb);
+    studyGo(weightedPick(kids, weights).id);
   }, 650);
 }
 
@@ -2654,9 +2801,24 @@ function studyLineDone(leaf) {
   const msg = addMsg('coach card study-card', `<div class="card-head"><b>Line complete ✓</b><span class="card-sub">${status} · ${studyMasteredCount()}/${studyLeaves().length} lines mastered</span></div>`
     + '<div class="card-body"><div class="card-row card-actions"><button class="btn small" data-again>Drill again</button><button class="btn ghost small" data-learn>Learn this line</button></div></div>');
   msg.querySelector('[data-again]').onclick = () => setStudyMode('drill');
-  msg.querySelector('[data-learn]').onclick = () => { st.mode = 'learn'; studyShown.clear(); studyGo(st.data.root); };
+  msg.querySelector('[data-learn]').onclick = () => { st.mode = 'learn'; renderChips(); studyShown.clear(); studyGo(st.data.root); };
   st.mistakes = 0;
   update();
+}
+
+// the variation this move enters, when the opening table names this exact position and the name is
+// new on this line (load() fills node.opening): "Yugoslav Attack, Main Line" inside the Dragon lesson
+function studyOpeningName(id) {
+  const n = studyNodes()[id];
+  if (!n.opening) return '';
+  for (let k = n.parent; k !== null; k = studyNodes()[k].parent) {
+    if (studyNodes()[k].opening) { if (studyNodes()[k].opening === n.opening) return ''; break; }
+  }
+  const lesson = state.study.data.name;
+  if (n.opening.startsWith(lesson + ', ')) return n.opening.slice(lesson.length + 2);
+  // before the lesson's own position the general names ("Sicilian Defense") are just noise; after it, a
+  // name from outside the lesson means the line transposed into another opening
+  return n.trunk || n.opening === lesson ? '' : n.opening;
 }
 
 // a card for the node you just reached: its note, then your move to find or the opponent's tries
@@ -2678,20 +2840,49 @@ function studyCard(id) {
         + (n.children.length > 1 ? '<span class="card-sub">they\'ll play one of these; ◀ back to your move to see another</span>' : '') + '</div>');
     }
   }
+  if (st.mode === 'learn') {
+    // the overview bullets that belong to this position, each shown once per session
+    const here = studyMoments().filter((m) => m.nodes.includes(id) && !momentsSeen.has(momentKey(m)));
+    here.forEach((m, i) => { momentsSeen.add(momentKey(m)); rows.push(momentCallout(m, id, i === 0)); });
+    if (here.length) renderMomentChecklist();
+    if (!n.children.length && studyMoments().length) {
+      // end of a line: the ideas this line went through, and any that belong to no single position
+      const path = new Set();
+      for (let k = id; k !== null; k = studyNodes()[k].parent) path.add(k);
+      const along = studyMoments().filter((m) => m.nodes.some((k) => path.has(k)));
+      const general = studyMoments().filter((m) => !m.nodes.length);
+      if (along.length || general.length) {
+        rows.push(`<div class="study-sec moment recap"><div class="study-sec-title">Your plan from here</div>`
+          + (along.length ? `<ul>${along.map((m) => `<li>${MOMENT_KIND[m.kind].label.split(' ')[0]} ${esc(m.title)}</li>`).join('')}</ul>` : '')
+          + general.map((m) => `<div class="moment-text">${lessonText(momentText(m), id)}</div>`).join('') + '</div>');
+        general.forEach((m) => momentsSeen.add(momentKey(m)));
+        renderMomentChecklist();
+      }
+    }
+  }
+  // the coach buttons sit on the card for the position you're asked about (your move, or a line's end),
+  // shown only while the board is on that position (syncCards)
+  if (st.mode === 'learn' && (mine || !n.children.length)) {
+    rows.push(`<div class="card-row card-chips">${CHIPS.study.map(([label], i) =>
+      `<button class="chip study-chip" data-i="${i}" data-node="${id}" data-tip="${esc(CHIP_TIPS[label] || '')}">${esc(label)}</button>`).join('')}</div>`);
+  }
   if (!rows.length) return;
   studyShown.add(id);
-  // older cards fold up; the overview stays open through White's automatic first move (playing Black),
-  // or it would fold a second after the lesson opens
-  const keepOverview = n.parent === st.data.root;
-  document.querySelectorAll('.msg.study-card:not(.collapsed)').forEach((el) => {
-    if (el.querySelector('.card-body') && !(keepOverview && el.classList.contains('study-overview'))) el.classList.add('collapsed');
-  });
+  // earlier cards stay open (they're worth rereading); each still folds by clicking its header
   const pill = n.eval_white ? evalPill(n.eval_white) : '';
-  const msg = addMsg('coach card study-card', `<div class="card-head"><b>${esc(studyMoveName(id))}</b>${pill}<span class="card-sub">${n.trunk ? '' : n.share ? `${n.share}% of master games` : n.source === 'engine' ? "engine's choice" : ''}</span><span class="card-caret">▾</span></div>`
+  const named = studyOpeningName(id);
+  const msg = addMsg('coach card study-card', `<div class="card-head"><b>${esc(studyMoveName(id))}</b>${pill}${named ? `<span class="card-open">${esc(named)}</span>` : ''}<span class="card-sub">${n.trunk ? '' : n.share ? `${n.share}% of master games` : n.source === 'engine' ? "engine's choice" : ''}</span><span class="card-caret">▾</span></div>`
     + `<div class="card-body">${rows.join('')}</div>`);
   msg.querySelector('.card-head').onclick = () => msg.classList.toggle('collapsed');
   wireLessonMoves(msg);
+  msg.querySelectorAll('.study-chip').forEach((b) => {
+    const [, q, , action] = CHIPS.study[+b.dataset.i];
+    b.onclick = () => { if (studyChipLive(b)) (action ? action() : ask(q, { hideQuestion: true })); };
+  });
+  syncCards();
 }
+
+const studyChipLive = (b) => !!state.study && !state.study.waiting && !state.demo && studyNodeHere() === b.dataset.node;
 
 function renderStudyInfo() {
   const st = state.study;
@@ -2700,7 +2891,8 @@ function renderStudyInfo() {
   const leaves = studyLeaves();
   const count = studyMasteredCount();
   let status = '';
-  if (st.mode === 'drill') status = st.waiting ? 'Opponent is moving…' : st.hint ? 'Find the lesson move.' : studyNodeHere() !== null && !studyNodes()[studyNodeHere()].children.length ? '' : 'Your move.';
+  if (st.curve) status = st.curve.solved ? 'Curveball punished.' : 'Curveball: find the best reply.';
+  else if (st.mode === 'drill') status = st.waiting ? 'Opponent is moving…' : st.hint ? 'Find the lesson move.' : studyNodeHere() !== null && !studyNodes()[studyNodeHere()].children.length ? '' : 'Your move.';
   else if (studyNodeHere() === null) status = 'Off the lesson: press ◀ to go back.';
   else if (st.waiting) status = 'Opponent is moving…';
   else status = studyNodes()[studyNodeHere()].children.length ? 'Play the arrowed move.' : 'End of this line: ◀ to go back and try another.';
@@ -3011,6 +3203,8 @@ function cardIsCurrent(fen) {
 function syncCards() {
   document.querySelectorAll('.card-play-btn, .card-why').forEach((b) => { b.disabled = !cardIsCurrent(b.dataset.fen); });
   document.querySelectorAll('.card-back').forEach((b) => { b.disabled = !state.demo; });  // only meaningful while a demo is open
+  // the coach buttons show only on the card for the position on the board (◀ back to a card brings them back)
+  document.querySelectorAll('.card-chips').forEach((row) => { row.hidden = !studyChipLive(row.querySelector('.study-chip')); });
 }
 
 // ---- "only a GM would see this": engine check each time it's the player's turn
