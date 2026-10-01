@@ -192,7 +192,7 @@ function renderBoard() {
     movable: { free: false, color: canMove(c, turn) ? turn : undefined, dests: dests(c) },
     draggable: { deleteOnDropOff: false },
   });
-  cg.setAutoShapes([]);
+  cg.setAutoShapes(baseShapes());
   return c;
 }
 
@@ -219,7 +219,8 @@ function onBoardMove(orig, dest) {
 function canMove(c, turn) {
   if (c.isGameOver()) return false;
   if (state.demo) return true;
-  if (state.study?.mode === 'drill') return !state.study.waiting && turn === state.study.data.color && studyNodeHere() !== null;
+  // a lesson: you play your side, the app plays theirs (Learn and Drill alike)
+  if (state.study) return !state.study.waiting && turn === state.study.data.color && studyNodeHere() !== null;
   if (state.replay) return turn === state.replay.color && state.ply < state.review.moves.length && !state.extra.length;
   const p = state.play;
   if (!p) return true;
@@ -714,14 +715,14 @@ function update() {
   clearHeldThreats();  // right-clicked threat arrows are stale once the position moves on
   // a pinned/hovered square from chat text refers to the position it was clicked on — stale once
   // the board moves on, so it would otherwise sit there highlighted with no visible explanation
-  if (pinnedSquares.size || hoverSquare) {
-    pinnedSquares.clear();
-    hoverSquare = null;
-    paintSquares();
-  }
+  pinnedSquares.clear();
+  hoverSquare = null;
   const c = renderBoard();
+  paintSquares();  // also repaints the lesson's next-move square for the new position
   try { history.replaceState(null, '', state.ply ? `#ply=${state.ply}` : location.pathname); } catch {}
   renderInfo();
+  // a lesson is walked by playing its moves on the board, so there's no skipping ahead
+  $('nav-next').disabled = $('nav-end').disabled = !!state.study && !state.demo;
   renderMoves();
   renderVariation();
   syncLineButtons();
@@ -800,7 +801,7 @@ const pinnedSquares = new Set();
 let hoverSquare = null;
 
 function paintSquares() {
-  const marks = new Map();
+  const marks = new Map(studyNextSquares());
   pinnedSquares.forEach((sq) => marks.set(sq, 'sq-pin'));
   if (hoverSquare) marks.set(hoverSquare, 'sq-hover');
   cg.set({ highlight: { custom: marks } });
@@ -1165,7 +1166,7 @@ function movesShapesFor(sq) {
 }
 
 function renderShapes() {
-  cg.setAutoShapes([...heldThreats, ...(hoverPieceSq ? movesShapesFor(hoverPieceSq) : [])]);
+  cg.setAutoShapes([...baseShapes(), ...heldThreats, ...(hoverPieceSq ? movesShapesFor(hoverPieceSq) : [])]);
 }
 
 function showPieceHover(sq) {
@@ -1203,7 +1204,7 @@ function myColor() {
 }
 
 function previewMove(token, on) {
-  if (!on) { cg.setAutoShapes([]); return; }
+  if (!on) { cg.setAutoShapes(baseShapes()); return; }
   const t = resolveToken(token);
   if (!t || t.k !== currentLine().at) return;
   const mv = legalAt(t.k, t.san) || legalAtFlipped(t.k, t.san);
@@ -2206,8 +2207,11 @@ function renderReplayInfo() {
 // A lesson is a tree built once on the server (core/study.py: master games + engine + the coach's
 // notes) and saved, so walking and drilling it is free. It runs on the analysis board: the board is
 // the start position plus `state.extra`, and `state.study.node` is the tree node those moves reach
-// (null when you've played off the lesson in Learn mode). Learn: move freely, cards explain each step
-// and list the opponent's tries. Drill: you play your side, the app answers with the opponent's tries
+// (null when you've played off the lesson). Learn: one move at a time — the next lesson move is an
+// arrow on the board (all the opponent's tries where they have a choice) plus arrows for what the last
+// move newly attacks, and you advance only by playing your lesson move yourself (no forward button);
+// the opponent's reply plays itself after a pause, picked among their tries of similar value; cards
+// explain each step. Drill: you play your side, the app answers with the opponent's tries
 // weighted by how often masters play them, and a wrong move is caught with the right one and its note.
 
 const studyShown = new Set();   // node ids whose card has been posted this session
@@ -2215,6 +2219,61 @@ let studyToken = 0;             // invalidates a pending drill reply
 
 const studyNodes = () => state.study.data.nodes;
 const studyMine = (fen) => fen.split(' ')[1] === state.study.data.color[0];
+
+// arrows that belong to the position rather than to a hover: the Learn guide (empty elsewhere)
+function baseShapes() {
+  return state.study && state.study.mode === 'learn' && !state.demo ? studyGuideShapes() : [];
+}
+
+// Learn: the square of the piece about to move (green for yours, blue for each of their tries)
+function studyNextSquares() {
+  if (!(state.study && state.study.mode === 'learn' && !state.demo)) return [];
+  const id = studyNodeHere();
+  if (id === null) return [];
+  const n = studyNodes()[id];
+  const mine = studyMine(n.fen);
+  const kids = mine ? (n.main !== null ? [n.main] : []) : n.children;
+  return kids.map((k) => [studyNodes()[k].uci.slice(0, 2), mine ? 'sq-next' : 'sq-next-opp']);
+}
+
+function studyGuideShapes() {
+  const id = studyNodeHere();
+  if (id === null) return [];
+  const n = studyNodes()[id];
+  const shapes = studyThreatShapes(n);
+  const mineNext = studyMine(n.fen);
+  for (const k of n.children) {
+    if (mineNext && k !== n.main) continue;  // your side: the one lesson move
+    const u = studyNodes()[k].uci;
+    shapes.push({ orig: u.slice(0, 2), dest: u.slice(2, 4), brush: k === n.main ? (mineNext ? 'green' : 'blue') : 'paleBlue' });
+  }
+  return shapes;
+}
+
+// what the move into this node newly attacks: enemy pieces the mover hits now but didn't before
+// (so discovered attacks count too), pawns only when undefended, checks included
+function studyThreatShapes(n) {
+  if (n.parent === null) return [];
+  let before, after;
+  try { before = new Chess(studyNodes()[n.parent].fen); after = new Chess(n.fen); } catch { return []; }
+  const mover = before.turn();
+  const enemy = after.turn();
+  const opp = mover !== state.study.data.color[0];
+  const shapes = [];
+  for (const row of after.board()) {
+    for (const p of row) {
+      if (!p || p.color !== enemy) continue;
+      if (p.type === 'p' && after.attackers(p.square, enemy).length) continue;
+      const old = new Set(before.attackers(p.square, mover));
+      for (const from of after.attackers(p.square, mover)) {
+        if (old.has(from)) continue;
+        const brush = p.type === 'k' ? (opp ? 'hvOppCheck' : 'hvCheck') : (opp ? 'hvOppCapture' : 'hvCapture');
+        shapes.push(...(after.get(from).type === 'n' ? knightShapes(from, p.square, brush) : [{ orig: from, dest: p.square, brush }]));
+      }
+    }
+  }
+  return shapes;
+}
 
 function studyLine(id) {
   const out = [];
@@ -2280,16 +2339,15 @@ async function searchStudies(q) {
   try { res = await api(`/api/study/openings?q=${encodeURIComponent(q)}`); } catch (e) { $('study-list').innerHTML = `<p class="hint">${esc(e.message)}</p>`; return; }
   if (token !== studySearchToken) return;
   $('study-list').innerHTML = res.openings.map((o, i) => `<div class="game-row study-row" data-i="${i}">
-      <span class="who">${esc(o.name)}</span><span class="res">${o.built.length ? '✓ built' : ''}</span>
-      <span class="hint">${esc(o.eco)} · ${esc(numberedLine(o.moves))}</span></div>`).join('')
+      <span class="who">${esc(o.name)}</span><span class="res">${o.built ? '✓ built' : ''}</span>
+      <span class="hint">${esc(o.eco)} · you play ${o.color === 'white' ? 'White' : 'Black'} · ${esc(numberedLine(o.moves))}</span></div>`).join('')
     || '<p class="hint">No opening by that name.</p>';
   $('study-list').querySelectorAll('.study-row').forEach((el) => {
     el.onclick = () => {
       studyPick = res.openings[+el.dataset.i];
       $('study-list').querySelectorAll('.study-row').forEach((x) => x.classList.toggle('on', x === el));
-      $('study-color').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.color === studyPick.default_color));
       $('study-go').disabled = false;
-      $('study-go').textContent = studyPick.built.includes(studyPick.default_color) ? 'Start lesson' : 'Build lesson (a few minutes)';
+      $('study-go').textContent = studyPick.built ? 'Start lesson' : 'Build lesson (a few minutes)';
     };
   });
 }
@@ -2300,8 +2358,7 @@ function numberedLine(sans) {
 
 async function startStudyFromDialog() {
   if (!studyPick) return;
-  const color = $('study-color').querySelector('.on')?.dataset.color || studyPick.default_color;
-  const req = { name: studyPick.name, color };
+  const req = { name: studyPick.name };
   $('study-go').disabled = true;
   try {
     const job = await api('/api/study/build', req);
@@ -2442,6 +2499,7 @@ function startStudy(study, review) {
   msg.querySelector('[data-go=learn]').onclick = () => setStudyMode('learn');
   msg.querySelector('[data-go=drill]').onclick = () => setStudyMode('drill');
   update();
+  studyLearnStep();  // the lesson opens in Learn: as Black, White's first move plays itself
 }
 
 function setStudyMode(mode) {
@@ -2467,10 +2525,38 @@ function studyGo(id, { quiet = false } = {}) {
   st.node = id;
   st.hint = null;
   state.extra = studyLine(id);
-  cg.setAutoShapes([]);
   update();
   if (!quiet) studyCard(id);
-  if (st.mode === 'drill') studyDrillStep();
+  if (st.mode === 'drill') studyDrillStep(); else studyLearnStep();
+}
+
+// Learn: on the opponent's turn, leave their arrows up for a moment, then play one of their tries —
+// any whose engine eval is within LEARN_SIMILAR of their best, at random, so replaying a line
+// (◀ back to your move) can show a different reply
+const LEARN_PAUSE_MS = 1000;
+const LEARN_SIMILAR = 0.3;  // pawns
+function studyLearnStep() {
+  const st = state.study;
+  const n = studyNodes()[st.node];
+  if (!n.children.length || studyMine(n.fen)) return;
+  const token = ++studyToken;
+  st.waiting = true;
+  update();
+  setTimeout(() => {
+    if (token !== studyToken || state.study !== st || st.mode !== 'learn') return;
+    const sign = st.data.color === 'white' ? -1 : 1;  // the opponent's point of view
+    const val = (k) => {
+      const e = String(studyNodes()[k].eval_white ?? '');
+      const v = e.includes('#') ? (e.includes('-') ? -100 : 100) : parseFloat(e);
+      return Number.isNaN(v) ? null : sign * v;
+    };
+    const vals = n.children.map(val);
+    const best = Math.max(...vals.filter((v) => v !== null));
+    const near = n.children.filter((k, i) => vals[i] !== null && vals[i] >= best - LEARN_SIMILAR);
+    const pool = near.length ? near : [n.main];
+    st.waiting = false;
+    studyGo(pool[Math.floor(Math.random() * pool.length)]);
+  }, LEARN_PAUSE_MS);
 }
 
 // nav buttons: back/start move along the lesson (or undo off-lesson moves); forward follows the main line
@@ -2479,26 +2565,16 @@ function studyGoTo(n) {
   studyToken++;
   st.waiting = false;
   let target = Math.max(0, Math.min(n, state.extra.length));
-  // a drill steps back to your own move: landing on theirs would just replay their answer
-  if (st.mode === 'drill' && target > 0 && (target % 2 === 0) !== (st.data.color === 'white')) target--;
+  // step back to your own move: landing on theirs would just replay their answer
+  if (target > 0 && (target % 2 === 0) !== (st.data.color === 'white')) target--;
   state.extra = state.extra.slice(0, target);
   const id = studyNodeHere();
-  if (id !== null) { st.node = id; st.hint = null; update(); if (st.mode === 'drill') studyDrillStep(); } else update();
+  if (id !== null) { st.node = id; st.hint = null; update(); if (st.mode === 'drill') studyDrillStep(); else studyLearnStep(); } else update();
 }
 
-function studyForward() {
-  const id = studyNodeHere();
-  if (id === null || state.study.mode === 'drill') return;
-  const main = studyNodes()[id].main;
-  if (main !== null) studyGo(main);
-}
-
-function studyEnd() {
-  if (state.study.mode === 'drill') return;
-  let id = studyNodeHere() ?? state.study.data.root;
-  while (studyNodes()[id].main !== null) id = studyNodes()[id].main;
-  studyGo(id);
-}
+// no skipping ahead in a lesson: Learn advances by playing the arrowed move, Drill by finding it
+function studyForward() {}
+function studyEnd() {}
 
 function onStudyMove(orig, dest) {
   const st = state.study;
@@ -2508,11 +2584,12 @@ function onStudyMove(orig, dest) {
   const here = studyNodeHere();
   const child = here === null ? undefined : studyNodes()[here].children.find((k) => studyNodes()[k].san === mv.san);
   if (st.mode === 'learn') {
-    if (child !== undefined) return studyGo(child);
-    state.extra.push(mv.san);  // off the lesson: free analysis, the coach can still be asked
-    st.node = null;
-    update();
-    if (here !== null) addMsg('system', `${mv.san} isn't in this lesson. Ask the coach about it, or press ◀ to go back to the lesson.`);
+    if (child !== undefined) return studyGo(child);  // the arrowed move, or another of the opponent's tries
+    update();  // anything else snaps back: the lesson is learned by playing its own moves
+    if (here !== null && st.nudged !== here) {
+      st.nudged = here;
+      addMsg('system', `Not ${mv.san}: play the arrowed move. Ask the coach if you want to know about ${mv.san}.`);
+    }
     return;
   }
   // drill: only your side's moves reach here (canMove)
@@ -2591,22 +2668,28 @@ function studyCard(id) {
   const rows = [];
   if (n.note) rows.push(`<div class="card-row study-note">${lessonText(n.note, id)}</div>`);
   if (st.mode === 'learn' && n.children.length) {
+    // moves are named, not buttons: you play them on the board, following the arrow
     if (mine && n.main !== null) {
-      rows.push(`<div class="card-row"><span class="card-k">Your move</span><button class="demo-btn" data-go="${n.main}">${esc(studyMoveName(n.main))}</button>`
+      rows.push(`<div class="card-row"><span class="card-k">Your move</span><b>${esc(studyMoveName(n.main))}</b>`
         + (n.alternatives?.length ? `<span class="card-sub">also played: ${esc(n.alternatives.join(', '))}</span>` : '') + '</div>');
     } else if (!mine) {
       rows.push(`<div class="card-row"><span class="card-k">${n.children.length > 1 ? 'Their tries' : 'They play'}</span>`
-        + n.children.map((k) => `<button class="demo-btn" data-go="${k}">${esc(studyNodes()[k].san)}${studyNodes()[k].share ? ` <span class="card-sub">${studyNodes()[k].share}%</span>` : ''}</button>`).join('') + '</div>');
+        + n.children.map((k) => `<b>${esc(studyNodes()[k].san)}</b>${studyNodes()[k].share ? ` <span class="card-sub">${studyNodes()[k].share}%</span>` : ''}`).join(' · ')
+        + (n.children.length > 1 ? '<span class="card-sub">they\'ll play one of these; ◀ back to your move to see another</span>' : '') + '</div>');
     }
   }
   if (!rows.length) return;
   studyShown.add(id);
-  document.querySelectorAll('.msg.study-card:not(.collapsed)').forEach((el) => { if (el.querySelector('.card-body')) el.classList.add('collapsed'); });
+  // older cards fold up; the overview stays open through White's automatic first move (playing Black),
+  // or it would fold a second after the lesson opens
+  const keepOverview = n.parent === st.data.root;
+  document.querySelectorAll('.msg.study-card:not(.collapsed)').forEach((el) => {
+    if (el.querySelector('.card-body') && !(keepOverview && el.classList.contains('study-overview'))) el.classList.add('collapsed');
+  });
   const pill = n.eval_white ? evalPill(n.eval_white) : '';
   const msg = addMsg('coach card study-card', `<div class="card-head"><b>${esc(studyMoveName(id))}</b>${pill}<span class="card-sub">${n.trunk ? '' : n.share ? `${n.share}% of master games` : n.source === 'engine' ? "engine's choice" : ''}</span><span class="card-caret">▾</span></div>`
     + `<div class="card-body">${rows.join('')}</div>`);
   msg.querySelector('.card-head').onclick = () => msg.classList.toggle('collapsed');
-  msg.querySelectorAll('[data-go]').forEach((b) => { b.onclick = () => { if (state.study === st && studyNodeHere() === id) studyGo(b.dataset.go); }; });
   wireLessonMoves(msg);
 }
 
@@ -2619,6 +2702,8 @@ function renderStudyInfo() {
   let status = '';
   if (st.mode === 'drill') status = st.waiting ? 'Opponent is moving…' : st.hint ? 'Find the lesson move.' : studyNodeHere() !== null && !studyNodes()[studyNodeHere()].children.length ? '' : 'Your move.';
   else if (studyNodeHere() === null) status = 'Off the lesson: press ◀ to go back.';
+  else if (st.waiting) status = 'Opponent is moving…';
+  else status = studyNodes()[studyNodeHere()].children.length ? 'Play the arrowed move.' : 'End of this line: ◀ to go back and try another.';
   $('summary').innerHTML = `<div class="seg study-mode">${['learn', 'drill'].map((m) => `<button data-mode="${m}" class="${st.mode === m ? 'on' : ''}">${m === 'learn' ? 'Learn' : 'Drill'}</button>`).join('')}</div>`
     + `<span class="label" title="A line is mastered after ${MASTERED} clean drill runs in a row">${count}/${leaves.length} mastered</span>${status ? `<span class="label">${esc(status)}</span>` : ''}`
     + '<button class="btn ghost small" id="study-exit">Exit lesson</button>';
@@ -3327,12 +3412,6 @@ $('load-go').onclick = () => {
 $('btn-study').onclick = openStudyDialog;
 $('study-go').onclick = startStudyFromDialog;
 $('study-q').oninput = (e) => { studyPick = null; $('study-go').disabled = true; searchStudies(e.target.value); };
-$('study-color').querySelectorAll('button').forEach((b) => {
-  b.onclick = () => {
-    $('study-color').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
-    if (studyPick) $('study-go').textContent = studyPick.built.includes(b.dataset.color) ? 'Start lesson' : 'Build lesson (a few minutes)';
-  };
-});
 
 $('btn-analysis').onclick = async () => {
   const review = await api('/api/analysis', {});

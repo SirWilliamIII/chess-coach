@@ -276,8 +276,7 @@ def study_openings(q: str = ""):
 
 
 class StudyReq(BaseModel):
-    name: str
-    color: str
+    name: str  # the side isn't chosen: study.side() decides it from the name
 
 
 def _study_job(name: str, color: str):
@@ -292,7 +291,8 @@ def _study_job(name: str, color: str):
 
 @app.post("/api/study/build")
 def study_build(req: StudyReq):
-    if study.load(req.name, req.color):
+    color = study.side(req.name)
+    if study.load(req.name, color):
         return {"status": "done"}
     if not explorer.available():
         raise HTTPException(400, "Building a lesson needs LICHESS_TOKEN in .env (it reads the masters database).")
@@ -301,7 +301,7 @@ def study_build(req: StudyReq):
     if STUDY_JOB["status"] == "running":
         raise HTTPException(409, "Another lesson is still being built; try again when it's done.")
     STUDY_JOB.update(status="running", message="Starting…", error=None, slug=None)
-    threading.Thread(target=_study_job, args=(req.name, req.color), daemon=True).start()
+    threading.Thread(target=_study_job, args=(req.name, color), daemon=True).start()
     return {"status": "running"}
 
 
@@ -314,11 +314,12 @@ def study_job():
 def study_start(req: StudyReq):
     """Open a built study: a fresh analysis board from the start position with a coach that knows
     the lesson. Returns the study and the review, like the other mode switches."""
-    s = study.load(req.name, req.color)
+    color = study.side(req.name)
+    s = study.load(req.name, color)
     if not s:
         raise HTTPException(404, "that lesson hasn't been built yet")
     with S.lock:
-        new_analysis(chess.STARTING_FEN, study.coach_note(s), player_color=req.color)
+        new_analysis(chess.STARTING_FEN, study.coach_note(s), player_color=color)
     return {"study": s, "review": public_review()}
 
 

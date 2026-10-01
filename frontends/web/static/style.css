@@ -245,6 +245,7 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .nav { display: flex; gap: 4px; }
 .navbtn { flex: 1; background: #3c3a37; border: 0; color: var(--text); border-radius: 5px; padding: 6px 0; font-size: 14px; position: relative; }
 .navbtn:hover { background: #4b4845; }
+.navbtn:disabled { opacity: 0.35; cursor: default; background: #3c3a37; }
 .navbtn:hover::after, .navbtn:focus::after {
   content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%);
   z-index: 20; white-space: nowrap; background: #1b1a18; color: #eee; border: 1px solid #555; border-radius: 6px;
@@ -519,6 +520,8 @@ ol.points li:nth-child(3n+3) .pt-title .san { color: #e6b450; border-color: #906
 .msg .sq { font-weight: 700; color: #d9f2b8; border-bottom: 2px solid #6c9a40; cursor: pointer; padding: 0 1px; border-radius: 2px; }
 .msg .sq:hover, .msg .sq.on { background: #4a7030; color: #eafddc; }
 cg-board square.sq-hover { background: rgba(255, 196, 0, .55); box-shadow: inset 0 0 0 3px rgba(255, 170, 0, .9); }
+cg-board square.sq-next { background: rgba(21, 120, 27, .5); box-shadow: inset 0 0 0 3px #15781b; }
+cg-board square.sq-next-opp { background: rgba(0, 48, 136, .4); box-shadow: inset 0 0 0 3px rgba(0, 48, 136, .8); }
 cg-board square.sq-pin { background: rgba(255, 140, 0, .45); box-shadow: inset 0 0 0 4px #ff8c00; }
 
 /* ---------- library ---------- */

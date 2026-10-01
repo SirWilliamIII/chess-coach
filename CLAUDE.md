@@ -255,10 +255,21 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   **What the colour changes:** the trunk is identical; the colour only decides which side is `mine` in
   `_build_tree()` — one move per position for you (masters + engine check), several master tries for the
   opponent (`OPP_WIDTH`, no engine filter, so a dubious but popular opponent try stays in). Plus the notes
-  prompt's perspective, board orientation and which side Drill lets you move. The picker's
-  `default_color` is the side that made the opening's last named move (Najdorf → Black, Catalan → White).
-  Side effect (from reading the code, not observed in a build): the *other* colour gets a "how to meet X"
-  lesson whose own moves are just the masters' popular choice, branching on the side that defines the opening.
+  prompt's perspective, board orientation and which side Drill lets you move.
+  **One side per opening (2026-10-01, user's call: no colour picker for now).** `study.side(name)` decides it
+  and the server derives it (`StudyReq` has no colour; the dialog row says "you play White/Black"). Rule:
+  whoever *chose* the named line, read from the most specific part of the name back — Defense /
+  Countergambit / Counterattack / Accepted / Declined → Black, Attack → White ("System" deliberately not a
+  keyword: Hedgehog, Zaitsev, Gurgenidze are Black's), a "with … Defense" part is skipped (the Vienna Gambit
+  ECO name), a Gambit → the side that's material down at the end of its named line after the opponent's
+  best capture (`_gambit_balance()`: handles Halloween Nxe5, Cochrane/Alien Nxf7, Hamppe-Muzio …gxf3), any
+  other part with its own ECO entry → that entry's last mover. `SIDE_OVERRIDES` (also covers sub-variations)
+  is the fix for misfires as they're found; so far Marshall Attack → Black and Ruy Lopez: Closed → White.
+  Known judgement calls left to the rule: Black "Defense" variations inside a White family (Vienna: Max Lange
+  Defense → Black), White's sidelines inside a Black opening (Scandinavian: Leonhardt Gambit → White).
+  Lessons built earlier for the other colour (`queen-s-gambit-accepted-white`,
+  `catalan-opening-open-defense-classical-line-white`) are still on disk but no longer reachable.
+  Untested idea if the overrides grow: pick the side your own opening files (`data/openings*.md`) play.
   **Notes quality, what was learned:** Sonnet 5 with just the move list wrote chess-wrong notes ("…e5 hits
   the bishop on e3", "a protected passed pawn on d5"). Two fixes: each row carries **board facts** from
   `features.move_effects` (captures / attacks / pins / loose pieces / structure changes) plus the
@@ -273,9 +284,25 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   time), `/api/study/start` opens it as a fresh analysis board whose coach gets `study.coach_note()` (the
   overview) as its session note; `board_context()` then calls the moves "on the board in the opening lesson".
   **Frontend** (`app.js`, "opening lessons" section): `state.study` on top of the analysis board
-  (`state.extra` = moves from the start, `studyNodeHere()` maps them to a node). **Learn**: any move; a
-  lesson move follows the tree, anything else is free analysis ("not in this lesson"); a card per node
-  (`studyCard`, once per session) with the note and either "Your move" or "Their tries" buttons.
+  (`state.extra` = moves from the start, `studyNodeHere()` maps them to a node). **Learn** (guided, 2026-10-01):
+  one move at a time — `studyGuideShapes()` draws the next lesson move (green on your turn; on theirs the
+  most common try solid blue, other tries pale) plus `studyThreatShapes()`: what the last move *newly*
+  attacks (enemy pieces the mover hits now but didn't before, so discovered attacks count; pawns only if
+  undefended; checks in the check colour). The square of the piece about to move is filled
+  (`studyNextSquares()`, classes `sq-next` green / `sq-next-opp` blue per try) via chessground's
+  `highlight.custom` in `paintSquares()`, which `update()` now calls on every position change (chat
+  square hovers/pins go on top of it). You play only your side (`canMove` = your colour, as in Drill)
+  and advance only by playing the arrowed move; anything else snaps back with one nudge per position. The
+  opponent's reply is automatic (`studyLearnStep()`): their try arrows stay up for `LEARN_PAUSE_MS` 1 s, then
+  a random pick among tries within `LEARN_SIMILAR` 0.3 pawns of their best by the node's stored eval, so ◀
+  back to your move and replaying can show another reply. `startStudy()` calls it too (a lesson opens in
+  Learn, so as Black White's first move plays itself without clicking "Learn the main line"); that first
+  card doesn't fold the overview. ◀ in Learn, like Drill, lands on your own move. ▶/⏭ are disabled
+  in a lesson (`update()`); ◀/⏮ still work. These arrows go through `baseShapes()`, which `renderBoard()`,
+  `renderShapes()` (hover / right-click arrows) and `previewMove()` all include, so hovering doesn't wipe
+  them. Cards name the moves as text (no buttons, so the card can't skip the board). A card per node
+  (`studyCard`, once per session) with the note and "Your move" or "Their tries". Tested with Playwright via
+  a temporary `window.__debug` hook (Catalan: wrong move, forward, main line, 3...Bb4+ check arrow).
   **Drill**: you play your side (`canMove`), the opponent answers after 650 ms, picking among the
   tries weighted by master share × unmastered lines under each; wrong move = circle on the piece first,
   the arrow + note on the second miss (one mistake counted per position). A line is **mastered** after
@@ -537,7 +564,7 @@ audit):
 The user wants to spend the next session on "Learn openings" (`core/study.py` + the app.js "opening
 lessons" section). Open items already noted elsewhere: read the English and Catalan notes, a live
 "Walk me through this" run, key-move puzzles, move symbols, the bare-pawn-move-as-square quirk, and
-whether the off-colour lesson ("meeting X") needs different tree rules (see "What the colour changes").
+any lesson that builds for the wrong side (add it to `SIDE_OVERRIDES`, see "One side per opening").
 
 ### Revisit next session (from 2026-09-29)
 

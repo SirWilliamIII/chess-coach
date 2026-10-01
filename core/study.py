@@ -70,6 +70,76 @@ def openings() -> list[dict]:
     return _openings
 
 
+# Names the rule below gets wrong, as found; {ECO name: "white" | "black"}. Also applies to the name's
+# sub-variations unless a more specific part of their name decides.
+SIDE_OVERRIDES = {
+    "Ruy Lopez: Marshall Attack": "black",  # Black's gambit (8...d5), despite "Attack"
+    "Ruy Lopez: Marshall Attack, Original Marshall Attack": "black",
+    "Ruy Lopez: Closed": "white",           # the table names it at Black's 5...Be7; it's White's main line
+}
+
+_BLACK_WORDS = re.compile(r"\b(Defen[cs]e|Countergambit|Counterattack|Accepted|Declined)\b")
+# not "System": as many are Black's (Hedgehog, Zaitsev, Gurgenidze) as White's, so those go by their line
+_WHITE_WORDS = re.compile(r"\bAttack\b")
+_VALUES = {chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3, chess.ROOK: 5, chess.QUEEN: 9}
+
+
+def _last_mover(moves: list[str]) -> str:
+    return "white" if len(moves) % 2 else "black"
+
+
+def _gambit_balance(moves: list[str]) -> int:
+    """Material (White minus Black) at the end of a gambit's named line, counting the side to move's
+    best capture: the offer is often a move that hasn't been taken yet (Vienna Gambit f4, Halloween
+    Nxe5 with ...Nxe5 coming), or one that's taken (Hamppe-Muzio ...gxf3). A capture onto a defended
+    square counts as losing the capturing piece, so a defended pawn isn't 'won' by a queen."""
+    b = chess.Board()
+    for san in moves:
+        b.push_san(san)
+    bal = sum(v * (len(b.pieces(p, chess.WHITE)) - len(b.pieces(p, chess.BLACK))) for p, v in _VALUES.items())
+    gain = 0
+    for mv in b.legal_moves:
+        victim = b.piece_at(mv.to_square)
+        if not victim or victim.piece_type == chess.KING:
+            continue
+        net = _VALUES[victim.piece_type]
+        if b.is_attacked_by(not b.turn, mv.to_square):
+            net -= _VALUES.get(b.piece_type_at(mv.from_square), 0)
+        gain = max(gain, net)
+    return bal + (gain if b.turn == chess.WHITE else -gain)
+
+
+def side(name: str) -> str:
+    """The one side a lesson is built for: whoever chose this named line. Read from the most specific
+    part of the name back ("Sicilian Defense: Najdorf Variation, English Attack" → English Attack →
+    White): Defense/Countergambit/Accepted/Declined → Black, Attack → White; a Gambit belongs to
+    the side that's material down at the end of its named line (the table often names a gambit only
+    once it's been taken, e.g. Hamppe-Muzio ends on ...gxf3), else whoever moved last; any other part
+    with its own table entry ("Najdorf Variation", "Closed") → whoever made that entry's last move."""
+    by_name = {o["name"]: o for o in openings()}
+    cuts = [m.end() for m in re.finditer(r"[^:,]+", name)]
+    for end in reversed(cuts):
+        prefix = name[:end].strip()
+        if prefix in SIDE_OVERRIDES:
+            return SIDE_OVERRIDES[prefix]
+        part = re.split(r"[:,]", prefix)[-1].strip()
+        if part.startswith("with "):  # "Vienna Gambit, with Max Lange Defense": the defense isn't the subject
+            continue
+        if _BLACK_WORDS.search(part):
+            return "black"
+        if _WHITE_WORDS.search(part):
+            return "white"
+        entry = by_name.get(prefix)
+        if not entry:
+            continue
+        if "Gambit" in part:
+            bal = _gambit_balance(entry["moves"])
+            if bal:
+                return "black" if bal > 0 else "white"
+        return _last_mover(entry["moves"])
+    return _last_mover(by_name[name]["moves"]) if name in by_name else "white"
+
+
 def slug(name: str, color: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") + "-" + color
 
@@ -79,9 +149,11 @@ def search(q: str, limit: int = 40) -> list[dict]:
     hits = [o for o in openings() if all(w in o["name"].lower() for w in words)] if words \
         else [o for o in openings() if o["name"] in POPULAR]
     hits.sort(key=lambda o: (o["name"] not in POPULAR, len(o["moves"]), o["name"]))
-    return [{**o, "default_color": "white" if len(o["moves"]) % 2 else "black",
-             "built": [c for c in ("white", "black") if (STUDY_DIR / f"{slug(o['name'], c)}.json").exists()]}
-            for o in hits[:limit]]
+    out = []
+    for o in hits[:limit]:
+        color = side(o["name"])
+        out.append({**o, "color": color, "built": (STUDY_DIR / f"{slug(o['name'], color)}.json").exists()})
+    return out
 
 
 def load(name: str, color: str) -> dict | None:
