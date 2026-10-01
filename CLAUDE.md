@@ -145,7 +145,11 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   **State 2026-09-30:** `openings.md` (472 lines: Caro-Kann, Scotch, QGA, KID, Vienna, Vienna Gambit,
   Scandinavian, Traxler) + `openings/openings2.md` (1,401 lines, 23 sections) = 1,842 unique lines, 16,779
   positions, **403 traps** (196 set by White, 207 by Black; most in Italian/Traxler 72, Elephant 44, Vienna 34,
-  Alekhine 32, Scotch 31). Cold build of the second batch: 58 min (≈380 new positions/min, then the depth-20
+  Alekhine 32, Scotch 31). **2026-10-01:** added `openings/openings3.md` (406 pgns, 391 unique lines, 15
+  sections, mostly gambit counters: Halloween, Alien, Elephant, Cochrane, Italian sidelines, Sicilians) →
+  2,233 lines, 19,368 positions, **479 traps** (71 reachable only through the new file, 59 set by White;
+  biggest: Two Knights 3.Bc4 Nf6 section 17, "Win Every Game As White" 10, Halloween 8, Elephant 7).
+  Build took 30 min (cached evals reused). Cold build of the second batch: 58 min (≈380 new positions/min, then the depth-20
   recheck); the first batch alone took 15 min. The server keeps serving the old index while a rebuild runs.
   **Tested:** a review of a Scotch game with 5...Nf6?? 6.Nc3 (card rows "fell"/"missed", refutation demo, no
   page errors, Playwright with stubbed chat) and `/api/opponent_card` on both sides of that trap. **Not
@@ -248,6 +252,13 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   `NOTES_SCHEMA`) that writes the overview + a note per node. Rating is deliberately *not* a factor (user's
   call: theory first). Lichess gives castling as king-takes-rook (`e8h8`); moves go through
   `board.parse_uci()` so stored UCI is `e8g8`.
+  **What the colour changes:** the trunk is identical; the colour only decides which side is `mine` in
+  `_build_tree()` — one move per position for you (masters + engine check), several master tries for the
+  opponent (`OPP_WIDTH`, no engine filter, so a dubious but popular opponent try stays in). Plus the notes
+  prompt's perspective, board orientation and which side Drill lets you move. The picker's
+  `default_color` is the side that made the opening's last named move (Najdorf → Black, Catalan → White).
+  Side effect (from reading the code, not observed in a build): the *other* colour gets a "how to meet X"
+  lesson whose own moves are just the masters' popular choice, branching on the side that defines the opening.
   **Notes quality, what was learned:** Sonnet 5 with just the move list wrote chess-wrong notes ("…e5 hits
   the bishop on e3", "a protected passed pawn on d5"). Two fixes: each row carries **board facts** from
   `features.move_effects` (captures / attacks / pins / loose pieces / structure changes) plus the
@@ -520,6 +531,13 @@ audit):
   still real language-model work.
 
 ## TODOs / open decisions
+
+### Next focus (2026-10-01): opening lessons
+
+The user wants to spend the next session on "Learn openings" (`core/study.py` + the app.js "opening
+lessons" section). Open items already noted elsewhere: read the English and Catalan notes, a live
+"Walk me through this" run, key-move puzzles, move symbols, the bare-pawn-move-as-square quirk, and
+whether the off-colour lesson ("meeting X") needs different tree rules (see "What the colour changes").
 
 ### Revisit next session (from 2026-09-29)
 
