@@ -259,6 +259,18 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .eline .ev.w { color: #fff; }
 .eline .ev.b { color: var(--muted); }
 .eline .pv { overflow: hidden; text-overflow: ellipsis; color: #d5d4d0; }
+#maia-pane { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
+.maia-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.maia-head .toggle { margin-bottom: 0; }
+#maia-rating { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; font-size: 12px; padding: 1px 2px; }
+#maia-lines { margin-top: 4px; }
+.mline { display: grid; grid-template-columns: 52px 1fr 34px 58px; gap: 8px; align-items: center; padding: 2px 0; }
+.mline .mmove { font-weight: 700; }
+.mline .mbar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.mline .mbar span { display: block; height: 100%; background: var(--muted); }
+.mline.best .mbar span { background: var(--accent); }
+.mline .mpct { text-align: right; color: #d5d4d0; }
+.mline .mev { color: var(--muted); font-size: 12px; white-space: nowrap; }
 
 /* ---------- chat ---------- */
 .chat-head {

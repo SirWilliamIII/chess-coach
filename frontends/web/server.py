@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import eco, gm_moments, library, openings, opening_quips, opponent_card, repertoire, study, usage
+from core import eco, gm_moments, library, maia, openings, opening_quips, opponent_card, repertoire, study, usage
 from core import org_spend as org_spend_mod
 from core.coach import Coach, prompt_hash
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
@@ -37,6 +37,7 @@ STATIC = Path(__file__).parent / "static"
 class State:
     engine: Engine | None = None
     bot: Bot | None = None
+    maia: maia.Maia | None = None
     review: dict | None = None
     coach: Coach | None = None
     me: str | None = None
@@ -51,6 +52,7 @@ S = State()
 async def lifespan(app):
     S.engine = Engine()
     S.bot = Bot()
+    S.maia = maia.Maia()  # the model itself loads on the first request
     new_analysis(chess.STARTING_FEN)
     repertoire.index()  # loads the trap index, or starts building it if data/openings.md changed
     yield
@@ -112,7 +114,7 @@ def favicon():
 def config():
     return {"me": os.environ.get("CHESS_USER", ""),
             "coach_ready": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
-            "explorer_ready": explorer.available()}
+            "explorer_ready": explorer.available(), "maia_ready": maia.available(), "maia_ratings": maia.RATINGS}
 
 
 @app.get("/api/games")
@@ -334,9 +336,14 @@ PRACTICE_NOTE = (
 )
 
 
+def bot_levels() -> list[dict]:
+    # Maia plays 600-2500 when installed; a clone without it keeps the old Stockfish levels.
+    return maia.BOT_LEVELS if maia.available() else BOT_LEVELS
+
+
 @app.get("/api/play/levels")
 def play_levels():
-    return [{"id": lv["id"], "name": lv["name"]} for lv in BOT_LEVELS]
+    return [{"id": lv["id"], "name": lv["name"]} for lv in bot_levels()]
 
 
 class PlayNewReq(BaseModel):
@@ -349,7 +356,7 @@ class PlayNewReq(BaseModel):
 
 @app.post("/api/play/new")
 def play_new(req: PlayNewReq):
-    level = next((lv for lv in BOT_LEVELS if lv["id"] == req.level), None)
+    level = next((lv for lv in bot_levels() if lv["id"] == req.level), None)
     if level is None or req.color not in ("white", "black"):
         raise HTTPException(400, "bad color or level")
     board = parse_fen(req.fen or chess.STARTING_FEN)
@@ -371,14 +378,21 @@ def play_new(req: PlayNewReq):
 class PlayMoveReq(BaseModel):
     fen: str
     level: int
+    start_fen: str | None = None  # with `moves`: the game so far, which Maia reads (last 8 positions)
+    moves: list[str] = []         # SAN
+    opp_elo: int | None = None    # the human's rating, when known; Maia then plays against that
 
 
 @app.post("/api/play/move")
 def play_move(req: PlayMoveReq):
-    board = parse_fen(req.fen)
+    board = with_history(parse_fen(req.fen), req.start_fen, req.moves)
     if board.is_game_over():
         raise HTTPException(400, "game is over")
-    move = S.bot.play(board, req.level)
+    level = next((lv for lv in bot_levels() if lv["id"] == req.level), None)
+    if level and "maia" in level:
+        move = S.maia.play(board, level["maia"], req.opp_elo)
+    else:
+        move = S.bot.play(board, req.level)
     return {"uci": move.uci(), "san": board.san(move)}
 
 
@@ -593,6 +607,39 @@ def evaluate(req: EvalReq):
         return {"eval": "0.00", "cp": 0, "lines": []}
     lines = S.engine.lines(board, multipv=max(1, min(3, req.lines)), seconds=0.6)
     return {"eval": lines[0]["eval_white"], "cp": lines[0]["cp_white"], "lines": lines}
+
+
+def with_history(board: chess.Board, start_fen: str | None, moves: list[str]) -> chess.Board:
+    """`board` with the moves that led to it, when they replay to the same position (Maia reads them)."""
+    if start_fen and moves:
+        try:
+            line = chess.Board(start_fen)
+            for san in moves:
+                line.push_san(san)
+            if line.fen() == board.fen():
+                return line
+        except ValueError:
+            pass  # a line that doesn't replay: use the bare FEN, slightly less accurate
+    return board
+
+
+class MaiaReq(BaseModel):
+    fen: str
+    rating: int = 1500
+    opp_rating: int | None = None  # defaults to `rating`
+    start_fen: str | None = None  # with `moves`: the line that led here, which Maia uses as input too
+    moves: list[str] = []         # SAN
+
+
+@app.post("/api/maia")
+def maia_moves(req: MaiaReq):
+    if not maia.available():
+        raise HTTPException(503, "Maia isn't installed (pip install git+https://github.com/CSSLab/maia3.git)")
+    board = with_history(parse_fen(req.fen), req.start_fen, req.moves)
+    clamp = lambda r: max(0, min(5000, r))
+    rating = clamp(req.rating)
+    opp = clamp(req.opp_rating or req.rating)
+    return {"rating": rating, "opp_rating": opp, "moves": S.maia.moves(board, rating, opp)}
 
 
 class ChatReq(BaseModel):

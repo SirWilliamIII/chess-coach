@@ -188,9 +188,8 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
     don't scroll away. The ✕ is a sibling of the drag handle because the handle captures the pointer
     and would swallow its click. Min size 260x160. `closeGpDropdown()` clears all inline styles, so
     position/size are **not** remembered between openings (deliberate, easy to add via localStorage).
-  - *Closing:* stays open while you play moves. Closes via ✕, the toggle, Esc, or a click anywhere
-    that isn't `.game-panel` or `#board-wrap` (so eval bar, name rows, nav buttons and chat all
-    close it).
+  - *Closing:* only the ✕ closes it (2026-10-01, user's call). Outside clicks, Esc and the toggle
+    (which now only opens it) leave it open.
   - Verified with Playwright pointer events; not tested with touch.
 - **The name rows are capped to the board's width.** `--board-w` is defined on `.board-col` and used
   by both `.board-wrap` and `.player` (`max-width: 34px + --board-w`; 34px = 28px eval bar + 6px
@@ -233,13 +232,13 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   The branch's bot level (`botLevelFor(color)` in `app.js`) is announced in the chat note. Order: the
   rating of the player the bot replaces (the side you're *not* playing; the user's own rating is deliberately not the first choice, since they may be replaying a pro game they
   aren't in) → the rating of your own side → the level last used in "Play a game"
-  (`localStorage` `botLevel`) → Intermediate ~1500 only for an analysis board or earlier bot games
+  (`localStorage` `botLevel`) → the level closest to ~1500 only for an analysis board or earlier bot games
   with no ratings. `levelForRating()` picks the closest bot level by parsing the `(~N)` in each level
-  name from `/api/play/levels`. `BOT_LEVELS` in `core/engine.py` has Super-GM (~2700) and Elite GM
-  (~2900) between Master and Full strength (Stockfish's `UCI_Elo` goes to 3190); Full strength is
-  only picked from 3050 up. The rating-capped levels use a 0.5 s move limit while Stockfish
-  calibrates `UCI_Elo` at much longer time controls, so they probably play weaker than labelled
-  (inferred, not measured); the ratings are rough guides, and chess.com vs Lichess scales differ.
+  name from `/api/play/levels`; the one level with no rating (Stockfish) only from 3000 up. **Levels
+  (2026-10-02): Maia (~600) … Maia (~2500) every 100, then "Stockfish" (full strength, id 9)** — see the
+  Maia bullet. A clone without Maia installed gets the old Stockfish levels (`BOT_LEVELS` in
+  `core/engine.py`: Skill Level 600-1200, `UCI_Elo` 1400-2900 at 0.5 s/move, which probably play weaker than
+  labelled; uncalibrated). The ratings are rough guides either way, and chess.com vs Lichess scales differ.
 - **Opening lessons ("Learn openings", 2026-09-29).** `core/study.py` builds a lesson once per
   (opening, side) and saves it to `data/studies/<slug>.json` (gitignored like all of `data/`, so each
   clone rebuilds its own). Build = (1) the named line's move order from the vendored ECO table (the
@@ -345,7 +344,7 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   Learn branches, back/forward, off-lesson moves, the walkthrough question, a drill with a wrong move.
   **Playing on after the theory (2026-10-01).** In Learn, reaching a leaf starts a bot game from that
   position after `PLAY_ON_DELAY_MS` 1.5 s (`studyPlayOn()`): level random among bot levels with ~Elo in
-  `PLAY_ON_ELO` [1500, 2000] (Intermediate / Strong club / Expert), the lesson line preloaded as `play.prefix`
+  `PLAY_ON_ELO` [1500, 2000] (Maia 1500-2000), the lesson line preloaded as `play.prefix`
   (Takeback floors there), bot moves first if the line ended on your move. `/api/play/new` takes `lesson`
   (coach note says it's a play-out of that lesson). `setReview(..., {keepChat: true})` keeps the lesson
   cards in the chat. The game header has "Back to the lesson" (`play.backLesson` → `backToLesson()`:
@@ -400,6 +399,37 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   jumping from move 1; hovering a lesson move that's playable right now draws its arrow. Not built yet:
   Drill questions from moments ("What's White going for?", find the break, avoid the mistake). Only the
   Najdorf is tagged so far.
+- **Maia "Human moves" (2026-10-01/02).** `core/maia.py`: **Maia-3** (CSSLab 2026, 5M model) shows what a
+  player of the chosen rating (600-2600, both sides set to it) plays here, with probabilities, under Stockfish's
+  lines in the Moves & engine panel (`requestMaia()`/`renderMaia()` in `app.js`, `POST /api/maia`; ★ + eval when
+  it's also one of Stockfish's lines; row tooltip = Maia's win/draw/loss guess for the mover between humans of
+  those ratings, not an eval). `pct` is "how likely a human plays it", never move quality: Maia doesn't know the
+  best move. Setup per clone: `pip install git+https://github.com/CSSLab/maia3.git` (not in `requirements.txt`:
+  torch is ~600 MB and it's optional); the checkpoint downloads from Hugging Face on first use
+  (~/.cache/huggingface). Missing package = section hidden (`maia.available()`). Code is AGPL-3.0 (fine for this
+  personal tool; matters if the app is ever distributed or hosted). Runs in-process, lazily loaded (~2.5 s on
+  the first request), on the GPU (`mps`) under its own lock: measured eval 0.62 s alone and 0.61 s alongside,
+  Maia 0.04-0.1 s. Uses their `Maia3UCIEngine` class directly (`cmd_position` + `score_moves()`) because the UCI
+  output has no probabilities: internal API of a 0.1.0 package, so recheck after upgrading it. **Send the move
+  history** (the model reads the last 8 positions; the frontend posts `start_fen` + SAN moves).
+  **Maia-1 was tried first and replaced (2026-10-02):** lc0 + nine separately trained rating-band weights. Its
+  answers jumped between neighbouring bands (Morra 8...: 1200 had Nfd7 top at 25/24/23%, 1300 dxc4, 1800 Ne4),
+  while Maia-3 shifts smoothly with rating (Ne4 42→28%, dxc4 31→43% from 1100 to 1900). Only consistency was
+  compared, not accuracy against real games. Maia-1 gotchas if it's ever revived: 1 node only, policy from
+  `VerboseMoveStats` info strings, and lc0 keeps its search tree across a `WeightsFile` change (needs
+  `ucinewgame`). lc0 (brew) and `data/maia/*.pb.gz` are still on this machine, unused. Maia-2 needs Python
+  <= 3.12 and its README defers to Maia-3. **The bot (2026-10-02):** levels 600-2500
+  are Maia (`maia.BOT_LEVELS`, `server.bot_levels()`), above them full Stockfish named "Stockfish" (user's call).
+  `Maia.play()` samples from Maia's top 10 moves weighted by probability, never one under `MIN_PLAY_PCT` 2%
+  (always playing the top move would play above the rating; Maia-3's own `top_p` filter was tried and
+  dropped because it also removes the move that crosses the threshold: it cut a 22% move at 2400).
+  `/api/play/move` gets the game's moves (history) and `opp_elo` = your rating when known (a branched
+  replay's side you took over; fresh games have none, so Maia assumes an equal opponent). ~50-60 ms/move;
+  the frontend's 450 ms minimum delay still applies. Tested: sampling matches the probabilities over 60
+  draws, full Maia-vs-Maia games at 800/1200/2000/2500, the play dialog, a game as Black. **Not measured:
+  how strong each level really plays** — play some games and adjust. Not done: clock-aware play (Maia-3
+  can take clock times; not passed). Other ideas: curveballs/quiz decoys at the player's rating, "how findable was the best move", a "practical move" ranking
+  (Stockfish candidates played out with Maia for both sides).
 - **Engine search: time vs depth.** `Engine.lines()`/`evaluate()` take an optional `depth`; with it,
   the search stops at that depth *or* after `seconds`, whichever is first (seconds = ceiling,
   depth = target). Without it, behaviour is time-only as before. The coach's own tool calls
@@ -646,6 +676,14 @@ lessons" section). Open items already noted elsewhere: read the English and Cata
 "Walk me through this" run, key-move puzzles, move symbols, the bare-pawn-move-as-square quirk, and
 any lesson that builds for the wrong side (add it to `SIDE_OVERRIDES`, see "One side per opening").
 
+### Maia follow-ups (2026-10-02)
+
+- **Calibrate the Maia bot levels by playing them.** Strength per level isn't measured; if a level feels off,
+  `MIN_PLAY_PCT` (2%) in `core/maia.py` is the first knob (higher = fewer odd moves = stronger).
+- Opponent row reads "Bot Stockfish" for the Stockfish level (`botElo()` falls back to the whole name).
+- Not built: your rating for fresh bot games (only branched replays pass `opp_elo`), clock-aware Maia, and
+  the other Maia ideas in its bullet (practical-move ranking, curveballs/decoys at your rating).
+
 ### Revisit next session (from 2026-09-29)
 
 - **Finish `TESTING-2026-09-29.md`.** Only part of it was run. The user's two priorities: does each
@@ -800,3 +838,11 @@ entries, `go_now` auto-jump for "what would you play here?") · loaded games ope
 · a free, local "Game-changing moment" chip with an Explain button · "Quiz me"/"Show me" became "Why
 this move?" / "Guess the next move" (`move_quiz`, no spoilers, follow-up hint in the UI) · hover
 tooltips on every chip. Commits: `cc87308`, `1a2242b`, `0eed228` (+ this notes commit).
+
+## Recent major work (2026-10-01/02 session)
+
+Maia in the app: first Maia-1 (lc0 + rating-band weights) as a "Human moves" section in the Moves &
+engine panel, then replaced by Maia-3 (one model, any rating, smoother across ratings; Maia-2 can't
+install on Python 3.14) · the bot is now Maia from 600 to 2500 plus one full-strength "Stockfish"
+level, sampling by Maia's probabilities · the Moves & engine panel only closes with its ✕. See the Maia
+bullet under "Architecture need-to-knows".

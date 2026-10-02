@@ -532,7 +532,9 @@ function requestEval(c) {
     try {
       const data = await api('/api/eval', { fen: c.fen(), lines: 3 });
       if (token !== evalToken) return;
+      lastEval = { fen: c.fen(), lines: data.lines };
       showEval(data);
+      renderMaia();
     } catch (e) {
       if (token === evalToken) $('engine-lines').textContent = e.message;
     }
@@ -553,6 +555,79 @@ function showEval(data) {
   $('engine-lines').innerHTML = data.lines.map((l) =>
     `<div class="eline"><span class="ev ${l.cp_white >= 0 ? 'w' : 'b'}">${esc(l.eval_white)}</span><span class="pv">${esc(l.line)}</span></div>`
   ).join('');
+}
+
+// ---- Maia: what a human of the chosen rating plays here (its own lc0 process, runs alongside Stockfish)
+
+let maiaToken = 0;
+let maiaTimer = null;
+let lastEval = null;  // Stockfish's lines for the shown position, to mark which human move is also best
+let lastMaia = null;
+
+function maiaOn() {
+  return state.maiaReady && $('maia-toggle').checked;
+}
+
+function requestMaia(c) {
+  clearTimeout(maiaTimer);
+  const token = ++maiaToken;
+  lastMaia = null;
+  if (!maiaOn() || !c) return void ($('maia-lines').innerHTML = '');
+  $('maia-lines').innerHTML = '<div class="eline" style="color:var(--muted)">Thinking…</div>';
+  const fen = c.fen();
+  const line = currentLine();
+  maiaTimer = setTimeout(async () => {
+    try {
+      // the moves that led here matter: Maia reads the last few positions, not just this one
+      const data = await api('/api/maia', {
+        fen, rating: +$('maia-rating').value, start_fen: line.startFen, moves: line.sans.slice(0, line.at),
+      });
+      if (token !== maiaToken) return;
+      lastMaia = { fen, ...data };
+      renderMaia();
+    } catch (e) {
+      if (token === maiaToken) $('maia-lines').textContent = e.message;
+    }
+  }, 200);
+}
+
+function renderMaia() {
+  if (!lastMaia) return;
+  if (!lastMaia.moves.length) return void ($('maia-lines').innerHTML = '<div class="eline">Game over</div>');
+  const sf = lastEval?.fen === lastMaia.fen ? lastEval.lines : [];
+  $('maia-lines').innerHTML = lastMaia.moves.map((m) => {
+    const hit = sf.find((l) => l.uci === m.uci);
+    const best = sf[0]?.uci === m.uci;
+    const [w, d, l] = m.wdl;
+    const tip = `${Math.round(w)}% win / ${Math.round(d)}% draw / ${Math.round(l)}% loss for the mover after this, `
+      + `in games between players of these ratings (Maia's guess, not an engine eval)`
+      + (best ? ". Also Stockfish's top move." : '');
+    return `<div class="mline${best ? ' best' : ''}" title="${tip}">
+      <span class="mmove">${esc(m.move)}</span>
+      <span class="mbar"><span style="width:${Math.max(2, m.pct)}%"></span></span>
+      <span class="mpct">${m.pct < 1 ? '<1' : Math.round(m.pct)}%</span>
+      <span class="mev">${hit ? esc(hit.eval_white) : ''}${best ? ' ★' : ''}</span></div>`;
+  }).join('');
+}
+
+function setupMaia(cfg) {
+  state.maiaReady = !!cfg.maia_ready;
+  $('maia-pane').classList.toggle('hidden', !state.maiaReady);
+  if (!state.maiaReady) return;
+  const saved = +(recall('maiaRating') || 1500);
+  $('maia-rating').innerHTML = cfg.maia_ratings.map((r) =>
+    `<option value="${r}"${r === saved ? ' selected' : ''}>~${r}</option>`).join('');
+  $('maia-toggle').checked = recall('maiaOn') !== '0';
+  $('maia-rating').disabled = !$('maia-toggle').checked;
+  $('maia-toggle').onchange = (e) => {
+    store('maiaOn', e.target.checked ? '1' : '0');
+    $('maia-rating').disabled = !e.target.checked;
+    requestMaia(state.editor ? null : currentGame());
+  };
+  $('maia-rating').onchange = (e) => {
+    store('maiaRating', e.target.value);
+    requestMaia(state.editor ? null : currentGame());
+  };
 }
 
 function setEngineVisible(on) {
@@ -731,6 +806,7 @@ function update() {
   syncLineButtons();
   syncCards();
   requestEval(c);
+  requestMaia(c);
   requestExplorer(c);
   noteMove();
 }
@@ -1984,6 +2060,7 @@ function updateEditor() {
   $('variation').classList.add('hidden');
   $('chat-context').textContent = 'Asking about: the set-up position (starts an analysis board)';
 
+  requestMaia(null);  // no move history on a set-up position; the lines would be the old position's
   // live engine check: also catches positions the server refuses (e.g. side not to move in check)
   clearTimeout(evalTimer);
   const token = ++evalToken;
@@ -2024,13 +2101,13 @@ async function analyseEditorPosition() {
 // the opponent plays theirs. Play a different move and you're offered to play on from there against
 // the bot ("best moves only"), which can bring you back to the game at the same move.
 
-// The bot's levels are named like "Club (~1400)"; pick the one closest to a rating. Above the top
-// rated level (~2900) only "Full strength" is stronger, so use it from 3050 up.
+// The bot's levels are named like "Maia (~1400)"; pick the one closest to a rating. The one level
+// without a rating ("Stockfish", or "Full strength" without Maia) is far stronger: only from 3000 up.
 let botLevels = null;
 async function levelForRating(elo) {
   botLevels ??= await api('/api/play/levels');
-  const full = botLevels.find((l) => /full/i.test(l.name));
-  if (full && elo >= 3050) return full;
+  const full = botLevels.find((l) => !/~\d+/.test(l.name));
+  if (full && elo >= 3000) return full;
   const rated = botLevels.map((l) => ({ ...l, elo: +(l.name.match(/~(\d+)/)?.[1]) })).filter((l) => l.elo);
   return rated.reduce((a, b) => (Math.abs(b.elo - elo) < Math.abs(a.elo - elo) ? b : a));
 }
@@ -2049,7 +2126,7 @@ async function botLevelFor(color) {
   botLevels ??= await api('/api/play/levels').catch(() => []);
   const last = botLevels.find((l) => String(l.id) === recall('botLevel'));
   if (last) return { level: last, why: "the level you last used, since the game has no ratings" };
-  return { level: { id: 10, name: 'Intermediate (~1500)' }, why: 'default, since the game has no ratings' };
+  return { level: await levelForRating(1500), why: 'default, since the game has no ratings' };
 }
 
 // leave the replay for a live bot game from the current position, playing `first` (your move) at once.
@@ -2071,7 +2148,8 @@ async function branchToBot(first) {
     return;
   }
   const play = { color, level: level.id, levelName: level.name, startFen: review.start_fen,
-    moves: prefix, prefix: prefix.length, view: prefix.length, over: null, thinking: false, back };
+    moves: prefix, prefix: prefix.length, view: prefix.length, over: null, thinking: false, back,
+    myElo: parseInt(r[`${color}_elo`], 10) || undefined };  // the side you took over, if rated
   setEngineVisible(recall('engineOn') !== '0');
   setReview(review, `Playing on from ${origin} against a ${level.name} bot (${why}). You have ${color}.`, play);
   onPlayMove(first.orig, first.dest);
@@ -2635,7 +2713,7 @@ async function studyPlayOn(id) {
   botLevels ??= await api('/api/play/levels').catch(() => []);
   const pool = botLevels.map((l) => ({ ...l, elo: +(l.name.match(/~(\d+)/)?.[1]) }))
     .filter((l) => l.elo >= PLAY_ON_ELO[0] && l.elo <= PLAY_ON_ELO[1]);
-  const level = pool.length ? pool[Math.floor(Math.random() * pool.length)] : { id: 10, name: 'Intermediate (~1500)' };
+  const level = pool.length ? pool[Math.floor(Math.random() * pool.length)] : await levelForRating(1500);
   if (state.study !== st) return;
   playToken++;
   let review;
@@ -3370,7 +3448,10 @@ async function botMove() {
   const c = playChess(p);
   const started = Date.now();
   try {
-    const res = await api('/api/play/move', { fen: c.fen(), level: p.level });
+    // the game so far (Maia reads the last few positions) and your rating if known (Maia plays against it)
+    const res = await api('/api/play/move', {
+      fen: c.fen(), level: p.level, start_fen: p.startFen, moves: p.moves, opp_elo: p.myElo,
+    });
     await new Promise((r) => setTimeout(r, Math.max(0, 450 - (Date.now() - started))));  // feel less instant
     if (token !== playToken || state.play !== p) return;
     p.moves.push(res.san);
@@ -3545,7 +3626,8 @@ async function openPlayDialog() {
   if (!sel.options.length) {
     const levels = await api('/api/play/levels');
     sel.innerHTML = levels.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
-    sel.value = recall('botLevel') || '3';
+    sel.value = recall('botLevel') || '';
+    if (!sel.value) sel.value = String((await levelForRating(1500)).id);  // first time, or a retired level
   }
   $('play-engine').checked = recall('playEngine') !== '0';
   $('play-clock-on').checked = recall('clockOn') === '1';
@@ -3782,16 +3864,11 @@ function closeGpDropdown() {
 })();
 $('gp-toggle').onclick = (e) => {
   e.stopPropagation();
-  const isOpen = !$('gp-toggle').classList.contains('collapsed');
-  if (isOpen) closeGpDropdown();
-  else { $('gp-details').classList.remove('hidden'); $('gp-toggle').classList.remove('collapsed'); }
+  $('gp-details').classList.remove('hidden');
+  $('gp-toggle').classList.remove('collapsed');
 };
-// Moves & engine stays open while you play moves on the board: it closes with its ✕, the toggle,
-// Esc, or a click anywhere that isn't the board or the dropdown itself.
+// Moves & engine closes only with its ✕ (user's call): outside clicks, Esc and the toggle leave it open.
 $('gp-close').onclick = closeGpDropdown;
-document.addEventListener('click', (e) => {
-  if (!$('gp-details').classList.contains('hidden') && !e.target.closest('.game-panel, #board-wrap')) closeGpDropdown();
-});
 closeGpDropdown();
 
 $('engine-toggle').onchange = (e) => setEngine(e.target.checked);
@@ -3813,7 +3890,6 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Home') goTo(0);
   else if (e.key === 'End') $('nav-end').click();
   else if (e.key === 'f') $('nav-flip').click();
-  else if (e.key === 'Escape' && !$('gp-details').classList.contains('hidden')) closeGpDropdown();
   else if (e.key === 'Escape' && pinnedSquares.size) { pinnedSquares.clear(); paintSquares(); }
   else if (e.key === 'Escape' && state.demo) closeDemo();
   else if (e.key === 'Escape' && state.replay) stopReplay();
@@ -3825,6 +3901,7 @@ document.addEventListener('keydown', (e) => {
   const cfg = await api('/api/config');
   state.coachReady = cfg.coach_ready;
   state.explorerReady = cfg.explorer_ready;
+  setupMaia(cfg);
   state.me = recall('me') || cfg.me || '';
   const engineOn = recall('engineOn') !== '0';
   $('engine-toggle').checked = engineOn;
