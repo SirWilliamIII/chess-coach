@@ -10,6 +10,20 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   is fine on its own; push only when the user says so directly (e.g. "push" / "commit and push").
   This holds regardless of what was pushed last time — one approval doesn't carry forward.
 
+## Top of mind (read first)
+
+- **Bring human moves into the opening lessons (user's priority, 2026-10-02).** Pure theory lines rarely get
+  played in real games, so a lesson should prepare you for what opponents at your level actually play. Today
+  the opponent's side of a lesson is all theory or masters: tries from the *masters* explorer in
+  `core/study.py` (`OPP_WIDTH`, `MIN_SHARE`), Learn's automatic reply picked by master share
+  (`weightedPick()` in `app.js`), and curveballs from the Lichess DB (1000-1800, ≥ 20 games, so only the
+  Najdorf has any). Maia-3 is now in the app (`core/maia.py`, see its bullet below): it could weight or add
+  opponent tries at your rating, pick the auto-reply by Maia's probabilities, and find curveballs where the
+  database has too few games. Keep the lesson's *own* moves theory-first (the user's earlier call); only the
+  opponent's side becomes human. Not designed or built: start by proposing a design to the user.
+- Also open: the opening-lessons list under "Next focus" and the "Maia follow-ups" (calibrate the Maia bot
+  levels by playing them), both in TODOs at the bottom.
+
 ## Architecture need-to-knows
 
 - **Single-user, single global state.** `frontends/web/server.py` keeps one `S` object
@@ -683,6 +697,7 @@ any lesson that builds for the wrong side (add it to `SIDE_OVERRIDES`, see "One 
 - Opponent row reads "Bot Stockfish" for the Stockfish level (`botElo()` falls back to the whole name).
 - Not built: your rating for fresh bot games (only branched replays pass `opp_elo`), clock-aware Maia, and
   the other Maia ideas in its bullet (practical-move ranking, curveballs/decoys at your rating).
+- Human moves in opening lessons: see "Top of mind" at the top of this file.
 
 ### Revisit next session (from 2026-09-29)
 
