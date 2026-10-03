@@ -96,6 +96,8 @@ const cg = Chessground($('board'), {
   },
   drawable: {
     enabled: true,
+    // a drawn arrow ends where you release it; snapping to the piece's legal squares made the end jump
+    defaultSnapToValidMove: false,
     brushes: {
       green:    { key: 'green',    color: '#15781B', opacity: 1,    lineWidth: 10 },
       red:      { key: 'red',      color: '#882020', opacity: 1,    lineWidth: 10 },
@@ -105,15 +107,17 @@ const cg = Chessground($('board'), {
       paleGreen:{ key: 'paleGreen',color: '#15781B', opacity: 0.4,  lineWidth: 15 },
       paleRed:  { key: 'paleRed',  color: '#882020', opacity: 0.4,  lineWidth: 15 },
       paleGrey: { key: 'paleGrey', color: '#4a4a4a', opacity: 0.35, lineWidth: 15 },
-      // Maia's likely human moves, width by probability (>= 40%, >= 15%, >= 5%)
-      maiaHi:   { key: 'maiaHi',   color: '#8a4fc0', opacity: 0.85, lineWidth: 13 },
-      maiaMed:  { key: 'maiaMed',  color: '#8a4fc0', opacity: 0.65, lineWidth: 9 },
-      maiaLo:   { key: 'maiaLo',   color: '#8a4fc0', opacity: 0.45, lineWidth: 6 },
       // arrows/circles you draw with a right-drag, colour by modifier key (drawBrush)
       drawCmd:  { key: 'drawCmd',  color: '#BF5700', opacity: 0.9,  lineWidth: 10 },
       drawOpt:  { key: 'drawOpt',  color: '#7BAFD4', opacity: 0.9,  lineWidth: 10 },
       drawCtrl: { key: 'drawCtrl', color: '#f9a01b', opacity: 0.9,  lineWidth: 10 },
       drawFn:   { key: 'drawFn',   color: '#ff2800', opacity: 0.9,  lineWidth: 10 },
+      // first legs of L-shaped (knight) drawings: no arrowhead, see marker[id$="Mid"] in style.css
+      greenMid:    { key: 'greenMid',    color: '#15781B', opacity: 1,    lineWidth: 10 },
+      drawCmdMid:  { key: 'drawCmdMid',  color: '#BF5700', opacity: 0.9,  lineWidth: 10 },
+      drawOptMid:  { key: 'drawOptMid',  color: '#7BAFD4', opacity: 0.9,  lineWidth: 10 },
+      drawCtrlMid: { key: 'drawCtrlMid', color: '#f9a01b', opacity: 0.9,  lineWidth: 10 },
+      drawFnMid:   { key: 'drawFnMid',   color: '#ff2800', opacity: 0.9,  lineWidth: 10 },
       // piece-hover arrows: slim + opaque enough to read clearly
       hvMove:       { key: 'hvMove',      color: '#81b64c', opacity: 0.78, lineWidth: 7 },
       hvCapture:    { key: 'hvCapture',   color: '#e08030', opacity: 0.82, lineWidth: 7 },
@@ -627,22 +631,10 @@ function requestMaia(c) {
       if (token !== maiaToken) return;
       lastMaia = { fen, ...data };
       renderMaia();
-      renderShapes();  // the arrows (if on) arrive after the board was drawn
     } catch (e) {
       if (token === maiaToken) $('maia-lines').textContent = e.message;
     }
   }, 200);
-}
-
-// Maia's likely moves as arrows, thicker for likelier ones. Off in lessons (they draw their own guide)
-// and in bot games, where on your turn they'd be a standing move hint (the bot replies too fast for
-// arrows on its turn to matter); the panel's list still shows the moves there.
-function maiaShapes() {
-  if (!lastMaia || !maiaOn() || !$('maia-arrows').checked || state.study || state.editor || state.play) return [];
-  if (currentGame().fen() !== lastMaia.fen) return [];
-  return lastMaia.moves.filter((m) => m.pct >= 5).slice(0, 4).map((m) => ({
-    orig: m.uci.slice(0, 2), dest: m.uci.slice(2, 4), brush: m.pct >= 40 ? 'maiaHi' : m.pct >= 15 ? 'maiaMed' : 'maiaLo',
-  }));
 }
 
 // a click plays the move where you could have played it yourself; otherwise (the bot's turn, a lesson's
@@ -691,10 +683,9 @@ function setupMaia(cfg) {
   }
   const syncDisabled = () => {
     const on = $('maia-toggle').checked;
-    $('maia-white').disabled = $('maia-black').disabled = $('maia-arrows').disabled = !on;
+    $('maia-white').disabled = $('maia-black').disabled = !on;
   };
   $('maia-toggle').checked = recall('maiaOn') !== '0';
-  $('maia-arrows').checked = recall('maiaArrows') === '1';
   syncDisabled();
   $('maia-toggle').onchange = (e) => {
     store('maiaOn', e.target.checked ? '1' : '0');
@@ -702,7 +693,6 @@ function setupMaia(cfg) {
     refresh();
     renderShapes();
   };
-  $('maia-arrows').onchange = (e) => { store('maiaArrows', e.target.checked ? '1' : '0'); renderShapes(); };
 }
 
 function setEngineVisible(on) {
@@ -864,7 +854,6 @@ function showExplorer(data) {
 function update() {
   $('board-wrap').classList.toggle('game-over', !!state.play?.over);
   if (state.editor) return updateEditor();
-  hoverPieceSq = null;  // position changed; next mousemove will re-draw
   clearHeldThreats();  // right-clicked threat arrows are stale once the position moves on
   // a pinned/hovered square from chat text refers to the position it was clicked on — stale once
   // the board moves on, so it would otherwise sit there highlighted with no visible explanation
@@ -955,7 +944,7 @@ const pinnedSquares = new Set();
 let hoverSquare = null;
 
 function paintSquares() {
-  const marks = new Map(studyNextSquares());
+  const marks = new Map([...studyNextSquares(), ...drawnSquares()]);
   pinnedSquares.forEach((sq) => marks.set(sq, 'sq-pin'));
   if (hoverSquare) marks.set(hoverSquare, 'sq-hover');
   cg.set({ highlight: { custom: marks } });
@@ -1259,7 +1248,6 @@ function clickMove(token) {
 
 // ---- piece hover: show legal-move arrows for the side to move
 
-let hoverPieceSq = null;
 
 function squareFromEvent(e) {
   const rect = $('board').getBoundingClientRect();
@@ -1320,7 +1308,7 @@ function movesShapesFor(sq) {
 }
 
 function renderShapes() {
-  cg.setAutoShapes([...baseShapes(), ...heldThreats, ...(hoverPieceSq ? movesShapesFor(hoverPieceSq) : [])]);
+  cg.setAutoShapes([...baseShapes(), ...heldThreats]);
 }
 
 // ---- your own arrows and circles (right-drag; modifier = colour). They belong to the position they
@@ -1339,26 +1327,42 @@ function drawBrush(m) {
   return null;
 }
 
+// Right-drag: an arrow. Right-click on an empty square (or on any square with a modifier): fill it.
+// Plain right-click on a piece: its threat arrows. A second right-click on the same square undoes it.
 function userShape(s) {
   const brush = drawBrush(drawMods);
   if (s.dest) toggleDrawing({ orig: s.orig, dest: s.dest, brush: brush || 'green' });
-  else if (brush) toggleDrawing({ orig: s.orig, brush });  // a modifier on one square: circle it
+  else if (brush || !cg.state.pieces.get(s.orig)) toggleDrawing({ orig: s.orig, brush: brush || 'green' });
   else holdThreatSquare(s.orig);
 }
 
-// drawing the same arrow again removes it (as chessground does); a different colour recolours it
+// drawing the same arrow again removes it (as chessground does), a different colour recolours it;
+// a filled square is cleared by any second right-click on it
 function toggleDrawing(shape) {
   const fen = currentGame().fen();
   if (drawingsFen !== fen) { drawings = []; drawingsFen = fen; }
   const i = drawings.findIndex((d) => d.orig === shape.orig && d.dest === shape.dest);
-  const same = i >= 0 && drawings[i].brush === shape.brush;
+  const keep = i < 0 || (shape.dest && drawings[i].brush !== shape.brush);
   if (i >= 0) drawings.splice(i, 1);
-  if (!same) drawings.push(shape);
+  if (keep) drawings.push(shape);
   renderShapes();
+  paintSquares();
 }
 
+// filled squares, painted through chessground's square highlights (paintSquares), keyed by brush
+function drawnSquares() {
+  if (!drawings.length || drawingsFen !== currentGame().fen()) return [];
+  return drawings.filter((d) => !d.dest).map((d) => [d.orig, `sq-fill-${d.brush}`]);
+}
+
+// a knight-shaped arrow (a8 to b6) is drawn as an L, like the hover arrows
 function drawnShapes() {
-  return drawings.length && drawingsFen === currentGame().fen() ? drawings : [];
+  if (!drawings.length || drawingsFen !== currentGame().fen()) return [];
+  return drawings.flatMap((d) => {
+    if (!d.dest) return [];  // a filled square, see drawnSquares
+    const df = Math.abs(d.orig.charCodeAt(0) - d.dest.charCodeAt(0)), dr = Math.abs(+d.orig[1] - +d.dest[1]);
+    return df * dr === 2 ? knightShapes(d.orig, d.dest, d.brush) : [d];
+  });
 }
 
 function clearUserShapes() {
@@ -1366,13 +1370,7 @@ function clearUserShapes() {
   drawings = [];
   heldSquares.clear();
   heldThreats = [];
-  if (had) renderShapes();
-}
-
-function showPieceHover(sq) {
-  if (sq === hoverPieceSq) return;
-  hoverPieceSq = sq;
-  renderShapes();
+  if (had) { renderShapes(); paintSquares(); }
 }
 
 // ---- right-click a piece to hold its threat arrows (accumulates across pieces);
@@ -1382,7 +1380,12 @@ let heldThreats = [];
 let heldSquares = new Set();
 
 function holdThreatSquare(sq) {
-  if (heldSquares.has(sq)) return;
+  if (heldSquares.has(sq)) {  // right-click the same piece again: drop its arrows
+    heldSquares.delete(sq);
+    heldThreats = [...heldSquares].flatMap(movesShapesFor);
+    renderShapes();
+    return;
+  }
   const shapes = movesShapesFor(sq);
   if (!shapes.length) return;
   heldSquares.add(sq);
@@ -2466,7 +2469,7 @@ function baseShapes() {
 }
 
 function guideShapes() {
-  if (!state.study || state.demo) return state.demo ? [] : maiaShapes();
+  if (!state.study || state.demo) return [];
   if (state.study.curve) return curveShapes();
   return state.study.mode === 'learn' ? studyGuideShapes() : [];
 }
@@ -3983,9 +3986,6 @@ $('btn-analysis').onclick = async () => {
   setReview(review, 'Fresh analysis board. Play moves and ask the coach anything.');
 };
 
-$('board').addEventListener('mousemove', (e) => showPieceHover(squareFromEvent(e)));
-$('board').addEventListener('mouseleave', () => { hoverPieceSq = null; renderShapes(); });
-$('board').addEventListener('mousedown', () => { hoverPieceSq = null; renderShapes(); });
 
 $('btn-back-to-game').onclick = () => { state.extra = []; update(); };
 $('nav-start').onclick = () => goTo(0);

@@ -76,14 +76,20 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
     carries only the new shape. A right-drag becomes your own arrow (`userShape()` → `drawings`, kept per
     position by `drawnShapes()` inside `baseShapes()`), coloured by the modifier read in our own capture-phase
     `mousedown` listener (`drawBrush()`: ⌘ #BF5700, ⌥ #7BAFD4, ⌃ #f9a01b, fn #ff2800 with Shift as a stand-in,
-    none = green; chessground itself can't tell ⌘ from ⌥). A modifier + right-click on one square circles it;
-    a plain right-click on a piece holds its threat arrows. Because chessground's list is always empty, its
+    none = green; chessground itself can't tell ⌘ from ⌥). A right-click on an empty square, or a modifier +
+    right-click on any square, **fills** the square in that colour (`drawnSquares()` → `sq-fill-<brush>` classes
+    via `paintSquares()`); a plain right-click on a piece holds its threat arrows. A second right-click on the
+    same square removes the fill / that piece's arrows. Because chessground's list is always empty, its
     left-click erase never fires `onChange`, so the same `mousedown` listener clears drawings and held
     threats on a left click. (Before 2026-10-03 the handler used a `nativeShapesSeen` counter that skipped
     every right-click after the first and never cleared on left click; it was only ever tested by calling
     `onChange` with cumulative arrays, which real chessground never sends.) **Not verified: fn.** Browsers
     rarely report it on macOS and Playwright can't press it; ⌃ only works with a real right-click
-    (two-finger), since ⌃+click arrives as a left click.
+    (two-finger), since ⌃+click arrives as a left click. A knight-shaped drawing (a8→b6) renders as an L via
+    `knightShapes()` (first leg uses the brush's `…Mid` twin, hence `greenMid`/`drawCmdMid`…).
+    `defaultSnapToValidMove: false`: snapping pulled a drawn arrow's end onto the piece's legal squares.
+  - **No hover arrows** (removed 2026-10-03, user's call: "hovering on a piece should do nothing at all").
+    Arrows on the board come only from right-clicks/drags, the lesson guide and the coach's demos.
   - **Playwright mouse events do reach chessground** (2026-10-03: `page.mouse.down(button="right")` /
     `move(..., steps=4)` / `up()` drew arrows and held threats, with `keyboard.down("Meta")` etc. for
     modifiers). An older note here said they didn't; that was probably a left-drag move, which wasn't
@@ -455,7 +461,7 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   player of the chosen rating (600-2600, both sides set to it) plays here, with probabilities, under Stockfish's
   lines in the Moves & engine panel (`requestMaia()`/`renderMaia()` in `app.js`, `POST /api/maia`; ★ + eval when
   it's also one of Stockfish's lines; row tooltip = Maia's win/draw/loss guess for the mover between humans of
-  those ratings, not an eval). **Play both sides with Maia (2026-10-03):** separate W/B ratings (`#maia-white`/`#maia-black`; the side to move is `rating`, the other `opp_rating`), a row click plays the move via `onBoardMove` where `canMove` allows it (else only an arrow: bot's turn, lesson opponent, replay's other side), and "Show on board" (`maiaShapes()` in `baseShapes()`, purple, width by probability, top 4 ≥ 5%, off in lessons/editor/demos). Tested with Playwright on the analysis board; not in a bot game or replay. `pct` is "how likely a human plays it", never move quality: Maia doesn't know the
+  those ratings, not an eval). **Play both sides with Maia (2026-10-03):** separate W/B ratings (`#maia-white`/`#maia-black`; the side to move is `rating`, the other `opp_rating`), a row click plays the move via `onBoardMove` where `canMove` allows it (else only an arrow: bot's turn, lesson opponent, replay's other side) ("Show on board" purple arrows were added and then removed 2026-10-03: user found the board too busy). Tested with Playwright on the analysis board; not in a bot game or replay. `pct` is "how likely a human plays it", never move quality: Maia doesn't know the
   best move. Setup per clone: `pip install git+https://github.com/CSSLab/maia3.git` (not in `requirements.txt`:
   torch is ~600 MB and it's optional); the checkpoint downloads from Hugging Face on first use
   (~/.cache/huggingface). Missing package = section hidden (`maia.available()`). Code is AGPL-3.0 (fine for this
@@ -463,9 +469,8 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   the first request), on the GPU (`mps`) under its own lock: measured eval 0.62 s alone and 0.61 s alongside,
   Maia 0.04-0.1 s. Uses their `Maia3UCIEngine` class directly (`cmd_position` + `score_moves()`) because the UCI
   output has no probabilities: internal API of a 0.1.0 package, so recheck after upgrading it. **Send the move
-  history** (the model reads the last 8 positions; the frontend posts `start_fen` + SAN moves). Its "Show on board" arrows (`maiaShapes()`, purple
-  `maiaHi`/`maiaMed`/`maiaLo`) are off in lessons and in bot games (user's call 2026-10-03: on your turn they were a
-  standing hint); analysis, replays and review keep them.
+  history** (the model reads the last 8 positions; the frontend posts `start_fen` + SAN moves). Maia has no board arrows (removed 2026-10-03, too much
+  on the board); its moves are only in the panel list.
   **Maia-1 was tried first and replaced (2026-10-02):** lc0 + nine separately trained rating-band weights. Its
   answers jumped between neighbouring bands (Morra 8...: 1200 had Nfd7 top at 25/24/23%, 1300 dxc4, 1800 Ne4),
   while Maia-3 shifts smoothly with rating (Ne4 42→28%, dxc4 31→43% from 1100 to 1900). Only consistency was
