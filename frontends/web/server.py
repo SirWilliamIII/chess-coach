@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import eco, gm_moments, library, maia, openings, opening_quips, opponent_card, repertoire, study, usage
+from core import eco, favorites, gm_moments, library, maia, openings, opening_quips, opponent_card, repertoire, study, usage
 from core import org_spend as org_spend_mod
 from core.coach import Coach, prompt_hash
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
@@ -94,7 +94,9 @@ def new_analysis(fen: str, note: str | None = None, player_color: str | None = N
 def public_review() -> dict:
     r = S.review
     traps = repertoire.annotate_game(r["start_fen"], r["moves"])
+    fav = favorites.get(r["game_id"])
     return {
+        "favorite": bool(fav), "title": fav["title"] if fav else None, "date": r.get("date"),
         "game_id": r["game_id"], "white": r["white"], "black": r["black"],
         "white_elo": r["white_elo"], "black_elo": r["black_elo"], "result": r["result"],
         "opening": r["opening"], "start_fen": r["start_fen"],
@@ -196,6 +198,40 @@ def open_saved(req: OpenSavedReq):
         S.review, S.me = review, req.me
         S.coach = make_coach(review, req.me)
     return public_review()
+
+
+# ---------- favourite games (core/favorites.py) ----------
+
+def _review_for(game_id: str) -> dict:
+    if S.review and S.review["game_id"] == game_id:
+        return S.review
+    f = CACHE_DIR / f"{game_id}.json"
+    if not game_id.isalnum() or not f.exists():
+        raise HTTPException(404, "game not found")
+    return json.loads(f.read_text())
+
+
+@app.get("/api/favorites")
+def favorites_list():
+    return favorites.all_()
+
+
+class FavoriteReq(BaseModel):
+    favorite: bool = True
+    title: str | None = None  # sent only by the title editor; "" clears it
+
+
+@app.post("/api/favorites/{game_id}")
+def favorite_set(game_id: str, req: FavoriteReq):
+    if not req.favorite:
+        favorites.remove(game_id)
+        return {"favorite": False, "title": None}
+    title = None if req.title is None else (req.title.strip()[:200] or None)
+    fav = favorites.save(_review_for(game_id), title)
+    if req.title is not None and title is None:  # an emptied title clears it, the favourite stays
+        favorites.set_title(game_id, None)
+        fav["title"] = None
+    return {"favorite": True, "title": fav["title"]}
 
 
 PREFETCH = {"status": "idle", "done": 0, "total": 0, "new": 0, "error": None}

@@ -13,6 +13,7 @@
 <body>
   <header>
     <div class="brand"><img class="logo" src="/static/logo-mark.png" alt="">Chess Coach</div>
+    <div class="game-title" id="game-title"></div>
     <div class="actions">
       <button id="btn-play" class="btn primary">Play game</button>
       <button id="btn-games" class="btn primary">Find game by username</button>
@@ -118,6 +119,7 @@
       <button data-tab="chesscom" class="on">From chess.com</button>
       <button data-tab="lichess">From Lichess</button>
       <button data-tab="saved">Saved on this device (offline)</button>
+      <button data-tab="favorites">★ Favourites</button>
     </div>
     <div id="tab-chesscom">
       <div class="row">
@@ -140,6 +142,10 @@
         <span id="prefetch-status-lichess" class="hint"></span>
       </div>
       <div id="games-list-lichess" class="games-list"></div>
+    </div>
+    <div id="tab-favorites" class="hidden">
+      <p class="hint">Games you starred. Double-click a game's name line (or the space next to “Chess Coach”) to give it a title.</p>
+      <div id="fav-list" class="games-list"></div>
     </div>
     <div id="tab-saved" class="hidden">
       <p class="hint">Games already analysed on this Pi. These open without internet (the coach chat still needs it).</p>

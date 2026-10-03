@@ -46,6 +46,12 @@ def opening_name(h: chess.pgn.Headers) -> str | None:
     return h.get("ECO")
 
 
+def _date(h: chess.pgn.Headers) -> str | None:
+    """The game's date as PGN writes it (2026.10.03); None for the "????.??.??" placeholder."""
+    d = h.get("UTCDate") or h.get("Date") or ""
+    return d if d and "?" not in d else None
+
+
 def review_game(
     game: chess.pgn.Game,
     engine: Engine,
@@ -109,6 +115,7 @@ def review_game(
         "result": h.get("Result", "*"),
         "opening": opening_name(h),
         "time_control": h.get("TimeControl"),
+        "date": _date(h),
         "start_fen": game.board().fen(),
         "moves": records,
     }

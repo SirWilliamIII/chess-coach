@@ -43,6 +43,12 @@ header {
 }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; }
 .brand .logo { height: 34px; width: auto; flex: none; }
+/* the game's title (favourites); fills the gap between brand and buttons so all of it takes a double-click */
+.game-title { flex: 1; align-self: stretch; display: flex; align-items: center; min-width: 40px;
+  font-weight: 600; font-size: 16px; color: var(--muted); overflow: hidden; white-space: nowrap; }
+.fav-btn { background: none; border: none; padding: 0 6px 0 0; font-size: 16px; color: var(--muted); cursor: pointer; }
+.fav-btn.on { color: #f9c74f; }
+.title-input { width: 100%; max-width: 420px; font: inherit; padding: 2px 6px; }
 .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 /* header hierarchy: the two ways to start (bigger, green) > analysis board (grey button) > Lessons
    and Load game (quiet text links, set apart by a divider) */
@@ -90,7 +96,8 @@ main {
 #board { width: 100%; height: 100%; transition: filter .5s ease; }
 .board-wrap.game-over #board { filter: brightness(.55) saturate(.7); }
 /* knight hover arrows: hide the arrowhead on the L-shape's first (bend) leg — see knightShapes() */
-marker[id$="Mid"] path { display: none; }  /* knight-leg brushes only: no other brush key may end in "Mid" */
+marker[id$="Mid"] path { display: none; }
+.cg-wrap .cg-shapes { opacity: 1; }  /* chessground dims it to 0.6; brushes carry their own opacity (app.js) */  /* knight-leg brushes only: no other brush key may end in "Mid" */
 .cg-wrap { width: 100%; height: 100%; }
 .cg-wrap cg-board {
   background-image: none;
@@ -541,11 +548,11 @@ cg-board square.sq-hover { background: rgba(255, 196, 0, .55); box-shadow: inset
 cg-board square.sq-next { background: rgba(21, 120, 27, .5); box-shadow: inset 0 0 0 3px #15781b; }
 cg-board square.sq-next-opp { background: rgba(0, 48, 136, .4); box-shadow: inset 0 0 0 3px rgba(0, 48, 136, .8); }
 /* squares you fill with a right-click (drawBrush colours in app.js) */
-cg-board square.sq-fill-green { background: rgba(21, 120, 27, .75); }
-cg-board square.sq-fill-drawCmd { background: rgba(191, 87, 0, .8); }
-cg-board square.sq-fill-drawOpt { background: rgba(123, 175, 212, .85); }
-cg-board square.sq-fill-drawCtrl { background: rgba(249, 160, 27, .8); }
-cg-board square.sq-fill-drawFn { background: rgba(255, 40, 0, .75); }
+cg-board square.sq-fill-drawNone { background: rgba(247, 184, 140, .85); }
+cg-board square.sq-fill-drawCmd { background: rgba(160, 182, 236, .85); }
+cg-board square.sq-fill-drawOpt { background: rgba(140, 212, 206, .85); }
+cg-board square.sq-fill-drawCtrl { background: rgba(242, 160, 160, .85); }
+cg-board square.sq-fill-drawFn { background: rgba(204, 172, 232, .85); }
 cg-board square.sq-pin { background: rgba(255, 140, 0, .45); box-shadow: inset 0 0 0 4px #ff8c00; }
 
 /* ---------- library ---------- */

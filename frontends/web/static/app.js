@@ -98,42 +98,48 @@ const cg = Chessground($('board'), {
     enabled: true,
     // a drawn arrow ends where you release it; snapping to the piece's legal squares made the end jump
     defaultSnapToValidMove: false,
+    // .cg-shapes is opacity 1 in style.css (chessground's own CSS dims the whole layer to 0.6, which
+    // washed out your drawings), so the other brushes carry that 0.6 in their own opacity instead
     brushes: {
-      green:    { key: 'green',    color: '#15781B', opacity: 1,    lineWidth: 10 },
-      red:      { key: 'red',      color: '#882020', opacity: 1,    lineWidth: 10 },
-      blue:     { key: 'blue',     color: '#003088', opacity: 1,    lineWidth: 10 },
-      yellow:   { key: 'yellow',   color: '#e68f00', opacity: 1,    lineWidth: 10 },
-      paleBlue: { key: 'paleBlue', color: '#003088', opacity: 0.4,  lineWidth: 15 },
-      paleGreen:{ key: 'paleGreen',color: '#15781B', opacity: 0.4,  lineWidth: 15 },
-      paleRed:  { key: 'paleRed',  color: '#882020', opacity: 0.4,  lineWidth: 15 },
-      paleGrey: { key: 'paleGrey', color: '#4a4a4a', opacity: 0.35, lineWidth: 15 },
-      // arrows/circles you draw with a right-drag, colour by modifier key (drawBrush)
-      drawCmd:  { key: 'drawCmd',  color: '#BF5700', opacity: 0.9,  lineWidth: 10 },
-      drawOpt:  { key: 'drawOpt',  color: '#7BAFD4', opacity: 0.9,  lineWidth: 10 },
-      drawCtrl: { key: 'drawCtrl', color: '#f9a01b', opacity: 0.9,  lineWidth: 10 },
-      drawFn:   { key: 'drawFn',   color: '#ff2800', opacity: 0.9,  lineWidth: 10 },
+      green:    { key: 'green',    color: '#15781B', opacity: 0.6,    lineWidth: 10 },
+      red:      { key: 'red',      color: '#882020', opacity: 0.6,    lineWidth: 10 },
+      blue:     { key: 'blue',     color: '#003088', opacity: 0.6,    lineWidth: 10 },
+      yellow:   { key: 'yellow',   color: '#e68f00', opacity: 0.6,    lineWidth: 10 },
+      paleBlue: { key: 'paleBlue', color: '#003088', opacity: 0.24,  lineWidth: 15 },
+      paleGreen:{ key: 'paleGreen',color: '#15781B', opacity: 0.24,  lineWidth: 15 },
+      paleRed:  { key: 'paleRed',  color: '#882020', opacity: 0.24,  lineWidth: 15 },
+      paleGrey: { key: 'paleGrey', color: '#4a4a4a', opacity: 0.21, lineWidth: 15 },
+      // arrows you draw with a right-drag, colour by modifier key (drawBrush): dark and opaque so they
+      // stand out on the board; no green (it vanished on the dark squares). Filled squares use pastel
+      // versions of the same colours (.sq-fill-* in style.css).
+      drawNone: { key: 'drawNone', color: '#d35400', opacity: 1, lineWidth: 6 },
+      drawCmd:  { key: 'drawCmd',  color: '#1f3f9e', opacity: 1, lineWidth: 6 },
+      drawOpt:  { key: 'drawOpt',  color: '#0e7c7b', opacity: 1, lineWidth: 6 },
+      drawCtrl: { key: 'drawCtrl', color: '#b01e1e', opacity: 1, lineWidth: 6 },
+      drawFn:   { key: 'drawFn',   color: '#6b2fa0', opacity: 1, lineWidth: 6 },
       // first legs of L-shaped (knight) drawings: no arrowhead, see marker[id$="Mid"] in style.css
-      greenMid:    { key: 'greenMid',    color: '#15781B', opacity: 1,    lineWidth: 10 },
-      drawCmdMid:  { key: 'drawCmdMid',  color: '#BF5700', opacity: 0.9,  lineWidth: 10 },
-      drawOptMid:  { key: 'drawOptMid',  color: '#7BAFD4', opacity: 0.9,  lineWidth: 10 },
-      drawCtrlMid: { key: 'drawCtrlMid', color: '#f9a01b', opacity: 0.9,  lineWidth: 10 },
-      drawFnMid:   { key: 'drawFnMid',   color: '#ff2800', opacity: 0.9,  lineWidth: 10 },
+      greenMid:    { key: 'greenMid',    color: '#15781B', opacity: 0.6, lineWidth: 10 },
+      drawNoneMid: { key: 'drawNoneMid', color: '#d35400', opacity: 1, lineWidth: 6 },
+      drawCmdMid:  { key: 'drawCmdMid',  color: '#1f3f9e', opacity: 1, lineWidth: 6 },
+      drawOptMid:  { key: 'drawOptMid',  color: '#0e7c7b', opacity: 1, lineWidth: 6 },
+      drawCtrlMid: { key: 'drawCtrlMid', color: '#b01e1e', opacity: 1, lineWidth: 6 },
+      drawFnMid:   { key: 'drawFnMid',   color: '#6b2fa0', opacity: 1, lineWidth: 6 },
       // piece-hover arrows: slim + opaque enough to read clearly
-      hvMove:       { key: 'hvMove',      color: '#81b64c', opacity: 0.78, lineWidth: 7 },
-      hvCapture:    { key: 'hvCapture',   color: '#e08030', opacity: 0.82, lineWidth: 7 },
-      hvCheck:      { key: 'hvCheck',     color: '#f7c045', opacity: 0.88, lineWidth: 7 },
+      hvMove:       { key: 'hvMove',      color: '#81b64c', opacity: 0.47, lineWidth: 7 },
+      hvCapture:    { key: 'hvCapture',   color: '#e08030', opacity: 0.49, lineWidth: 7 },
+      hvCheck:      { key: 'hvCheck',     color: '#f7c045', opacity: 0.53, lineWidth: 7 },
       // threat arrows (opponent's replies): darker, so they read as a warning, not a suggestion
-      hvOpp:        { key: 'hvOpp',       color: '#2c5674', opacity: 0.72, lineWidth: 6 },
-      hvOppCapture: { key: 'hvOppCapture',color: '#8f2422', opacity: 0.85, lineWidth: 6 },
-      hvOppCheck:   { key: 'hvOppCheck',  color: '#b8262b', opacity: 0.92, lineWidth: 6 },
+      hvOpp:        { key: 'hvOpp',       color: '#2c5674', opacity: 0.43, lineWidth: 6 },
+      hvOppCapture: { key: 'hvOppCapture',color: '#8f2422', opacity: 0.51, lineWidth: 6 },
+      hvOppCheck:   { key: 'hvOppCheck',  color: '#b8262b', opacity: 0.55, lineWidth: 6 },
       // "Mid" variants: the first leg of a knight's L-shaped arrow, same color, no arrowhead
       // (the marker triangle is hidden in CSS — see marker[id$="Mid"] in style.css)
-      hvMoveMid:       { key: 'hvMoveMid',       color: '#81b64c', opacity: 0.78, lineWidth: 7 },
-      hvCaptureMid:    { key: 'hvCaptureMid',    color: '#e08030', opacity: 0.82, lineWidth: 7 },
-      hvCheckMid:      { key: 'hvCheckMid',      color: '#f7c045', opacity: 0.88, lineWidth: 7 },
-      hvOppMid:        { key: 'hvOppMid',        color: '#2c5674', opacity: 0.72, lineWidth: 6 },
-      hvOppCaptureMid: { key: 'hvOppCaptureMid', color: '#8f2422', opacity: 0.85, lineWidth: 6 },
-      hvOppCheckMid:   { key: 'hvOppCheckMid',   color: '#b8262b', opacity: 0.92, lineWidth: 6 },
+      hvMoveMid:       { key: 'hvMoveMid',       color: '#81b64c', opacity: 0.47, lineWidth: 7 },
+      hvCaptureMid:    { key: 'hvCaptureMid',    color: '#e08030', opacity: 0.49, lineWidth: 7 },
+      hvCheckMid:      { key: 'hvCheckMid',      color: '#f7c045', opacity: 0.53, lineWidth: 7 },
+      hvOppMid:        { key: 'hvOppMid',        color: '#2c5674', opacity: 0.43, lineWidth: 6 },
+      hvOppCaptureMid: { key: 'hvOppCaptureMid', color: '#8f2422', opacity: 0.51, lineWidth: 6 },
+      hvOppCheckMid:   { key: 'hvOppCheckMid',   color: '#b8262b', opacity: 0.55, lineWidth: 6 },
     },
     // A right-click/drag ends up here as chessground's own shape. We empty its list after every change
     // (its native rendering can't do our colours or threat arrows), so each call carries only the new
@@ -156,10 +162,17 @@ let drawMods = null;
 $('board').addEventListener('mousedown', (e) => {
   if (e.button === 2 || e.shiftKey) {
     drawMods = { fn: !!e.getModifierState?.('Fn'), shift: e.shiftKey, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey };
+    // chessground previews the arrow being drawn in its own brush (it can't tell ⌘ from ⌥), which then
+    // jumped to ours on release. Its handler stops propagation, so recolour on the next frame: by then
+    // it has made the shape but not drawn it yet (its render is also queued on animation frames).
+    requestAnimationFrame(() => {
+      if (cg.state.drawable.current) cg.state.drawable.current.brush = drawBrush(drawMods) || 'drawNone';
+    });
   } else if (e.button === 0) {
     clearUserShapes();
   }
 }, true);
+
 
 function baseFen() {
   const r = state.review;
@@ -432,6 +445,69 @@ function dockGamePanel(inTitle) {
   else home.insertBefore(gp, $('btn-chat-reset'));  // keeps Takeback Move first, New chat last
 }
 
+// ---- favourite games + their titles (core/favorites.py). Only a loaded game has a game_id to key
+// them on; a title can be typed by double-clicking the header gap, the line above the board or the
+// game line in the chat header (the three spots the user picked), and giving one favourites the game.
+function canTitle() {
+  const r = state.review;
+  return !!(r?.game_id && r.moves.length && !state.demo && !state.play && !state.study && !state.editor);
+}
+
+function syncGameTitle() {
+  const on = canTitle();
+  $('game-title').textContent = on ? (state.review.title || '') : '';
+  for (const id of ['game-title', 'board-sub', 'game-info']) {
+    if (on) $(id).title = 'Double-click to give this game a title';
+    else $(id).removeAttribute('title');
+  }
+}
+
+async function saveFavorite(body) {
+  const r = state.review;
+  try {
+    Object.assign(r, await api(`/api/favorites/${encodeURIComponent(r.game_id)}`, body));
+  } catch (e) {
+    addMsg('error', `Couldn't update favourites: ${esc(e.message)}`);
+  }
+  if (state.review === r) renderInfo();
+}
+
+function toggleFavorite() {
+  const r = state.review;
+  if (r.favorite && r.title && !confirm(`Remove “${r.title}” from favourites? Its title is removed too.`)) return;
+  saveFavorite({ favorite: !r.favorite });
+}
+
+function editTitle(el) {
+  const input = document.createElement('input');
+  input.className = 'title-input';
+  input.value = state.review.title || '';
+  input.placeholder = 'Name this game…';
+  input.maxLength = 200;
+  el.replaceChildren(input);
+  input.focus();
+  input.select();
+  let done = false;
+  // chessground cancels mousedown, so a click on the board never blurs the input: watch clicks instead
+  const outside = (e) => { if (e.target !== input) finish(true); };
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    document.removeEventListener('pointerdown', outside, true);
+    if (save && input.value.trim() !== (state.review.title || '')) saveFavorite({ title: input.value });
+    else renderInfo();
+  };
+  input.onkeydown = (e) => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); };
+  input.onblur = () => finish(true);
+  document.addEventListener('pointerdown', outside, true);
+}
+
+for (const id of ['game-title', 'board-sub', 'game-info']) {
+  $(id).addEventListener('dblclick', (e) => {
+    if (canTitle() && !e.target.closest('.game-panel, .fav-btn, input')) editTitle($(id));
+  });
+}
+
 // "Takeback Move" lives in the chat header (a static button in index.html), shown only in a bot game
 function syncTakeback() {
   const p = state.play;
@@ -442,6 +518,7 @@ function syncTakeback() {
 function renderInfo() {
   const r = state.review;
   dockGamePanel(!state.demo && !state.play && !state.study && !r.moves.length);
+  syncGameTitle();
   const top = state.orientation === 'white' ? 'black' : 'white';
   const mat = material(currentGame());
   $('player-top').innerHTML = playerLine(top) + capturedHtml(top, mat);
@@ -462,7 +539,10 @@ function renderInfo() {
     $('summary').querySelectorAll('[data-me]').forEach((b) => { b.onclick = () => setYou(b.dataset.me); });
     return;
   }
-  $('game-info').innerHTML = `${esc(r.white)} vs ${esc(r.black)} · ${esc(r.result)}`;
+  $('game-info').innerHTML = `<button class="fav-btn${r.favorite ? ' on' : ''}" id="fav-btn"
+    title="${r.favorite ? 'Remove from favourites' : 'Add to favourites'}">${r.favorite ? '★' : '☆'}</button>`
+    + `${esc(r.white)} vs ${esc(r.black)} · ${esc(r.result)}`;
+  $('fav-btn').onclick = toggleFavorite;
   $('board-sub').textContent = r.opening || '';
 
   if (state.replay) return renderReplayInfo();
@@ -1276,8 +1356,10 @@ function knightShapes(from, to, brush) {
   return [{ orig: from, dest: bend, brush: `${brush}Mid` }, { orig: bend, dest: to, brush }];
 }
 
-// legal-move arrows for the piece on `sq` — [] if none apply right now (empty square, game
-// over, editor/demo mode, or not the player's turn in a live bot game)
+// threat arrows for the piece on `sq`: one per enemy piece it attacks (captures only, not every
+// move), [] if none apply right now (empty square, game over, editor/demo mode, or not the player's
+// turn in a live bot game). attackers() works for either side regardless of whose turn it is and
+// counts a pinned piece's attacks too, which legal moves would hide.
 function movesShapesFor(sq) {
   if (!sq || state.editor || state.demo) return [];
   const c = currentGame();
@@ -1291,20 +1373,14 @@ function movesShapesFor(sq) {
   const piece = cg.state.pieces.get(sq);
   if (!piece) return [];
   const isOpponent = piece.color !== turn;
-  let moves;
-  if (isOpponent) {
-    // Flip the turn in the FEN so chess.js returns this piece's legal moves
-    const parts = c.fen().split(' ');
-    parts[1] = parts[1] === 'w' ? 'b' : 'w';
-    try { moves = new Chess(parts.join(' ')).moves({ verbose: true, square: sq }); }
-    catch { return []; }
-  } else {
-    moves = c.moves({ verbose: true, square: sq });
+  const by = piece.color === 'white' ? 'w' : 'b';
+  const shapes = [];
+  for (const [target, p] of cg.state.pieces) {
+    if (p.color === piece.color || !c.attackers(target, by).includes(sq)) continue;
+    const brush = p.role === 'king' ? (isOpponent ? 'hvOppCheck' : 'hvCheck') : (isOpponent ? 'hvOppCapture' : 'hvCapture');
+    shapes.push(...(piece.role === 'knight' ? knightShapes(sq, target, brush) : [{ orig: sq, dest: target, brush }]));
   }
-  return moves.flatMap((m) => {
-    const brush = moveBrush(m, isOpponent);
-    return m.piece === 'n' ? knightShapes(m.from, m.to, brush) : [{ orig: m.from, dest: m.to, brush }];
-  });
+  return shapes;
 }
 
 function renderShapes() {
@@ -1331,8 +1407,8 @@ function drawBrush(m) {
 // Plain right-click on a piece: its threat arrows. A second right-click on the same square undoes it.
 function userShape(s) {
   const brush = drawBrush(drawMods);
-  if (s.dest) toggleDrawing({ orig: s.orig, dest: s.dest, brush: brush || 'green' });
-  else if (brush || !cg.state.pieces.get(s.orig)) toggleDrawing({ orig: s.orig, brush: brush || 'green' });
+  if (s.dest) toggleDrawing({ orig: s.orig, dest: s.dest, brush: brush || 'drawNone' });
+  else if (brush || !cg.state.pieces.get(s.orig)) toggleDrawing({ orig: s.orig, brush: brush || 'drawNone' });
   else holdThreatSquare(s.orig);
 }
 
@@ -1822,7 +1898,9 @@ function showGamesTab(tab) {
   $('tab-chesscom').classList.toggle('hidden', tab !== 'chesscom');
   $('tab-lichess').classList.toggle('hidden', tab !== 'lichess');
   $('tab-saved').classList.toggle('hidden', tab !== 'saved');
+  $('tab-favorites').classList.toggle('hidden', tab !== 'favorites');
   if (tab === 'saved') showSaved();
+  else if (tab === 'favorites') showFavorites();
   else if (tab === 'lichess') { if ($('games-user-lichess').value && !$('games-list-lichess').children.length) showGames('lichess'); }
   else if (state.me && !$('games-list').children.length) showGames();
 }
@@ -1857,6 +1935,42 @@ async function showSaved() {
           setReview(r, `Opened ${r.white} vs ${r.black} from this Pi.`);
         } catch (e) {
           addMsg('error', esc(e.message));
+        }
+      };
+    });
+  } catch (e) {
+    list.innerHTML = `<p class="hint">${esc(e.message)}</p>`;
+  }
+}
+
+async function showFavorites() {
+  const list = $('fav-list');
+  list.innerHTML = '<p class="hint">Loading…</p>';
+  try {
+    const favs = await api('/api/favorites');
+    if (!favs.length) {
+      list.innerHTML = '<p class="hint">No favourites yet. Open a game and click the ☆ next to the players’ names.</p>';
+      return;
+    }
+    list.innerHTML = favs.map((g, i) => {
+      const who = `${esc(g.white)}${g.white_elo ? ` (${esc(g.white_elo)})` : ''} – ${esc(g.black)}${g.black_elo ? ` (${esc(g.black_elo)})` : ''}`;
+      const meta = [g.title ? who : null, g.date ? esc(g.date.replaceAll('.', '-')) : null, esc(g.opening || '')].filter(Boolean).join(' · ');
+      return `<div class="game-row" data-i="${i}">
+        <span class="who">★ ${g.title ? esc(g.title) : who}</span>
+        <span class="res">${esc(g.result)}</span>
+        <span class="meta">${meta}</span>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('.game-row').forEach((el) => {
+      el.onclick = async () => {
+        const g = favs[+el.dataset.i];
+        $('dlg-games').close();
+        try {
+          const r = await api('/api/saved/open', { game_id: g.game_id, me: state.me || null });
+          setReview(r, `Opened ${g.title || `${r.white} vs ${r.black}`} from your favourites.`);
+        } catch {
+          // the saved review is gone (data/reviews cleared): analyse it again from the stored PGN
+          loadGame(g.pgn);
         }
       };
     });
@@ -2179,6 +2293,7 @@ function updateEditor() {
   $('player-bottom').innerHTML = '';
   document.body.classList.remove('demo-mode');
   document.body.classList.add('editor-mode');
+  syncGameTitle();
   $('game-info').textContent = '';  // the "Set-up board" tag above the board says it; a title here wrapped beside the buttons
   $('board-sub').textContent = 'Great for endgame practice: set it up, then play it out against the bot.';
   $('summary').innerHTML = `<div class="play-buttons">

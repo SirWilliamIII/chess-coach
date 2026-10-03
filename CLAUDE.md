@@ -63,6 +63,16 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
     opening names). Needs `LICHESS_TOKEN` in `.env`, otherwise silently unavailable
     (`explorer.available()` gates it everywhere).
 - **"Find game by username" has a Lichess tab (2026-10-03).** `/api/games?site=lichess` maps Lichess's game list (`_lichess_games()` in `server.py`) to the chess.com row shape; AI/anonymous players have no rating (shown without one). The Lichess name is remembered as `localStorage` `meLichess` and passed as `me` when loading; `state.me` stays the chess.com name. The "save 500 Lichess games" box moved from the Saved tab into this tab.
+- **Favourite games + titles (2026-10-03).** `core/favorites.py`: a `favorites` table in `data/library.sqlite`
+  (game_id, title, names, ratings, result, date, opening, full PGN rebuilt from the review by `pgn_of()`, so it
+  outlives `data/reviews/`). `POST /api/favorites/{game_id}` `{favorite}` toggles, `{title}` sets a title and
+  favourites the game ("" clears the title); unstarring deletes the row, title included. `public_review()` sends
+  `favorite`/`title`/`date`. Frontend: ☆ before the names in `#game-info`; double-click `#game-title` (header gap
+  next to the brand), `#board-sub` or `#game-info` edits the title in place (`editTitle()`; saves on Enter, blur or
+  any outside pointerdown, since chessground cancels mousedown and a board click never blurs); "★ Favourites" tab
+  in the Find-game dialog, which re-analyses the stored PGN if the saved review is gone. Loaded games only
+  (`canTitle()`): bot games and the analysis board have no game_id. `date` is only in reviews made from now on
+  (`_date()` in `core/review.py`); older cached reviews have none.
 - **chess.com vs. Lichess data shape asymmetry**: chess.com's monthly archive endpoint
   includes full PGN inline. Lichess's game-list endpoint does **not** — it needs a separate
   `lichess.game_pgn(id)` request per game. This bit the offline-prefetch feature once already
@@ -75,10 +85,15 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   - `drawable.onChange(shapes)` (`app.js`): we call `cg.setShapes([])` after every change, so each call
     carries only the new shape. A right-drag becomes your own arrow (`userShape()` → `drawings`, kept per
     position by `drawnShapes()` inside `baseShapes()`), coloured by the modifier read in our own capture-phase
-    `mousedown` listener (`drawBrush()`: ⌘ #BF5700, ⌥ #7BAFD4, ⌃ #f9a01b, fn #ff2800 with Shift as a stand-in,
-    none = green; chessground itself can't tell ⌘ from ⌥). A right-click on an empty square, or a modifier +
+    `mousedown` listener (`drawBrush()`, 2026-10-03, user's call: dark, opaque arrows and no green, which vanished on
+    the dark squares: none #d35400 orange, ⌃ #b01e1e red, ⌥ #0e7c7b teal, ⌘ #1f3f9e blue, fn #6b2fa0 purple with Shift as a
+    stand-in, lineWidth 6 like the threat arrows: chessground scales the arrowhead with it; square fills are pastel versions, `.sq-fill-*` in `style.css`). Chessground previews a drag in its own brush
+    (it can't tell ⌘ from ⌥), so the same listener recolours `cg.state.drawable.current` on the next animation frame
+    (its draw-start handler stops propagation, so a later listener never runs). Chessground's CSS dims the whole
+    `.cg-shapes` layer to 0.6; `style.css` sets it to 1 and every non-draw brush carries the 0.6 in its own opacity. A right-click on an empty square, or a modifier +
     right-click on any square, **fills** the square in that colour (`drawnSquares()` → `sq-fill-<brush>` classes
-    via `paintSquares()`); a plain right-click on a piece holds its threat arrows. A second right-click on the
+    via `paintSquares()`); a plain right-click on a piece holds its threat arrows: one per enemy piece it attacks (`movesShapesFor()`, chess.js
+    `attackers()`, so pins and whose turn it is don't matter; it drew every legal move until 2026-10-03). A second right-click on the
     same square removes the fill / that piece's arrows. Because chessground's list is always empty, its
     left-click erase never fires `onChange`, so the same `mousedown` listener clears drawings and held
     threats on a left click. (Before 2026-10-03 the handler used a `nativeShapesSeen` counter that skipped
@@ -86,7 +101,7 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
     `onChange` with cumulative arrays, which real chessground never sends.) **Not verified: fn.** Browsers
     rarely report it on macOS and Playwright can't press it; ⌃ only works with a real right-click
     (two-finger), since ⌃+click arrives as a left click. A knight-shaped drawing (a8→b6) renders as an L via
-    `knightShapes()` (first leg uses the brush's `…Mid` twin, hence `greenMid`/`drawCmdMid`…).
+    `knightShapes()` (first leg uses the brush's `…Mid` twin, hence `drawNoneMid`/`drawCmdMid`…).
     `defaultSnapToValidMove: false`: snapping pulled a drawn arrow's end onto the piece's legal squares.
   - **No hover arrows** (removed 2026-10-03, user's call: "hovering on a piece should do nothing at all").
     Arrows on the board come only from right-clicks/drags, the lesson guide and the coach's demos.
