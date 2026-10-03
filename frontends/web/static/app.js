@@ -1326,9 +1326,6 @@ function clickMove(token) {
   return playSan(t.san);
 }
 
-// ---- piece hover: show legal-move arrows for the side to move
-
-
 function squareFromEvent(e) {
   const rect = $('board').getBoundingClientRect();
   const x = (e.clientX - rect.left) / rect.width;
