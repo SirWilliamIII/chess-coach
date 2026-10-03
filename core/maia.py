@@ -11,6 +11,7 @@ checkpoint downloads from Hugging Face on first use into ~/.cache/huggingface. W
 """
 
 import importlib.util
+import os
 import random
 import threading
 from collections import OrderedDict
@@ -31,6 +32,15 @@ TOP_MOVES = 10  # candidates kept per position: the panel shows 5, play samples 
 # engine.BOT_LEVELS, so `Bot.play` handles it). Names keep the "(~N)" the frontend parses.
 BOT_LEVELS = [{"id": r, "name": f"Maia (~{r})", "maia": r} for r in range(600, 2600, 100)] + [
     {"id": 9, "name": "Stockfish", "full": True}]
+
+
+def player_rating() -> int:
+    """Your rating on Lichess's scale (Maia was trained on Lichess games), from PLAYER_RATING in .env.
+    Used where the app needs "a player at your level": human moves in lessons, the bot's opponent rating."""
+    try:
+        return int(os.environ.get("PLAYER_RATING", "1300"))
+    except ValueError:
+        return 1300
 
 
 def available() -> bool:

@@ -47,6 +47,8 @@ def recent_games(username: str, max_games: int = 10) -> list[dict]:
             "(no scopes needed) at https://lichess.org/account/oauth/token and export it as "
             "LICHESS_TOKEN. Reviewing a single game by URL works without one."
         )
+    if r.status_code == 404:
+        raise RuntimeError(f"Lichess: no user named {username!r} - check the username")
     if r.status_code == 429:
         raise RuntimeError("Lichess rate limit hit; wait a minute and try again.")
     r.raise_for_status()

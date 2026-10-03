@@ -15,6 +15,7 @@ from pathlib import Path
 
 import anthropic
 import chess
+import requests
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -36,6 +37,9 @@ STATIC = Path(__file__).parent / "static"
 
 class State:
     engine: Engine | None = None
+    # the bot-game card's instant parts (quick card, "If they…" replies): their own process, so they never
+    # queue behind the eval bar / GM check / coach on S.engine, which held them up 3+ s per move
+    card_engine: Engine | None = None
     bot: Bot | None = None
     maia: maia.Maia | None = None
     review: dict | None = None
@@ -51,12 +55,14 @@ S = State()
 @asynccontextmanager
 async def lifespan(app):
     S.engine = Engine()
+    S.card_engine = Engine(threads=2, hash_mb=64)  # 2 of the 4 performance cores; S.engine uses 4
     S.bot = Bot()
     S.maia = maia.Maia()  # the model itself loads on the first request
     new_analysis(chess.STARTING_FEN)
     repertoire.index()  # loads the trap index, or starts building it if data/openings.md changed
     yield
     S.engine.close()
+    S.card_engine.close()
     S.bot.close()
 
 
@@ -117,9 +123,29 @@ def config():
             "explorer_ready": explorer.available(), "maia_ready": maia.available(), "maia_ratings": maia.RATINGS}
 
 
+def _lichess_player(p: dict) -> tuple[str, int | None]:
+    if "user" in p:
+        return p["user"]["name"], p.get("rating")
+    return (f"Stockfish level {p['aiLevel']}", None) if "aiLevel" in p else ("Anonymous", None)
+
+
+def _lichess_games(user: str, n: int) -> list[dict]:
+    out = []
+    for i, g in enumerate(lichess.recent_games(user, n), 1):
+        (w, wr), (b, br) = _lichess_player(g["players"]["white"]), _lichess_player(g["players"]["black"])
+        res = {"white": "1-0", "black": "0-1"}.get(g.get("winner"), "½-½")  # no winner: draw (or aborted)
+        out.append({"ref": f"https://lichess.org/{g['id']}", "index": i, "time_class": g.get("speed"),
+                    "white": w, "white_rating": wr, "black": b, "black_rating": br, "result": res,
+                    "opening": (g.get("opening") or {}).get("name", ""),
+                    "end_time": (g.get("lastMoveAt") or g.get("createdAt") or 0) // 1000 or None})
+    return out
+
+
 @app.get("/api/games")
-def games(user: str, n: int = 15):
+def games(user: str, n: int = 15, site: str = "chesscom"):
     try:
+        if site == "lichess":
+            return _lichess_games(user, n)
         out = []
         for i, g in enumerate(chesscom.recent_games(user, n), 1):
             w, b = g["white"], g["black"]
@@ -129,7 +155,7 @@ def games(user: str, n: int = 15):
                         "black": b["username"], "black_rating": b["rating"], "result": res,
                         "opening": chesscom.opening_from_url(g.get("eco", "")), "end_time": g.get("end_time")})
         return out
-    except (RuntimeError, ValueError) as e:
+    except (RuntimeError, ValueError, requests.HTTPError) as e:
         raise HTTPException(400, str(e))
 
 
@@ -380,7 +406,8 @@ class PlayMoveReq(BaseModel):
     level: int
     start_fen: str | None = None  # with `moves`: the game so far, which Maia reads (last 8 positions)
     moves: list[str] = []         # SAN
-    opp_elo: int | None = None    # the human's rating, when known; Maia then plays against that
+    opp_elo: int | None = None    # the human's rating, when known (else PLAYER_RATING); Maia plays against that
+    card: bool = False            # also return the quick opponent card for the position after the move
 
 
 @app.post("/api/play/move")
@@ -390,10 +417,22 @@ def play_move(req: PlayMoveReq):
         raise HTTPException(400, "game is over")
     level = next((lv for lv in bot_levels() if lv["id"] == req.level), None)
     if level and "maia" in level:
-        move = S.maia.play(board, level["maia"], req.opp_elo)
+        # a fresh game has no rating for you, so PLAYER_RATING stands in (else Maia assumes an equal opponent)
+        move = S.maia.play(board, level["maia"], req.opp_elo or maia.player_rating())
     else:
         move = S.bot.play(board, req.level)
-    return {"uci": move.uci(), "san": board.san(move)}
+    out = {"uci": move.uci(), "san": board.san(move)}
+    if req.card:
+        # the card's instant part rides along with the move, so it appears with it (~25 ms, inside the
+        # frontend's 450 ms pause) instead of after a separate ~4 s request; the full card follows
+        after = board.copy()
+        after.push(move)
+        if not after.is_game_over():
+            try:
+                out["card"] = _with_traps(opponent_card.quick(S.card_engine, after), after)
+            except ValueError:
+                pass  # no card is fine; the full request still runs
+    return out
 
 
 class ExplorerReq(BaseModel):
@@ -467,6 +506,10 @@ def opponent_card_endpoint(req: GmReq):
         card = opponent_card.build(S.engine, board)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    return _with_traps(card, board)
+
+
+def _with_traps(card: dict, board: chess.Board) -> dict:
     # known traps from data/openings.md: the one just played against you, or one you could walk into
     card["trap_punish"] = next(iter(repertoire.after_mistake(board)), None)
     card["trap_warn"] = next(iter(repertoire.before_mistake(board)), None)
@@ -491,7 +534,7 @@ def opponent_card_replies(req: CardRepliesReq):
     """'If they play A, I play B' rows for the card's best move (engine only, no Claude call)."""
     board = parse_fen(req.fen)
     try:
-        return {"replies": opponent_card.replies(S.engine, board, req.uci)}
+        return {"replies": opponent_card.replies(S.card_engine, board, req.uci)}
     except ValueError as e:
         raise HTTPException(400, str(e))
 

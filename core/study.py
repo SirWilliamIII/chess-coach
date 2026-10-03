@@ -662,6 +662,28 @@ CURVE_ACCEPT = 50        # cp: a reply this close to the engine's best also coun
 CURVE_KEEP = 3
 
 
+def _best_cp(b: chess.Board, engine: Engine) -> int | None:
+    """The engine's best for the side to move, in centipawns from that side's point of view."""
+    top = engine.lines(b, multipv=1, seconds=1.0, depth=18)
+    return (1 if b.turn == chess.WHITE else -1) * top[0]["cp_white"] if top else None
+
+
+def _judge(b: chess.Board, mv: chess.Move, engine: Engine, best: int) -> dict | None:
+    """How much `mv` throws away against `best` (the mover's view), with the replies that punish it."""
+    sign = 1 if b.turn == chess.WHITE else -1
+    nb = b.copy(stack=False)
+    nb.push(mv)
+    if nb.is_game_over():
+        return None
+    replies = engine.lines(nb, multipv=3, seconds=1.0, depth=18)
+    if not replies:
+        return None
+    ok = [r for r in replies if sign * (r["cp_white"] - replies[0]["cp_white"]) <= CURVE_ACCEPT]
+    return {"loss": best - sign * replies[0]["cp_white"], "eval_white": replies[0]["eval_white"],
+            "line": replies[0]["line"], "pv": replies[0]["pv"],
+            "punish": [{"san": r["move"], "uci": r["uci"], "eval_white": r["eval_white"]} for r in ok]}
+
+
 def add_curveballs(study: dict, engine: Engine, explore, progress=lambda msg: None) -> int:
     """Set node["curveballs"] on the lesson's opponent-to-move positions; returns how many were found."""
     nodes = study["nodes"]
@@ -680,30 +702,16 @@ def add_curveballs(study: dict, engine: Engine, explore, progress=lambda msg: No
                  and b.parse_uci(m["uci"]).uci() not in lesson][:CURVE_CANDIDATES]
         if not cands:
             continue
-        sign = 1 if b.turn == chess.WHITE else -1   # the opponent's point of view
-        top = engine.lines(b, multipv=1, seconds=1.0, depth=18)
-        if not top:
+        best = _best_cp(b, engine)
+        if best is None:
             continue
-        best = sign * top[0]["cp_white"]
         balls = []
         for m in cands:
             mv = b.parse_uci(m["uci"])
-            nb = b.copy(stack=False)
-            nb.push(mv)
-            if nb.is_game_over():
+            j = _judge(b, mv, engine, best)
+            if j is None or j["loss"] < CURVE_MIN_LOSS:
                 continue
-            replies = engine.lines(nb, multipv=3, seconds=1.0, depth=18)
-            if not replies:
-                continue
-            after = sign * replies[0]["cp_white"]
-            loss = best - after
-            if loss < CURVE_MIN_LOSS:
-                continue
-            ok = [r for r in replies if sign * (r["cp_white"] - replies[0]["cp_white"]) <= CURVE_ACCEPT]
-            balls.append({"san": b.san(mv), "uci": mv.uci(), "games": m["games"], "loss": loss,
-                          "eval_white": replies[0]["eval_white"], "line": replies[0]["line"],
-                          "pv": replies[0]["pv"],
-                          "punish": [{"san": r["move"], "uci": r["uci"], "eval_white": r["eval_white"]} for r in ok]})
+            balls.append({"san": b.san(mv), "uci": mv.uci(), "games": m["games"], **j})
         if balls:
             n["curveballs"] = sorted(balls, key=lambda x: -x["games"])[:CURVE_KEEP]
             found += len(n["curveballs"])
@@ -711,6 +719,124 @@ def add_curveballs(study: dict, engine: Engine, explore, progress=lambda msg: No
             n.pop("curveballs", None)
     study["curveballs_built"] = time.strftime("%Y-%m-%d")
     return found
+
+
+# ---------------------------------------------------------------- human moves
+# The lesson's own moves stay theory; this makes the opponent's side human. Per opponent-to-move position
+# past the trunk, Maia-3 says what a player of your rating (PLAYER_RATING) plays there. Its moves of at
+# least HUMAN_MIN_PCT that aren't lesson moves are judged by the engine: a sound one (loses < CURVE_MIN_LOSS)
+# becomes a new branch (source "human"), continued HUMAN_EXTRA plies with your reply from master games when
+# masters reached it (and the engine agrees), else the engine's, and Maia's top move for them; a losing one
+# becomes a curveball like the Lichess-database ones. Every opponent node also keeps Maia's top moves in
+# node["maia"], so the app can pick their reply the way a human would. Engine + Maia, no Claude call.
+# The trunk is skipped: leaving the named move order means a different opening (another lesson).
+
+HUMAN_MIN_PCT = 15.0     # how likely at your rating a sound move must be to get its own branch
+HUMAN_CURVE_PCT = 8.0    # ...and a losing one to become a curveball (blunders are rarely anyone's top choice)
+HUMAN_EXTRA = 4          # plies a human branch runs on
+HUMAN_MAX_NODES = 60     # new nodes per lesson, so human branches can't swamp the theory
+
+
+def _board_at(nodes: dict, nid: str) -> chess.Board:
+    """The node's position with its move history (Maia reads the last 8 positions)."""
+    b = chess.Board()
+    for san in _line(nodes, nid):
+        b.push_san(san)
+    return b
+
+
+def add_human(study: dict, engine: Engine, maia, explore, rating: int, progress=lambda msg: None) -> dict:
+    """Add Maia's maia/branch/curveball data to the lesson in place; returns what was added, for review."""
+    nodes = study["nodes"]
+    mine = chess.WHITE if study["color"] == "white" else chess.BLACK
+    next_id = max(int(k) for k in nodes) + 1
+    report = {"branches": [], "curveballs": [], "covered": [], "dropped": 0}
+
+    def add(b: chess.Board, parent: str, mv: chess.Move, **extra) -> str:
+        nonlocal next_id
+        nid, next_id = str(next_id), next_id + 1
+        san = b.san(mv)
+        nb = b.copy()
+        nb.push(mv)
+        nodes[nid] = {"id": nid, "parent": parent, "san": san, "uci": mv.uci(), "fen": nb.fen(),
+                      "children": [], "main": None, "ply": len(nb.move_stack),
+                      "eval_white": engine.evaluate(nb, seconds=0.5, depth=16)["eval_white"]
+                      if not nb.is_game_over() else None, **extra}
+        nodes[parent]["children"].append(nid)
+        if nodes[parent]["main"] is None:
+            nodes[parent]["main"] = nid
+        return nid
+
+    def extend(nid: str, plies: int) -> None:
+        b = _board_at(nodes, nid)
+        for _ in range(plies):
+            if b.is_game_over() or len(nodes) - n0 >= HUMAN_MAX_NODES:
+                return
+            if b.turn == mine:
+                # your reply: theory if masters got here and it's sound, else the engine's move
+                best = engine.lines(b, multipv=1, seconds=1.5, depth=18)
+                if not best:
+                    return
+                mv, extra = b.parse_uci(best[0]["uci"]), {"source": "engine"}
+                try:
+                    data = explore(b.fen(), "masters")
+                except RuntimeError:
+                    data = None
+                if data and data["total"] >= MIN_GAMES:
+                    m = data["moves"][0]
+                    cand = b.parse_uci(m["uci"])
+                    j = _judge(b, cand, engine, _best_cp(b, engine) or 0) if cand != mv else {"loss": 0}
+                    if j is not None and j["loss"] <= ENGINE_SLACK:
+                        mv, extra = cand, {"source": "masters", "share": m["share"], "games_move": m["games"]}
+            else:
+                top = maia.moves(b, rating, rating, top=1)
+                if not top:
+                    return
+                mv, extra = b.parse_uci(top[0]["uci"]), {"source": "human", "pct": top[0]["pct"]}
+            nid = add(b, nid, mv, **extra)
+            b.push(mv)
+
+    n0 = len(nodes)
+    todo = sorted((n for n in nodes.values() if n["children"] and not n.get("trunk")
+                   and chess.Board(n["fen"]).turn != mine), key=lambda n: n["ply"])
+    for i, n in enumerate(todo):
+        progress(f"Checking what players at {rating} play… ({i + 1}/{len(todo)} positions)")
+        b = _board_at(nodes, n["id"])
+        guesses = maia.moves(b, rating, rating, top=10)
+        n["maia"] = [{"san": g["move"], "uci": g["uci"], "pct": g["pct"]} for g in guesses[:5]]
+        lesson = {nodes[k]["uci"] for k in n["children"]}
+        report["covered"].append((n["id"], sum(g["pct"] for g in guesses if g["uci"] in lesson)))
+        cands = [g for g in guesses if g["pct"] >= HUMAN_CURVE_PCT and g["uci"] not in lesson]
+        if not cands:
+            continue
+        best = _best_cp(b, engine)
+        if best is None:
+            continue
+        for g in cands:
+            mv = b.parse_uci(g["uci"])
+            j = _judge(b, mv, engine, best)
+            if j is None:
+                continue
+            if j["loss"] >= CURVE_MIN_LOSS:
+                balls = n.setdefault("curveballs", [])
+                old = next((c for c in balls if c["uci"] == g["uci"]), None)
+                if old:
+                    old["pct"] = g["pct"]   # the Lichess database already has it; keep its game count
+                else:
+                    balls.append({"san": g["move"], "uci": g["uci"], "games": None, "pct": g["pct"],
+                                  "source": "maia", **j})
+                report["curveballs"].append((n["id"], g["move"], g["pct"], j["loss"], bool(old)))
+            elif g["pct"] < HUMAN_MIN_PCT:
+                continue
+            elif len(nodes) - n0 < HUMAN_MAX_NODES:
+                kid = add(b, n["id"], mv, source="human", pct=g["pct"])
+                extend(kid, HUMAN_EXTRA)
+                report["branches"].append((n["id"], kid, g["pct"], j["loss"]))
+            else:
+                report["dropped"] += 1
+    study["human_rating"] = rating
+    study["human_built"] = time.strftime("%Y-%m-%d")
+    return report
 
 
 # ---------------------------------------------------------------- overview → moments
@@ -841,6 +967,50 @@ if __name__ == "__main__":
             engine.close()
         sys.stdout.flush()
         os._exit(0)  # the engine thread keeps the process alive otherwise
+    if sys.argv[1:2] == ["human"]:
+        # python -m core.study human [--write] [--rating N] [slug ...]: prints what it would add; saves only with --write
+        from core import maia as maia_mod
+        from frontends.lichess import explorer
+        args = sys.argv[2:]
+        write = "--write" in args
+        rating = maia_mod.player_rating()
+        if "--rating" in args:
+            rating = int(args[args.index("--rating") + 1])
+            del args[args.index("--rating"):args.index("--rating") + 2]
+        slugs = [a for a in args if not a.startswith("--")] or [f.stem for f in sorted(STUDY_DIR.glob("*.json"))]
+        engine, m = Engine(threads=2, hash_mb=128), maia_mod.Maia()
+        try:
+            for s in slugs:
+                study = json.loads((STUDY_DIR / f"{s}.json").read_text())
+                if study.get("human_built"):
+                    print(f"{s}: already has human moves ({study['human_rating']}), skipped")
+                    continue
+                t0, before = time.monotonic(), len(study["nodes"])
+                r = add_human(study, engine, m, functools.partial(explorer.explore, patient=True), rating)
+                nodes = study["nodes"]
+                cov = [c for _, c in r["covered"]]
+                print(f"\n{s} at {rating}: {len(r['branches'])} branches ({len(nodes) - before} new nodes, "
+                      f"{r['dropped']} more over the cap), {len(r['curveballs'])} curveballs, {time.monotonic() - t0:.0f} s")
+                print(f"  Maia's chance the opponent plays a lesson move: median {sorted(cov)[len(cov) // 2]:.0f}%, "
+                      f"min {min(cov):.0f}% over {len(cov)} positions")
+                for pid, kid, pct, loss in r["branches"]:
+                    line, k, last = [], kid, kid
+                    while k is not None:
+                        src = nodes[k].get("source")
+                        line.append(nodes[k]["san"] + (f"[{src}]" if src != "human" else f"[{nodes[k]['pct']:.0f}%]"))
+                        last, k = k, nodes[k]["main"]
+                    print(f"  branch after {numbered(_line(nodes, pid))}: {pct:.0f}% play {' '.join(line)}"
+                          f"  (costs them {loss / 100:.2f}; line ends {nodes[last]['eval_white']})")
+                for pid, san, pct, loss, dup in r["curveballs"]:
+                    print(f"  curveball after {numbered(_line(nodes, pid))}: {san}?? {pct:.0f}% "
+                          f"(-{loss / 100:.1f}){' — already a Lichess curveball' if dup else ''}")
+                if write:
+                    save(study)
+                    print("  saved")
+        finally:
+            engine.close()
+        sys.stdout.flush()
+        os._exit(0)
     if sys.argv[1:2] == ["tag"]:
         slugs = sys.argv[2:] or [f.stem for f in sorted(STUDY_DIR.glob("*.json"))]
         for s in slugs:

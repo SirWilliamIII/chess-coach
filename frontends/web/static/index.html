@@ -17,6 +17,7 @@
       <button id="btn-play" class="btn primary">Play game</button>
       <button id="btn-games" class="btn primary">Find game by username</button>
       <button id="btn-analysis" class="btn ghost">Analysis board</button>
+      <button id="btn-setup" class="btn ghost">Set up position</button>
       <button id="btn-study" class="btn ghost">Learn openings</button>
       <span class="actions-sep" aria-hidden="true"></span>
       <button id="btn-library" class="link">📚 Lessons</button>
@@ -60,6 +61,7 @@
               </div>
               <div class="gp-body">
               <div class="moves" id="moves"></div>
+              <button class="link moves-more hidden" id="moves-more"></button>
               <div class="variation hidden" id="variation">
                 <span id="variation-text"></span>
                 <button class="link" id="btn-back-to-game">Back to game</button>
@@ -72,8 +74,11 @@
                 <div id="maia-pane" class="hidden">
                   <div class="maia-head">
                     <label class="toggle"><input type="checkbox" id="maia-toggle" checked> Human moves (Maia)</label>
-                    <select id="maia-rating" title="What players of this rating play here, from Maia's model of human games"></select>
+                    <span class="maia-ratings" title="What players of these ratings play here, from Maia's model of human games">
+                      W <select id="maia-white"></select> B <select id="maia-black"></select>
+                    </span>
                   </div>
+                  <label class="toggle maia-arrows-row"><input type="checkbox" id="maia-arrows"> Show on board</label>
                   <div id="maia-lines"></div>
                 </div>
                 <div id="explorer-pane">
@@ -112,6 +117,7 @@
     <form method="dialog" class="dlg-head"><h2>Find game by username</h2><button class="link">Close</button></form>
     <div class="seg" id="games-tabs">
       <button data-tab="chesscom" class="on">From chess.com</button>
+      <button data-tab="lichess">From Lichess</button>
       <button data-tab="saved">Saved on this device (offline)</button>
     </div>
     <div id="tab-chesscom">
@@ -125,13 +131,19 @@
       </div>
       <div id="games-list" class="games-list"></div>
     </div>
-    <div id="tab-saved" class="hidden">
-      <p class="hint">Games already analysed on this Pi. These open without internet (the coach chat still needs it).</p>
-      <div class="offline-box">
+    <div id="tab-lichess" class="hidden">
+      <div class="row">
         <input id="games-user-lichess" placeholder="Lichess username" autocomplete="off">
-        <button class="btn ghost small" id="games-prefetch-lichess">Save my last 500 Lichess games</button>
+        <button class="btn" id="games-fetch-lichess">Show games</button>
+      </div>
+      <div class="offline-box">
+        <button class="btn ghost small" id="games-prefetch-lichess">Save my last 500 games for offline</button>
         <span id="prefetch-status-lichess" class="hint"></span>
       </div>
+      <div id="games-list-lichess" class="games-list"></div>
+    </div>
+    <div id="tab-saved" class="hidden">
+      <p class="hint">Games already analysed on this Pi. These open without internet (the coach chat still needs it).</p>
       <div id="saved-list" class="games-list"></div>
     </div>
   </dialog>

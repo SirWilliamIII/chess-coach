@@ -13,6 +13,11 @@ from .engine import Engine
 MAIN_SECONDS = 1.5
 MAIN_DEPTH = 20
 LINE_PLIES = 8
+# The quick card comes back with the bot's move, so it has to be near-instant: depth 14 took ~25 ms
+# (median, max ~0.25 s) and matched depth 20's best move in 17/19 review positions (2026-10-03). The full
+# card replaces it a few seconds later, so the rare disagreement is corrected, not shown for good.
+QUICK_SECONDS = 0.25
+QUICK_DEPTH = 14
 
 # tricks.find() tags, in the order we'd rather show them as "the sharper try"
 _SHARP = ["sound sacrifice", "trap: taking the bait loses", "speculative sacrifice (high risk, high reward)"]
@@ -46,13 +51,12 @@ def _pv_san(board: chess.Board, pv_uci: list[str]) -> list[str]:
     return out
 
 
-def build(engine: Engine, board: chess.Board) -> dict:
-    """Card data for the side to move (the player, right after the opponent's move)."""
-    lines = engine.lines(board, multipv=1, seconds=MAIN_SECONDS, depth=MAIN_DEPTH)
+def _card(engine: Engine, board: chess.Board, seconds: float, depth: int) -> dict:
+    lines = engine.lines(board, multipv=1, seconds=seconds, depth=depth)
     if not lines:
         raise ValueError("engine returned no line for this position")
     top = lines[0]
-    card = {
+    return {
         "fen": board.fen(),
         "to_move": features.COLOR_NAME[board.turn],
         "eval_white": top["eval_white"],
@@ -65,6 +69,16 @@ def build(engine: Engine, board: chess.Board) -> dict:
                   "them": features.loose_pieces(board, not board.turn)},
     }
 
+
+def quick(engine: Engine, board: chess.Board) -> dict:
+    """The card's instant part (best move, eval, main line, loose pieces) from a shallow search;
+    no sharper try or threat, which take ~3 s between them (`build`)."""
+    return {**_card(engine, board, QUICK_SECONDS, QUICK_DEPTH), "quick": True}
+
+
+def build(engine: Engine, board: chess.Board) -> dict:
+    """Card data for the side to move (the player, right after the opponent's move)."""
+    card = _card(engine, board, MAIN_SECONDS, MAIN_DEPTH)
     found = tricks.find(engine, board)
     top_move = found["candidates"][0]["move"] if found["candidates"] else None
     sharp = None
@@ -87,7 +101,7 @@ def build(engine: Engine, board: chess.Board) -> dict:
         # the top move is itself the sharp one: say so instead of inventing a second try
         card["best"]["tags"] = [t for t in found["candidates"][0]["tags"] if not t.startswith("engine")]
 
-    threat = None if top["eval_white"].startswith("#") else engine.threat(board)  # no threat talk when we mate
+    threat = None if card["eval_white"].startswith("#") else engine.threat(board)  # no threat talk when we mate
     if threat and threat["serious"]:
         card["threat"] = {"move": threat["threat_move"], "gain": round(threat["gain_cp_if_ignored"] / 100, 1)}
     return card

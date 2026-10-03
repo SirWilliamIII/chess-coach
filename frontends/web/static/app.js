@@ -105,6 +105,15 @@ const cg = Chessground($('board'), {
       paleGreen:{ key: 'paleGreen',color: '#15781B', opacity: 0.4,  lineWidth: 15 },
       paleRed:  { key: 'paleRed',  color: '#882020', opacity: 0.4,  lineWidth: 15 },
       paleGrey: { key: 'paleGrey', color: '#4a4a4a', opacity: 0.35, lineWidth: 15 },
+      // Maia's likely human moves, width by probability (>= 40%, >= 15%, >= 5%)
+      maiaHi:   { key: 'maiaHi',   color: '#8a4fc0', opacity: 0.85, lineWidth: 13 },
+      maiaMed:  { key: 'maiaMed',  color: '#8a4fc0', opacity: 0.65, lineWidth: 9 },
+      maiaLo:   { key: 'maiaLo',   color: '#8a4fc0', opacity: 0.45, lineWidth: 6 },
+      // arrows/circles you draw with a right-drag, colour by modifier key (drawBrush)
+      drawCmd:  { key: 'drawCmd',  color: '#BF5700', opacity: 0.9,  lineWidth: 10 },
+      drawOpt:  { key: 'drawOpt',  color: '#7BAFD4', opacity: 0.9,  lineWidth: 10 },
+      drawCtrl: { key: 'drawCtrl', color: '#f9a01b', opacity: 0.9,  lineWidth: 10 },
+      drawFn:   { key: 'drawFn',   color: '#ff2800', opacity: 0.9,  lineWidth: 10 },
       // piece-hover arrows: slim + opaque enough to read clearly
       hvMove:       { key: 'hvMove',      color: '#81b64c', opacity: 0.78, lineWidth: 7 },
       hvCapture:    { key: 'hvCapture',   color: '#e08030', opacity: 0.82, lineWidth: 7 },
@@ -122,17 +131,31 @@ const cg = Chessground($('board'), {
       hvOppCaptureMid: { key: 'hvOppCaptureMid', color: '#8f2422', opacity: 0.85, lineWidth: 6 },
       hvOppCheckMid:   { key: 'hvOppCheckMid',   color: '#b8262b', opacity: 0.92, lineWidth: 6 },
     },
-    // right-click a piece to hold its threat arrows (instead of drawing a circle); left click
-    // resets them all (chessground's own eraseOnClick already clears its shapes on a left click,
-    // which is what fires this with an empty array)
+    // A right-click/drag ends up here as chessground's own shape. We empty its list after every change
+    // (its native rendering can't do our colours or threat arrows), so each call carries only the new
+    // shape: a drag is your arrow (userShape), a plain click on a piece holds its threat arrows.
+    // Because the list is always empty, chessground's left-click erase never reports anything, so left
+    // clicks are handled by the mousedown listener below instead.
     onChange: (shapes) => {
-      if (!shapes.length) { clearHeldThreats(); return; }
-      for (const s of shapes.slice(nativeShapesSeen)) holdThreatSquare(s.orig);
-      nativeShapesSeen = shapes.length;
-      cg.setShapes([]);  // don't let the native circle/arrow render — ours replaces it
+      if (!shapes.length) return;
+      shapes.forEach(userShape);
+      cg.setShapes([]);
     },
   },
 });
+
+// The modifier keys are read here, on the press, because chessground's own brush choice can't tell
+// ⌘ from ⌥ (both map to its "blue") and ignores fn. Capture phase, so this runs before chessground's
+// handler. A left click (no Shift: Shift+left-drag also draws in chessground) clears your drawings and
+// held threat arrows, like chess.com.
+let drawMods = null;
+$('board').addEventListener('mousedown', (e) => {
+  if (e.button === 2 || e.shiftKey) {
+    drawMods = { fn: !!e.getModifierState?.('Fn'), shift: e.shiftKey, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey };
+  } else if (e.button === 0) {
+    clearUserShapes();
+  }
+}, true);
 
 function baseFen() {
   const r = state.review;
@@ -458,9 +481,26 @@ function movesRows(moves, cellFn) {
   return html;
 }
 
+// The list shows FOLD_ROWS rows (scrolled to the current move) until "Show all" is clicked; a whole
+// game was too tall for the panel. Expanded stays expanded until "Show fewer".
+const FOLD_ROWS = 5;
+let movesExpanded = false;
+
 function renderMoves() {
-  const r = state.review;
   const box = $('moves');
+  renderMoveList(box);
+  const rows = box.querySelectorAll('.row').length;
+  const foldable = rows > FOLD_ROWS;
+  box.classList.toggle('folded', foldable && !movesExpanded);
+  box.style.setProperty('--fold-rows', FOLD_ROWS);
+  const btn = $('moves-more');
+  btn.classList.toggle('hidden', !foldable);
+  btn.textContent = movesExpanded ? 'Show fewer ▴' : `Show all ${rows} moves ▾`;
+  box.querySelector('.mv.active')?.scrollIntoView({ block: 'nearest' });
+}
+
+function renderMoveList(box) {
+  const r = state.review;
   if (state.demo) return renderDemoMoves(box);
   if (state.play) return renderPlayMoves(box);
   if (!r.moves.length) {
@@ -576,19 +616,45 @@ function requestMaia(c) {
   $('maia-lines').innerHTML = '<div class="eline" style="color:var(--muted)">Thinking…</div>';
   const fen = c.fen();
   const line = currentLine();
+  // the side to move plays at its own rating, facing the other side's
+  const [mover, opp] = c.turn() === 'w' ? ['maia-white', 'maia-black'] : ['maia-black', 'maia-white'];
   maiaTimer = setTimeout(async () => {
     try {
       // the moves that led here matter: Maia reads the last few positions, not just this one
       const data = await api('/api/maia', {
-        fen, rating: +$('maia-rating').value, start_fen: line.startFen, moves: line.sans.slice(0, line.at),
+        fen, rating: +$(mover).value, opp_rating: +$(opp).value, start_fen: line.startFen, moves: line.sans.slice(0, line.at),
       });
       if (token !== maiaToken) return;
       lastMaia = { fen, ...data };
       renderMaia();
+      renderShapes();  // the arrows (if on) arrive after the board was drawn
     } catch (e) {
       if (token === maiaToken) $('maia-lines').textContent = e.message;
     }
   }, 200);
+}
+
+// Maia's likely moves as arrows, thicker for likelier ones. Off in lessons (they draw their own guide)
+// and in bot games, where on your turn they'd be a standing move hint (the bot replies too fast for
+// arrows on its turn to matter); the panel's list still shows the moves there.
+function maiaShapes() {
+  if (!lastMaia || !maiaOn() || !$('maia-arrows').checked || state.study || state.editor || state.play) return [];
+  if (currentGame().fen() !== lastMaia.fen) return [];
+  return lastMaia.moves.filter((m) => m.pct >= 5).slice(0, 4).map((m) => ({
+    orig: m.uci.slice(0, 2), dest: m.uci.slice(2, 4), brush: m.pct >= 40 ? 'maiaHi' : m.pct >= 15 ? 'maiaMed' : 'maiaLo',
+  }));
+}
+
+// a click plays the move where you could have played it yourself; otherwise (the bot's turn, a lesson's
+// opponent, a replay's other side) it only shows the arrow
+function playMaiaMove(uci) {
+  const c = currentGame();
+  const turn = c.turn() === 'w' ? 'white' : 'black';
+  if (!canMove(c, turn)) {
+    cg.setAutoShapes([...baseShapes(), { orig: uci.slice(0, 2), dest: uci.slice(2, 4), brush: 'green' }]);
+    return;
+  }
+  onBoardMove(uci.slice(0, 2), uci.slice(2, 4));  // promotions go to a queen, as on the board
 }
 
 function renderMaia() {
@@ -602,32 +668,41 @@ function renderMaia() {
     const tip = `${Math.round(w)}% win / ${Math.round(d)}% draw / ${Math.round(l)}% loss for the mover after this, `
       + `in games between players of these ratings (Maia's guess, not an engine eval)`
       + (best ? ". Also Stockfish's top move." : '');
-    return `<div class="mline${best ? ' best' : ''}" title="${tip}">
+    return `<div class="mline${best ? ' best' : ''}" title="${tip}" data-uci="${esc(m.uci)}">
       <span class="mmove">${esc(m.move)}</span>
       <span class="mbar"><span style="width:${Math.max(2, m.pct)}%"></span></span>
       <span class="mpct">${m.pct < 1 ? '<1' : Math.round(m.pct)}%</span>
       <span class="mev">${hit ? esc(hit.eval_white) : ''}${best ? ' ★' : ''}</span></div>`;
   }).join('');
+  $('maia-lines').querySelectorAll('.mline').forEach((el) => { el.onclick = () => playMaiaMove(el.dataset.uci); });
 }
 
 function setupMaia(cfg) {
   state.maiaReady = !!cfg.maia_ready;
   $('maia-pane').classList.toggle('hidden', !state.maiaReady);
   if (!state.maiaReady) return;
-  const saved = +(recall('maiaRating') || 1500);
-  $('maia-rating').innerHTML = cfg.maia_ratings.map((r) =>
-    `<option value="${r}"${r === saved ? ' selected' : ''}>~${r}</option>`).join('');
+  const old = recall('maiaRating') || 1500;  // the single rating from before White/Black were split
+  const refresh = () => requestMaia(state.editor ? null : currentGame());
+  for (const [id, key] of [['maia-white', 'maiaWhite'], ['maia-black', 'maiaBlack']]) {
+    const saved = +(recall(key) || old);
+    $(id).innerHTML = cfg.maia_ratings.map((r) =>
+      `<option value="${r}"${r === saved ? ' selected' : ''}>~${r}</option>`).join('');
+    $(id).onchange = (e) => { store(key, e.target.value); refresh(); };
+  }
+  const syncDisabled = () => {
+    const on = $('maia-toggle').checked;
+    $('maia-white').disabled = $('maia-black').disabled = $('maia-arrows').disabled = !on;
+  };
   $('maia-toggle').checked = recall('maiaOn') !== '0';
-  $('maia-rating').disabled = !$('maia-toggle').checked;
+  $('maia-arrows').checked = recall('maiaArrows') === '1';
+  syncDisabled();
   $('maia-toggle').onchange = (e) => {
     store('maiaOn', e.target.checked ? '1' : '0');
-    $('maia-rating').disabled = !e.target.checked;
-    requestMaia(state.editor ? null : currentGame());
+    syncDisabled();
+    refresh();
+    renderShapes();
   };
-  $('maia-rating').onchange = (e) => {
-    store('maiaRating', e.target.value);
-    requestMaia(state.editor ? null : currentGame());
-  };
+  $('maia-arrows').onchange = (e) => { store('maiaArrows', e.target.checked ? '1' : '0'); renderShapes(); };
 }
 
 function setEngineVisible(on) {
@@ -1248,6 +1323,52 @@ function renderShapes() {
   cg.setAutoShapes([...baseShapes(), ...heldThreats, ...(hoverPieceSq ? movesShapesFor(hoverPieceSq) : [])]);
 }
 
+// ---- your own arrows and circles (right-drag; modifier = colour). They belong to the position they
+// were drawn on: drawnShapes() drops them once the board shows anything else.
+
+let drawings = [];
+let drawingsFen = null;
+
+function drawBrush(m) {
+  if (!m) return null;
+  // fn first: browsers rarely report it (macOS keeps the key to itself), so Shift stands in for it
+  if (m.fn || m.shift) return 'drawFn';
+  if (m.ctrl) return 'drawCtrl';
+  if (m.meta) return 'drawCmd';
+  if (m.alt) return 'drawOpt';
+  return null;
+}
+
+function userShape(s) {
+  const brush = drawBrush(drawMods);
+  if (s.dest) toggleDrawing({ orig: s.orig, dest: s.dest, brush: brush || 'green' });
+  else if (brush) toggleDrawing({ orig: s.orig, brush });  // a modifier on one square: circle it
+  else holdThreatSquare(s.orig);
+}
+
+// drawing the same arrow again removes it (as chessground does); a different colour recolours it
+function toggleDrawing(shape) {
+  const fen = currentGame().fen();
+  if (drawingsFen !== fen) { drawings = []; drawingsFen = fen; }
+  const i = drawings.findIndex((d) => d.orig === shape.orig && d.dest === shape.dest);
+  const same = i >= 0 && drawings[i].brush === shape.brush;
+  if (i >= 0) drawings.splice(i, 1);
+  if (!same) drawings.push(shape);
+  renderShapes();
+}
+
+function drawnShapes() {
+  return drawings.length && drawingsFen === currentGame().fen() ? drawings : [];
+}
+
+function clearUserShapes() {
+  const had = drawings.length || heldSquares.size;
+  drawings = [];
+  heldSquares.clear();
+  heldThreats = [];
+  if (had) renderShapes();
+}
+
 function showPieceHover(sq) {
   if (sq === hoverPieceSq) return;
   hoverPieceSq = sq;
@@ -1255,11 +1376,10 @@ function showPieceHover(sq) {
 }
 
 // ---- right-click a piece to hold its threat arrows (accumulates across pieces);
-// left click resets them all — see the drawable.onChange hook above
+// left click resets them all — see the drawable.onChange hook and the board's mousedown listener
 
 let heldThreats = [];
 let heldSquares = new Set();
-let nativeShapesSeen = 0;
 
 function holdThreatSquare(sq) {
   if (heldSquares.has(sq)) return;
@@ -1271,7 +1391,6 @@ function holdThreatSquare(sq) {
 }
 
 function clearHeldThreats() {
-  nativeShapesSeen = 0;
   if (!heldSquares.size) return;
   heldSquares.clear();
   heldThreats = [];
@@ -1698,8 +1817,10 @@ async function loadGame(ref, me = state.me || null) {
 function showGamesTab(tab) {
   $('games-tabs').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   $('tab-chesscom').classList.toggle('hidden', tab !== 'chesscom');
+  $('tab-lichess').classList.toggle('hidden', tab !== 'lichess');
   $('tab-saved').classList.toggle('hidden', tab !== 'saved');
   if (tab === 'saved') showSaved();
+  else if (tab === 'lichess') { if ($('games-user-lichess').value && !$('games-list-lichess').children.length) showGames('lichess'); }
   else if (state.me && !$('games-list').children.length) showGames();
 }
 
@@ -1755,7 +1876,7 @@ async function startPrefetch(site) {
   const statusField = site === 'lichess' ? $('prefetch-status-lichess') : $('prefetch-status');
   const user = userField.value.trim() || (site === 'chesscom' ? state.me : '');
   if (!user) { statusField.textContent = `Enter your ${site === 'lichess' ? 'Lichess' : 'chess.com'} username first.`; return; }
-  if (site === 'chesscom') { state.me = user; store('me', user); }
+  if (site === 'chesscom') { state.me = user; store('me', user); } else store('meLichess', user);
   try {
     await api('/api/prefetch', { user, n: 500, site });
   } catch (e) {
@@ -1783,15 +1904,18 @@ async function pollPrefetch() {
   if (text) statuses.forEach((s) => { s.textContent = text; });
 }
 
-async function showGames() {
-  const user = $('games-user').value.trim();
+async function showGames(site = 'chesscom') {
+  const lichess = site === 'lichess';
+  const user = $(lichess ? 'games-user-lichess' : 'games-user').value.trim();
   if (!user) return;
-  state.me = user;
-  store('me', user);
-  const list = $('games-list');
+  // state.me is the chess.com name (the app-wide "you"); the Lichess name is remembered on its own
+  if (lichess) store('meLichess', user);
+  else { state.me = user; store('me', user); }
+  const list = $(lichess ? 'games-list-lichess' : 'games-list');
   list.innerHTML = '<p class="hint">Loading…</p>';
+  const rating = (r) => (r ? ` (${r})` : '');  // Lichess AI / anonymous players have none
   try {
-    const games = await api(`/api/games?user=${encodeURIComponent(user)}`);
+    const games = await api(`/api/games?site=${site}&user=${encodeURIComponent(user)}`);
     if (!games.length) { list.innerHTML = '<p class="hint">No recent games found.</p>'; return; }
     list.innerHTML = games.map((g) => {
       const meWhite = g.white.toLowerCase() === user.toLowerCase();
@@ -1799,13 +1923,13 @@ async function showGames() {
       const lost = (g.result === '1-0' && !meWhite) || (g.result === '0-1' && meWhite);
       const when = g.end_time ? new Date(g.end_time * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
       return `<div class="game-row" data-ref="${esc(g.ref)}">
-        <span class="who">${esc(g.white)} (${g.white_rating}) – ${esc(g.black)} (${g.black_rating})</span>
+        <span class="who">${esc(g.white)}${rating(g.white_rating)} – ${esc(g.black)}${rating(g.black_rating)}</span>
         <span class="res ${won ? 'win' : lost ? 'loss' : ''}">${won ? 'Won' : lost ? 'Lost' : 'Draw'} ${esc(g.result)}</span>
         <span class="meta">${esc(g.time_class || '')} · ${esc(when)} · ${esc(g.opening)}</span>
       </div>`;
     }).join('');
     list.querySelectorAll('.game-row').forEach((el) => {
-      el.onclick = () => { $('dlg-games').close(); loadGame(el.dataset.ref); };
+      el.onclick = () => { $('dlg-games').close(); loadGame(el.dataset.ref, user); };
     });
   } catch (e) {
     list.innerHTML = `<p class="hint">${esc(e.message)}</p>`;
@@ -1961,6 +2085,7 @@ function openEditor() {
   cg.set({ fen: c.fen(), lastMove: undefined });
   buildEditorPanel();
   update();
+  $('gp-toggle').click();  // the palette and presets live in the Moves & engine panel, closed by default
 }
 
 function closeEditor(render = true) {
@@ -2016,7 +2141,11 @@ function buildEditorPanel() {
   $('ed-start').onclick = () => load(START_FEN);
   $('ed-kings').onclick = () => load('4k3/8/8/8/8/8/8/4K3 w');
   $('ed-fen').onkeydown = (e) => { if (e.key === 'Enter') load($('ed-fen').value.trim()); };
-  $('ed-fen').onblur = () => { const v = $('ed-fen').value.trim(); if (v && v !== editorFen()) load(v); };
+  // compare placement + side only: editorFen() fills in its own castling and counters, so a pasted FEN
+  // never matches it whole, and reloading re-renders the buttons under the cursor (blur fires on
+  // mousedown, so a click on Play/Analyse right after editing the FEN was lost)
+  const core = (fen) => fen.split(/\s+/).slice(0, 2).join(' ');
+  $('ed-fen').onblur = () => { const v = $('ed-fen').value.trim(); if (v && core(v) !== core(editorFen())) load(v); };
 }
 
 function onEditorSelect(key) {
@@ -2047,7 +2176,7 @@ function updateEditor() {
   $('player-bottom').innerHTML = '';
   document.body.classList.remove('demo-mode');
   document.body.classList.add('editor-mode');
-  $('game-info').textContent = 'Set up a position';
+  $('game-info').textContent = '';  // the "Set-up board" tag above the board says it; a title here wrapped beside the buttons
   $('board-sub').textContent = 'Great for endgame practice: set it up, then play it out against the bot.';
   $('summary').innerHTML = `<div class="play-buttons">
       <button class="btn small" id="ed-play" ${problem ? 'disabled' : ''}>Play vs bot from here</button>
@@ -2330,9 +2459,14 @@ let studyToken = 0;             // invalidates a pending drill reply
 const studyNodes = () => state.study.data.nodes;
 const studyMine = (fen) => fen.split(' ')[1] === state.study.data.color[0];
 
-// arrows that belong to the position rather than to a hover: the Learn guide (empty elsewhere)
+// arrows that belong to the position rather than to a hover: the Learn guide (empty elsewhere), plus
+// the arrows you drew on it
 function baseShapes() {
-  if (!state.study || state.demo) return [];
+  return [...guideShapes(), ...drawnShapes()];
+}
+
+function guideShapes() {
+  if (!state.study || state.demo) return state.demo ? [] : maiaShapes();
   if (state.study.curve) return curveShapes();
   return state.study.mode === 'learn' ? studyGuideShapes() : [];
 }
@@ -2754,6 +2888,22 @@ async function backToLesson() {
 // a curveball (studyCurveball)
 const LEARN_PAUSE_MS = 1000;
 
+// How likely a player at your rating is to play this lesson move (node.maia on the parent, from
+// core/study.py add_human), or null for a lesson without it. Human-branch moves carry their own pct.
+function studyHumanPct(kidId) {
+  const k = studyNodes()[kidId];
+  const p = studyNodes()[k.parent];
+  const g = p.maia?.find((m) => m.uci === k.uci);
+  return g ? g.pct : k.pct ?? null;
+}
+// The opponent's reply is picked the way a human at your rating would choose it; lessons without Maia
+// data fall back to master share. A lesson move outside Maia's top 5 still gets a small chance.
+function studyReplyWeight(kidId) {
+  const pct = studyHumanPct(kidId);
+  if (pct != null) return Math.max(0.5, pct);
+  return studyNodes()[studyNodes()[kidId].parent].maia ? 0.5 : Math.max(1, studyNodes()[kidId].share || 1);
+}
+
 function weightedPick(items, weights) {
   let r = Math.random() * weights.reduce((a, b) => a + b, 0);
   for (let i = 0; i < items.length; i++) { r -= weights[i]; if (r <= 0) return items[i]; }
@@ -2771,7 +2921,7 @@ function studyLearnStep() {
     st.waiting = false;
     const cb = studyCurveball(n);
     if (cb) return studyThrowCurve(n, cb);
-    studyGo(weightedPick(n.children, n.children.map((k) => Math.max(1, studyNodes()[k].share || 1))));
+    studyGo(weightedPick(n.children, n.children.map(studyReplyWeight)));
   }, LEARN_PAUSE_MS);
 }
 
@@ -2794,7 +2944,8 @@ function studyThrowCurve(n, cb) {
   state.extra = [...studyLine(n.id), cb.san];
   update();
   addMsg('coach card study-card curve-card', `<div class="card-head"><b>⚡ Curveball: ${esc(st.curve.name)}</b>`
-    + `<span class="card-sub">not in the lesson · played in ${cb.games.toLocaleString()} club games</span></div>`
+    + `<span class="card-sub">not in the lesson · ${cb.games != null ? `played in ${cb.games.toLocaleString()} club games`
+      : `played by ~${Math.round(cb.pct)}% of ~${state.study.data.human_rating} players`}</span></div>`
     + '<div class="card-body"><div class="card-row">They left the lesson with a mistake. Find the move that punishes it.</div></div>');
 }
 
@@ -2912,13 +3063,13 @@ function studyDrillStep() {
   update();
   setTimeout(() => {
     if (token !== studyToken || state.study !== st || st.mode !== 'drill') return;
-    // the opponent's tries, weighted by how often masters play them
+    // the opponent's tries, weighted by how often players at your rating play them (studyReplyWeight)
     // ...and steered toward lines you haven't mastered yet
     const prog = studyProgress();
     const kids = n.children.map((k) => studyNodes()[k]);
     const weights = kids.map((k) => {
       const open = studyLeaves(k.id).filter((l) => (prog[l] || 0) < MASTERED).length;
-      return Math.max(1, k.share || 1) * (open ? 1 + open : 0.15);
+      return studyReplyWeight(k.id) * (open ? 1 + open : 0.15);
     });
     st.waiting = false;
     const cb = studyCurveball(n);
@@ -2987,9 +3138,9 @@ function studyCard(id) {
       // their tries are buttons: pick one to see that sideline (otherwise they choose by popularity)
       rows.push(`<div class="card-row"><span class="card-k">${n.children.length > 1 ? 'Their tries' : 'They play'}</span>`
         + n.children.map((k) => n.children.length > 1
-          ? `<button class="demo-btn study-try" data-try="${k}">${esc(studyNodes()[k].san)}${studyNodes()[k].share ? ` <span class="card-sub">${studyNodes()[k].share}%</span>` : studyVariationOf(k) ? ` <span class="card-sub">${esc(studyVariationOf(k))}</span>` : ''}</button>`
+          ? `<button class="demo-btn study-try" data-try="${k}">${esc(studyNodes()[k].san)}${studyTryLabel(k)}</button>`
           : `<b>${esc(studyNodes()[k].san)}</b>`).join(' ')
-        + (n.children.length > 1 ? '<span class="card-sub">click one to see it, or let them choose</span>' : '') + '</div>');
+        + (n.children.length > 1 ? `<span class="card-sub">${n.maia ? `% = how often ~${st.data.human_rating} players play it · ` : ''}click one to see it, or let them choose</span>` : '') + '</div>');
     }
   }
   if (st.mode === 'learn') {
@@ -3023,7 +3174,7 @@ function studyCard(id) {
   // earlier cards stay open (they're worth rereading); each still folds by clicking its header
   const pill = n.eval_white ? evalPill(n.eval_white) : '';
   const named = studyOpeningName(id);
-  const msg = addMsg('coach card study-card', `<div class="card-head"><b>${esc(studyMoveName(id))}</b>${pill}${named ? `<span class="card-open">${esc(named)}</span>` : ''}<span class="card-sub">${n.trunk ? '' : n.share ? `${n.share}% of master games` : n.source === 'engine' ? "engine's choice" : ''}</span><span class="card-caret">▾</span></div>`
+  const msg = addMsg('coach card study-card', `<div class="card-head"><b>${esc(studyMoveName(id))}</b>${pill}${named ? `<span class="card-open">${esc(named)}</span>` : ''}<span class="card-sub">${studyCardSub(id)}</span><span class="card-caret">▾</span></div>`
     + `<div class="card-body">${rows.join('')}</div>`);
   msg.querySelector('.card-head').onclick = () => msg.classList.toggle('collapsed');
   wireLessonMoves(msg);
@@ -3039,6 +3190,26 @@ function studyCard(id) {
     b.onclick = () => { if (studyChipLive(b)) (action ? action() : ask(q, { hideQuestion: true })); };
   });
   syncCards();
+}
+
+function studyTryLabel(k) {
+  const pct = studyHumanPct(k);
+  const n = studyNodes()[k];
+  if (pct != null) return ` <span class="card-sub">${Math.round(pct)}%</span>`;
+  if (n.share) return ` <span class="card-sub">${n.share}%</span>`;
+  return studyVariationOf(k) ? ` <span class="card-sub">${esc(studyVariationOf(k))}</span>` : '';
+}
+
+function studyCardSub(id) {
+  const n = studyNodes()[id];
+  if (n.trunk) return '';
+  const pct = studyMine(n.fen) ? studyHumanPct(id) : null;   // their move: how human is it?
+  const bits = [];
+  if (pct != null) bits.push(`${Math.round(pct)}% of ~${state.study.data.human_rating} players`);
+  if (n.share) bits.push(`${n.share}% of master games`);
+  else if (n.source === 'human' && pct != null) bits.push('not a master line');
+  if (!bits.length && n.source === 'engine') bits.push("engine's choice");
+  return bits.join(' · ');
 }
 
 const studyChipLive = (b) => !!state.study && !state.study.waiting && !state.demo && studyNodeHere() === b.dataset.node;
@@ -3267,90 +3438,119 @@ function lineText(fen, moves, n = 4) {
   }).join(' ');
 }
 
-async function showOpponentCard(c) {
+// Speed: the instant part (quickCard: best move, eval, main line, loose pieces, from a depth-14 search)
+// comes back with the bot's move, so the card appears with it. Then the "If they…" rows, then the full
+// card (depth 20, sharper try, threat; ~3.5 s), which replaces the top rows. The full pass is skipped if
+// the position has moved on by then, so it doesn't hold the engine while you play quickly.
+async function showOpponentCard(c, quickCard = null) {
   const p = state.play;
   if (!p || c.isGameOver()) return;
   const fen = c.fen(), token = ++cardToken;
-  let card;
-  try { card = await api('/api/opponent_card', { fen }); } catch { return; }  // a card is a bonus, never an error
-  if (token !== cardToken || state.play !== p || state.demo || currentGame().fen() !== fen) return;
+  const live = () => token === cardToken && state.play === p && currentGame().fen() === fen;
+  let card = quickCard;
+  if (!card) {
+    try { card = await api('/api/opponent_card', { fen }); } catch { return; }  // a card is a bonus, never an error
+  }
+  if (!live() || state.demo) return;
 
   const origin = linesOrigin();
   const demoFor = (title, moves) => ({ title, start_fen: fen, moves, notes: [], ply: origin.ply, then_moves: origin.then_moves });
-  const cp = card.cp_white / 100;
-  const mate = card.eval_white.startsWith('#');
-  const pillCls = mate ? 'm' : cp > 0.5 ? 'w' : cp < -0.5 ? 'b' : 'eq';
-  const best = card.best;
-  const rows = [];
-  rows.push(`<div class="card-row"><span class="card-k">Best</span>${moveChip(best.move)}`
-    + `<span class="evalpill ${pillCls}">${esc(best.eval_white)}</span>`
-    + (best.tags ? `<span class="card-sub">${esc(best.tags.join(', '))}</span>` : '') + '</div>');
-  if (best.moves.length > 1) {
-    rows.push(`<div class="card-row"><button class="demo-btn" data-demo="main">▶ Main line</button>`
-      + `<span class="card-sub">${esc(lineText(fen, best.moves))}…</span></div>`);
-  }
-  if (card.aggressive && card.aggressive.moves.length) {
-    const a = card.aggressive;
-    rows.push(`<div class="card-row"><button class="demo-btn sharp" data-demo="sharp">▶ Sharper try: ${esc(a.move)}</button>`
-      + `<span class="card-sub">${esc(a.note)} · ${esc(a.eval_white)}</span></div>`);
-  }
-  // in a bot game "they" are the bot: trap_punish = it just walked into one, trap_warn = you might
-  if (card.trap_punish) rows.push(trapRow('fell', card.trap_punish, false));
-  if (card.trap_warn) rows.push(trapRow('warn', card.trap_warn, true));
-  if (card.threat) {
-    const gain = card.threat.gain >= 15 ? 'a decisive attack' : `about ${card.threat.gain} pawns`;
-    rows.push(`<div class="card-row warn">⚠ They threaten ${moveChip(card.threat.move)} (${gain} if ignored)</div>`);
-  }
-  for (const [who, list] of [['Yours', card.loose.you], ['Theirs', card.loose.them]]) {
-    if (list.length) rows.push(`<div class="card-row"><span class="card-k">${who} loose</span><span class="card-sub">${esc(list.join('; '))}</span></div>`);
-  }
-  rows.push(`<div class="card-row card-actions"><button class="btn small card-play-btn" data-fen="${esc(fen)}">Play ${esc(best.move)}</button>`
-    + `<button class="btn ghost small card-why" data-fen="${esc(fen)}">Why?</button>`
-    + `<button class="btn ghost small card-back" title="Close the demo board and return to your game">Back to my game</button></div>`);
-
   document.querySelectorAll('.msg.card:not(.collapsed)').forEach((m) => m.classList.add('collapsed'));  // keep the chat short
   const msg = addMsg('coach card',
     `<div class="card-head"><b>Your move</b><span class="card-sub">${esc(positionLabel())}</span><span class="card-caret">▾</span></div>`
-    + `<div class="card-body">${rows.join('')}</div>`);
-  // "If they play A, I play B": a second, slower engine request, filled in once it arrives
-  const slot = document.createElement('div');
-  slot.className = 'card-row card-replies';
-  slot.innerHTML = '<span class="card-k">If they…</span><span class="card-sub">checking their replies…</span>';
-  msg.querySelector('.card-actions').before(slot);
-  api('/api/opponent_card/replies', { fen, uci: best.uci }).then(({ replies }) => {
-    if (!replies.length) { slot.remove(); return; }
-    slot.innerHTML = '<span class="card-k">If they…</span><div class="card-replylist">'
-      + replies.map((r, i) => `<div class="card-reply"><span>${esc(r.reply)}</span>`
-        + (r.answer ? `<span class="card-arrow">→</span><b>${esc(r.answer)}</b><span class="card-sub">${esc(r.answer_eval_white)}</span>` : '')
-        + `<button class="demo-btn" data-reply="${i}" title="Show it on the demo board">▶</button></div>`).join('')
-      + '</div>';
-    slot.querySelectorAll('[data-reply]').forEach((b) => {
-      const r = replies[+b.dataset.reply];
-      b.onclick = () => openDemo(demoFor(`If ${r.reply}: ${r.moves.join(' ')}`, r.moves));
+    + '<div class="card-body"><div class="card-main"></div>'
+    + '<div class="card-row card-replies"><span class="card-k">If they…</span><span class="card-sub">checking their replies…</span></div>'
+    + `<div class="card-row card-actions"><button class="btn small card-play-btn" data-fen="${esc(fen)}"></button>`
+    + `<button class="btn ghost small card-why" data-fen="${esc(fen)}">Why?</button>`
+    + '<button class="btn ghost small card-back" title="Close the demo board and return to your game">Back to my game</button></div></div>');
+  const main = msg.querySelector('.card-main');
+  const slot = msg.querySelector('.card-replies');
+
+  function render() {
+    const cp = card.cp_white / 100;
+    const mate = card.eval_white.startsWith('#');
+    const pillCls = mate ? 'm' : cp > 0.5 ? 'w' : cp < -0.5 ? 'b' : 'eq';
+    const best = card.best;
+    const rows = [];
+    rows.push(`<div class="card-row"><span class="card-k">Best</span>${moveChip(best.move)}`
+      + `<span class="evalpill ${pillCls}">${esc(best.eval_white)}</span>`
+      + (best.tags ? `<span class="card-sub">${esc(best.tags.join(', '))}</span>` : '') + '</div>');
+    if (best.moves.length > 1) {
+      rows.push(`<div class="card-row"><button class="demo-btn" data-demo="main">▶ Main line</button>`
+        + `<span class="card-sub">${esc(lineText(fen, best.moves))}…</span></div>`);
+    }
+    if (card.aggressive && card.aggressive.moves.length) {
+      const a = card.aggressive;
+      rows.push(`<div class="card-row"><button class="demo-btn sharp" data-demo="sharp">▶ Sharper try: ${esc(a.move)}</button>`
+        + `<span class="card-sub">${esc(a.note)} · ${esc(a.eval_white)}</span></div>`);
+    }
+    // in a bot game "they" are the bot: trap_punish = it just walked into one, trap_warn = you might
+    if (card.trap_punish) rows.push(trapRow('fell', card.trap_punish, false));
+    if (card.trap_warn) rows.push(trapRow('warn', card.trap_warn, true));
+    if (card.threat) {
+      const gain = card.threat.gain >= 15 ? 'a decisive attack' : `about ${card.threat.gain} pawns`;
+      rows.push(`<div class="card-row warn">⚠ They threaten ${moveChip(card.threat.move)} (${gain} if ignored)</div>`);
+    }
+    for (const [who, list] of [['Yours', card.loose.you], ['Theirs', card.loose.them]]) {
+      if (list.length) rows.push(`<div class="card-row"><span class="card-k">${who} loose</span><span class="card-sub">${esc(list.join('; '))}</span></div>`);
+    }
+    if (card.quick) rows.push('<div class="card-row card-pending"><span class="card-sub">checking threats and sharper tries…</span></div>');
+    main.innerHTML = rows.join('');
+    msg.querySelector('.card-play-btn').textContent = `Play ${best.move}`;
+    main.querySelectorAll('[data-demo]').forEach((b) => {
+      const d = b.dataset.demo;
+      const w = card.trap_warn, tp = card.trap_punish;
+      // the warn row is the only trap row styled .warn on this card
+      const demo = d === 'main' ? demoFor(`Main line: ${best.move}`, best.moves)
+        : d === 'trap' && b.closest('.warn') ? demoFor(`Trap: ${w.move}?? ${w.punish.join(' ')}`, [w.move, ...w.punish])
+        : d === 'trap' ? demoFor(`Refutation: ${tp.punish.join(' ')}`, tp.punish)
+        : demoFor(`Sharper try: ${card.aggressive.move}`, card.aggressive.moves);
+      b.onclick = () => openDemo(demo);
     });
-  }).catch(() => slot.remove());  // a bonus row: fail quietly
+    syncCards();
+  }
+
+  // "If they play A, I play B" for the card's current best move; a newer call wins
+  let repliesFor = null;
+  function loadReplies() {
+    const uci = repliesFor = card.best.uci;
+    slot.hidden = false;
+    slot.innerHTML = '<span class="card-k">If they…</span><span class="card-sub">checking their replies…</span>';
+    return api('/api/opponent_card/replies', { fen, uci }).then(({ replies }) => {
+      if (repliesFor !== uci) return;
+      if (!replies.length) { slot.hidden = true; return; }
+      slot.innerHTML = '<span class="card-k">If they…</span><div class="card-replylist">'
+        + replies.map((r, i) => `<div class="card-reply"><span>${esc(r.reply)}</span>`
+          + (r.answer ? `<span class="card-arrow">→</span><b>${esc(r.answer)}</b><span class="card-sub">${esc(r.answer_eval_white)}</span>` : '')
+          + `<button class="demo-btn" data-reply="${i}" title="Show it on the demo board">▶</button></div>`).join('')
+        + '</div>';
+      slot.querySelectorAll('[data-reply]').forEach((b) => {
+        const r = replies[+b.dataset.reply];
+        b.onclick = () => openDemo(demoFor(`If ${r.reply}: ${r.moves.join(' ')}`, r.moves));
+      });
+    }).catch(() => { if (repliesFor === uci) slot.hidden = true; });  // a bonus row: fail quietly
+  }
 
   msg.querySelector('.card-head').onclick = () => msg.classList.toggle('collapsed');
-  msg.querySelectorAll('[data-demo]').forEach((b) => {
-    const d = b.dataset.demo;
-    const w = card.trap_warn, p = card.trap_punish;
-    // the warn row is the only trap row styled .warn on this card
-    const demo = d === 'main' ? demoFor(`Main line: ${best.move}`, best.moves)
-      : d === 'trap' && b.closest('.warn') ? demoFor(`Trap: ${w.move}?? ${w.punish.join(' ')}`, [w.move, ...w.punish])
-      : d === 'trap' ? demoFor(`Refutation: ${p.punish.join(' ')}`, p.punish)
-      : demoFor(`Sharper try: ${card.aggressive.move}`, card.aggressive.moves);
-    b.onclick = () => openDemo(demo);
-  });
   msg.querySelector('.card-back').onclick = () => closeDemo();
   msg.querySelector('.card-play-btn').onclick = () => {
     if (!cardIsCurrent(fen)) return;
-    onPlayMove(best.uci.slice(0, 2), best.uci.slice(2, 4));
+    onPlayMove(card.best.uci.slice(0, 2), card.best.uci.slice(2, 4));
   };
   msg.querySelector('.card-why').onclick = () => {
     if (!cardIsCurrent(fen)) return;
     ask(CHIPS.play[0][1], { hideQuestion: true });  // the same "My plan?" question as the chip, so it shares that answer's cache
   };
-  syncCards();
+  render();
+  await loadReplies();
+  if (!card.quick) return;
+  if (!live()) { main.querySelector('.card-pending')?.remove(); return; }
+  let full;
+  try { full = await api('/api/opponent_card', { fen }); } catch { main.querySelector('.card-pending')?.remove(); return; }
+  const moved = full.best.uci !== card.best.uci;
+  card = full;
+  render();
+  if (moved) loadReplies();  // the deeper search changed its mind: the replies were for the old move
 }
 
 // a card's buttons only work while its position is still on the board and it's your move
@@ -3447,11 +3647,13 @@ async function botMove() {
   update();
   const c = playChess(p);
   const started = Date.now();
+  let quickCard = null;
   try {
     // the game so far (Maia reads the last few positions) and your rating if known (Maia plays against it)
     const res = await api('/api/play/move', {
-      fen: c.fen(), level: p.level, start_fen: p.startFen, moves: p.moves, opp_elo: p.myElo,
+      fen: c.fen(), level: p.level, start_fen: p.startFen, moves: p.moves, opp_elo: p.myElo, card: true,
     });
+    quickCard = res.card || null;
     await new Promise((r) => setTimeout(r, Math.max(0, 450 - (Date.now() - started))));  // feel less instant
     if (token !== playToken || state.play !== p) return;
     p.moves.push(res.san);
@@ -3468,7 +3670,7 @@ async function botMove() {
       playView(p.moves.length);
       if (!checkGameOver()) {
         openingQuip(playChess(p));
-        showOpponentCard(playChess(p));
+        showOpponentCard(playChess(p), quickCard);
         gmCheck(playChess(p));
       }
     }
@@ -3696,6 +3898,7 @@ $('play-color').querySelectorAll('button').forEach((b) => {
 
 function openGamesDialog() {
   $('games-user').value = state.me;
+  if (!$('games-user-lichess').value) $('games-user-lichess').value = recall('meLichess') || '';
   $('dlg-games').showModal();
   showGamesTab(navigator.onLine === false ? 'saved' : 'chesscom');
   pollPrefetch();
@@ -3704,8 +3907,10 @@ $('btn-games').onclick = openGamesDialog;
 $('games-tabs').querySelectorAll('button').forEach((b) => { b.onclick = () => showGamesTab(b.dataset.tab); });
 $('games-prefetch').onclick = () => startPrefetch('chesscom');
 $('games-prefetch-lichess').onclick = () => startPrefetch('lichess');
-$('games-fetch').onclick = showGames;
+$('games-fetch').onclick = () => showGames();
 $('games-user').onkeydown = (e) => { if (e.key === 'Enter') showGames(); };
+$('games-fetch-lichess').onclick = () => showGames('lichess');
+$('games-user-lichess').onkeydown = (e) => { if (e.key === 'Enter') showGames('lichess'); };
 
 $('btn-load').onclick = () => $('dlg-load').showModal();
 // ---- PGN files: pick or drop; files with several games get a list to choose from
@@ -3769,6 +3974,7 @@ $('load-go').onclick = () => {
 };
 
 $('btn-study').onclick = openStudyDialog;
+$('btn-setup').onclick = openEditor;  // starts from the position on the board; Cancel returns to it
 $('study-go').onclick = startStudyFromDialog;
 $('study-q').oninput = (e) => { studyPick = null; $('study-go').disabled = true; searchStudies(e.target.value); };
 
@@ -3866,6 +4072,8 @@ $('gp-toggle').onclick = (e) => {
   e.stopPropagation();
   $('gp-details').classList.remove('hidden');
   $('gp-toggle').classList.remove('collapsed');
+  // the folded list can't scroll to the current move while the panel is hidden, so do it on open
+  $('moves').querySelector('.mv.active')?.scrollIntoView({ block: 'nearest' });
 };
 // Moves & engine closes only with its ✕ (user's call): outside clicks, Esc and the toggle leave it open.
 $('gp-close').onclick = closeGpDropdown;
@@ -3873,6 +4081,11 @@ closeGpDropdown();
 
 $('engine-toggle').onchange = (e) => setEngine(e.target.checked);
 $('x-lines').onclick = showLines;
+$('moves-more').onclick = (e) => {
+  e.stopPropagation();
+  movesExpanded = !movesExpanded;
+  renderMoves();
+};
 
 $('chat-form').onsubmit = (e) => { e.preventDefault(); ask($('chat-text').value); };
 $('chat-text').onkeydown = (e) => {

@@ -12,15 +12,24 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
 
 ## Top of mind (read first)
 
-- **Bring human moves into the opening lessons (user's priority, 2026-10-02).** Pure theory lines rarely get
-  played in real games, so a lesson should prepare you for what opponents at your level actually play. Today
-  the opponent's side of a lesson is all theory or masters: tries from the *masters* explorer in
-  `core/study.py` (`OPP_WIDTH`, `MIN_SHARE`), Learn's automatic reply picked by master share
-  (`weightedPick()` in `app.js`), and curveballs from the Lichess DB (1000-1800, ≥ 20 games, so only the
-  Najdorf has any). Maia-3 is now in the app (`core/maia.py`, see its bullet below): it could weight or add
-  opponent tries at your rating, pick the auto-reply by Maia's probabilities, and find curveballs where the
-  database has too few games. Keep the lesson's *own* moves theory-first (the user's earlier call); only the
-  opponent's side becomes human. Not designed or built: start by proposing a design to the user.
+- **Human moves in the opening lessons (2026-10-03, first version built).** The lesson's own moves stay
+  theory; the opponent's side is now human where the lesson has Maia data. `add_human()` in `core/study.py`
+  (`python -m core.study human [--write] [--rating N] [slug…]`, prints only without `--write`; skips lessons
+  that already have it): per opponent-to-move node past the trunk, Maia-3 at `PLAYER_RATING` (`.env`, default
+  1300, Lichess scale; `maia.player_rating()`) gives its top moves, saved as `node.maia`. A non-lesson move
+  ≥ `HUMAN_MIN_PCT` 15% that loses < 120 cp becomes a branch (`source: "human"`, `pct`), run on `HUMAN_EXTRA`
+  4 plies (your reply: masters' top if masters reached it and it's within `ENGINE_SLACK`, else the engine's;
+  theirs: Maia's top move); one ≥ `HUMAN_CURVE_PCT` 8% that loses ≥ 120 cp becomes a curveball (`games: null`,
+  `pct`, `source: "maia"`). Cap `HUMAN_MAX_NODES` 60 (shallowest positions first). Frontend: Learn/Drill
+  auto-replies weight by Maia `pct` (`studyReplyWeight()`, master share for lessons without data), try buttons
+  and card headers show "N% of ~1300 players". No notes on human nodes yet (option "(a)": a notes call for
+  just the new nodes; not built, waiting on whether the branches prove useful). **Run on Najdorf and Vienna
+  Game only** (backups of the pre-run files were in the session scratchpad, not kept): median Maia chance the
+  opponent plays a lesson move was 41% / 45%; 12 branches each (both hit the cap, 13 more left out), Najdorf
+  got 3 new curveballs, Vienna none new. Tested with Playwright (stubbed chat): try % labels, clicking a human
+  try, the human card, a forced Maia curveball card. Not done: the masters/players toggle on the start card,
+  a live Learn session by the user, the other lessons, new builds don't run it yet (add to `build()` once it
+  has proven itself). The bot now uses `PLAYER_RATING` as your rating in fresh games (`/api/play/move`).
 - Also open: the opening-lessons list under "Next focus" and the "Maia follow-ups" (calibrate the Maia bot
   levels by playing them), both in TODOs at the bottom.
 
@@ -53,6 +62,7 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   - `frontends/lichess/explorer.py`: aggregate opening statistics (popularity, win rates,
     opening names). Needs `LICHESS_TOKEN` in `.env`, otherwise silently unavailable
     (`explorer.available()` gates it everywhere).
+- **"Find game by username" has a Lichess tab (2026-10-03).** `/api/games?site=lichess` maps Lichess's game list (`_lichess_games()` in `server.py`) to the chess.com row shape; AI/anonymous players have no rating (shown without one). The Lichess name is remembered as `localStorage` `meLichess` and passed as `me` when loading; `state.me` stays the chess.com name. The "save 500 Lichess games" box moved from the Saved tab into this tab.
 - **chess.com vs. Lichess data shape asymmetry**: chess.com's monthly archive endpoint
   includes full PGN inline. Lichess's game-list endpoint does **not** — it needs a separate
   `lichess.game_pgn(id)` request per game. This bit the offline-prefetch feature once already
@@ -62,17 +72,25 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   Each game gets a full Stockfish pass, so this is a real background job, not a quick fetch —
   raising the cap further has real wall-clock-time implications.
 - **Chessground quirks:**
-  - `drawable.onChange(shapes)` fires whenever the user-drawn shapes array changes, *including*
-    going to `[]` when chessground's own `eraseOnClick` fires on a left click. The right-click
-    "hold threat arrows" feature hooks this: it reads the newly-added shape's `orig` square,
-    then immediately calls `cg.setShapes([])` to suppress the native circle/arrow rendering.
-  - **Playwright's synthetic mouse events don't reliably reach chessground's internal
-    drag/right-click detection** in this environment — confirmed even a plain left-click-drag
-    move doesn't register via `page.mouse.down/move/up`. If you need to test board mouse
-    interaction, don't fight this: expose the internal function (e.g. `holdThreatSquare`,
-    `onPlayMove`) via a temporary `window.__debug` hook and call it directly, or call
-    `cg.state.drawable.onChange([...])` directly to simulate what chessground would have
-    produced. Always remove the debug hook before finishing.
+  - `drawable.onChange(shapes)` (`app.js`): we call `cg.setShapes([])` after every change, so each call
+    carries only the new shape. A right-drag becomes your own arrow (`userShape()` → `drawings`, kept per
+    position by `drawnShapes()` inside `baseShapes()`), coloured by the modifier read in our own capture-phase
+    `mousedown` listener (`drawBrush()`: ⌘ #BF5700, ⌥ #7BAFD4, ⌃ #f9a01b, fn #ff2800 with Shift as a stand-in,
+    none = green; chessground itself can't tell ⌘ from ⌥). A modifier + right-click on one square circles it;
+    a plain right-click on a piece holds its threat arrows. Because chessground's list is always empty, its
+    left-click erase never fires `onChange`, so the same `mousedown` listener clears drawings and held
+    threats on a left click. (Before 2026-10-03 the handler used a `nativeShapesSeen` counter that skipped
+    every right-click after the first and never cleared on left click; it was only ever tested by calling
+    `onChange` with cumulative arrays, which real chessground never sends.) **Not verified: fn.** Browsers
+    rarely report it on macOS and Playwright can't press it; ⌃ only works with a real right-click
+    (two-finger), since ⌃+click arrives as a left click.
+  - **Playwright mouse events do reach chessground** (2026-10-03: `page.mouse.down(button="right")` /
+    `move(..., steps=4)` / `up()` drew arrows and held threats, with `keyboard.down("Meta")` etc. for
+    modifiers). An older note here said they didn't; that was probably a left-drag move, which wasn't
+    rechecked. Read the result from the DOM: `cg-container svg.cg-shapes > g > g` has a `cgHash`
+    attribute (`…,size,orig,dest,…`) and the stroke colour. Hover arrows also show while the mouse sits
+    on a piece, so move it away before counting held arrows. The `window.__debug` hook is still the way to
+    call internal functions; remove it before finishing.
   - A bare pawn move with no capture/piece-letter/move-number (e.g. `"f4"` as the very first
     token in a chat block) gets classified by the move-chip regex as a **square reference**
     (`.sq`, gold) rather than a **move** (`.san`, green). This is a known, *accepted*
@@ -122,7 +140,14 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   answer cache with the chip for the same position. Evals on the card are White's point of view, like
   the rest of the app. **Play X** makes the best move via `onPlayMove`; the buttons
   disable themselves (`syncCards()`, called from `update()`) once the position moves on or it isn't
-  your turn. Each card also has a **Back to my game** button (lower right, `closeDemo()`), enabled
+  your turn. **Speed (2026-10-03):** the card used to take 5-10 s (depth-20 search + `tricks.find()` 2 s +
+  threat 1 s, then queued on `S.engine` behind the eval bar and `gm_check`). Now `/api/play/move {card: true}`
+  returns `opponent_card.quick()` (depth 14, ~25 ms, best/eval/main line/loose/traps) with the bot's move,
+  so the card renders with it (~0.47 s, the frontend's 450 ms pause); the replies follow at ~1.5 s, and the
+  full card (unchanged depth, on `S.engine`) replaces the top rows at ~6 s (skipped if the position has
+  moved on; replies refetched if its best move differs: 2/5 in the test, both near-equal opening moves).
+  The quick card and replies run on `S.card_engine`, a second Stockfish (2 threads; 4 performance cores
+  here, `S.engine` uses 4), so they never wait on the main engine's lock. Each card also has a **Back to my game** button (lower right, `closeDemo()`), enabled
   only while a demo is open. Older cards collapse to their header. Takes ~2.5-5.5 s per card here. **Replays still get
   the short coach one-liner** (`commentOnOpponentMove`, capped at 4), not a card, since there you
   play your own game move. Tested with Playwright including stubbed responses for the sharper-try /
@@ -202,6 +227,10 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
     don't scroll away. The ✕ is a sibling of the drag handle because the handle captures the pointer
     and would swallow its click. Min size 260x160. `closeGpDropdown()` clears all inline styles, so
     position/size are **not** remembered between openings (deliberate, easy to add via localStorage).
+  - *Moves list folds to 5 rows* (`FOLD_ROWS`, 2026-10-02, user's call), scrolled to the current move, with
+    "Show all N moves ▾" / "Show fewer ▴" (`#moves-more`, `movesExpanded`, not remembered across reloads).
+    The cap is CSS (`.moves.folded`, `5 * (1lh + 8px)`) because the panel is often hidden while it renders;
+    opening the panel scrolls the current move into view for the same reason.
   - *Closing:* only the ✕ closes it (2026-10-01, user's call). Outside clicks, Esc and the toggle
     (which now only opens it) leave it open.
   - Verified with Playwright pointer events; not tested with touch.
@@ -210,6 +239,15 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   gap, same as the rows' `padding-left`). Without the cap the rows span the whole grid column,
   which is wider than the capped board, so right-aligned items hung off the board's edge (Takeback used to be one; the demo's "Back to my game" still is).
   The ≤760px override sets `--board-w` on `.board-col`.
+- **Position editor ("Set up position" header button, 2026-10-02).** `openEditor()` in `app.js` ("position
+  editor" section): starts from the board's current position, opens the Moves & engine panel (the palette,
+  `PRESETS` endgames, side to move and FEN box live in `#moves`), and offers Play vs bot from here
+  (`pendingFen` → the Play dialog → `/api/play/new {fen}`, Maia bot works from any FEN), Analyse
+  (`/api/analysis {fen}`) or Cancel (back to whatever was on the board). It had no entry point from 2026-09-27
+  (`4289015`) until this button. `editorFen()` infers castling rights from king/rook home squares and always
+  writes `- 0 1`, so the FEN box's blur compares placement + side only (a full compare reloaded on every pasted
+  FEN and swallowed the next button click). Tested with Playwright: Lucena preset → bot game as Black, Cancel
+  from inside a bot game, Analyse from a typed FEN, empty board refused. Not tested: opening it mid-lesson.
 - **`#summary` in a bot game shows no "Your move" / "Bot is thinking…" text** (removed on purpose).
   It still shows the game-over result, the "Viewing an earlier position" note, and Stop bot.
 - **Opening explorer has no filter UI.** `explorerFilters()` in `app.js` is a constant: Lichess
@@ -417,7 +455,7 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   player of the chosen rating (600-2600, both sides set to it) plays here, with probabilities, under Stockfish's
   lines in the Moves & engine panel (`requestMaia()`/`renderMaia()` in `app.js`, `POST /api/maia`; ★ + eval when
   it's also one of Stockfish's lines; row tooltip = Maia's win/draw/loss guess for the mover between humans of
-  those ratings, not an eval). `pct` is "how likely a human plays it", never move quality: Maia doesn't know the
+  those ratings, not an eval). **Play both sides with Maia (2026-10-03):** separate W/B ratings (`#maia-white`/`#maia-black`; the side to move is `rating`, the other `opp_rating`), a row click plays the move via `onBoardMove` where `canMove` allows it (else only an arrow: bot's turn, lesson opponent, replay's other side), and "Show on board" (`maiaShapes()` in `baseShapes()`, purple, width by probability, top 4 ≥ 5%, off in lessons/editor/demos). Tested with Playwright on the analysis board; not in a bot game or replay. `pct` is "how likely a human plays it", never move quality: Maia doesn't know the
   best move. Setup per clone: `pip install git+https://github.com/CSSLab/maia3.git` (not in `requirements.txt`:
   torch is ~600 MB and it's optional); the checkpoint downloads from Hugging Face on first use
   (~/.cache/huggingface). Missing package = section hidden (`maia.available()`). Code is AGPL-3.0 (fine for this
@@ -425,7 +463,9 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   the first request), on the GPU (`mps`) under its own lock: measured eval 0.62 s alone and 0.61 s alongside,
   Maia 0.04-0.1 s. Uses their `Maia3UCIEngine` class directly (`cmd_position` + `score_moves()`) because the UCI
   output has no probabilities: internal API of a 0.1.0 package, so recheck after upgrading it. **Send the move
-  history** (the model reads the last 8 positions; the frontend posts `start_fen` + SAN moves).
+  history** (the model reads the last 8 positions; the frontend posts `start_fen` + SAN moves). Its "Show on board" arrows (`maiaShapes()`, purple
+  `maiaHi`/`maiaMed`/`maiaLo`) are off in lessons and in bot games (user's call 2026-10-03: on your turn they were a
+  standing hint); analysis, replays and review keep them.
   **Maia-1 was tried first and replaced (2026-10-02):** lc0 + nine separately trained rating-band weights. Its
   answers jumped between neighbouring bands (Morra 8...: 1200 had Nfd7 top at 25/24/23%, 1300 dxc4, 1800 Ne4),
   while Maia-3 shifts smoothly with rating (Ne4 42→28%, dxc4 31→43% from 1100 to 1900). Only consistency was
@@ -521,7 +561,7 @@ features — this file is architecture gotchas, "need to knows," and open TODOs 
   Philidor weak. Samples are 18-73 games, so it's framed as hints, raised only in that opening. The Black
   tab wasn't captured yet.
 - **`.env` is gitignored** and must be recreated on every machine/clone
-  (`ANTHROPIC_API_KEY`, `LICHESS_TOKEN`, optional `CHESS_USER`, optional `ANTHROPIC_ADMIN_KEY` +
+  (`ANTHROPIC_API_KEY`, `LICHESS_TOKEN`, optional `CHESS_USER`, optional `PLAYER_RATING`, optional `ANTHROPIC_ADMIN_KEY` +
   `MONTHLY_SPEND_LIMIT` for the `/usage` page's org-spend card). This machine has two local
   clones — `/Users/will/chess-coach` (primary) and `~/Projects/chess-coach` (secondary,
   kept in sync via `git pull`) — each needs its own `.env`.
