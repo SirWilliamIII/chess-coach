@@ -659,6 +659,7 @@ function requestEval(c) {
       lastEval = { fen: c.fen(), lines: data.lines };
       showEval(data);
       renderMaia();
+      renderKeyCard();
     } catch (e) {
       if (token === evalToken) $('engine-lines').textContent = e.message;
     }
@@ -676,9 +677,17 @@ function showEval(data) {
     $('engine-lines').innerHTML = `<div class="eline">Game over</div>`;
     return;
   }
+  // the next move and its eval up front; the full lines one click away (open state remembered)
+  const ev = (l) => `<span class="ev ${l.cp_white >= 0 ? 'w' : 'b'}">${esc(l.eval_white)}</span>`;
+  const full = recall('engineFull') === '1';
   $('engine-lines').innerHTML = data.lines.map((l) =>
-    `<div class="eline"><span class="ev ${l.cp_white >= 0 ? 'w' : 'b'}">${esc(l.eval_white)}</span><span class="pv">${esc(l.line)}</span></div>`
-  ).join('');
+    `<div class="eline"><span class="emove">${esc(l.move)}</span>${ev(l)}</div>`).join('')
+    + `<button class="link elines-more">${full ? '▾' : '▸'} Full lines</button>`
+    + (full ? data.lines.map((l) => `<div class="eline full">${ev(l)}<span class="pv">${esc(l.line)}</span></div>`).join('') : '');
+  $('engine-lines').querySelector('.elines-more').onclick = () => {
+    store('engineFull', full ? '0' : '1');
+    showEval(data);
+  };
 }
 
 // ---- Maia: what a human of the chosen rating plays here (its own lc0 process, runs alongside Stockfish)
@@ -711,6 +720,7 @@ function requestMaia(c) {
       if (token !== maiaToken) return;
       lastMaia = { fen, ...data };
       renderMaia();
+      renderKeyCard();
     } catch (e) {
       if (token === maiaToken) $('maia-lines').textContent = e.message;
     }
@@ -740,13 +750,65 @@ function renderMaia() {
     const tip = `${Math.round(w)}% win / ${Math.round(d)}% draw / ${Math.round(l)}% loss for the mover after this, `
       + `in games between players of these ratings (Maia's guess, not an engine eval)`
       + (best ? ". Also Stockfish's top move." : '');
+    // the Stockfish section's number when it has this move, so one move never shows two evals
+    const ev = hit?.eval_white ?? m.eval_white;
     return `<div class="mline${best ? ' best' : ''}" title="${tip}" data-uci="${esc(m.uci)}">
       <span class="mmove">${esc(m.move)}</span>
       <span class="mbar"><span style="width:${Math.max(2, m.pct)}%"></span></span>
       <span class="mpct">${m.pct < 1 ? '<1' : Math.round(m.pct)}%</span>
-      <span class="mev">${hit ? esc(hit.eval_white) : ''}${best ? ' ★' : ''}</span></div>`;
+      <span class="ev ${/^#?-/.test(ev ?? '') ? 'b' : 'w'}">${esc(ev ?? '')}</span></div>`;
   }).join('');
   $('maia-lines').querySelectorAll('.mline').forEach((el) => { el.onclick = () => playMaiaMove(el.dataset.uci); });
+}
+
+// ---- key numbers: Stockfish's top 3 and Maia's top 5 on one card above the chat, refreshed every move.
+// Not a .msg, so the code that folds every chat card leaves it alone; it re-renders from lastEval/lastMaia.
+
+function evPill(e) {
+  return `<span class="ev ${/^#?-/.test(e ?? '') ? 'b' : 'w'}">${esc(e ?? '')}</span>`;
+}
+
+function renderKeyCard() {
+  const box = $('key-card');
+  const sfOn = state.engineOn;
+  const humansOn = maiaOn();
+  if (state.editor || !state.review || !(sfOn || humansOn)) return void box.classList.add('hidden');
+  box.classList.remove('hidden');
+  const fen = currentGame().fen();
+  const [, turn, , , , num] = fen.split(' ');
+  const sf = lastEval?.fen === fen ? lastEval.lines : null;
+  const wait = '<span class="card-sub">…</span>';
+  const over = '<span class="card-sub">Game over</span>';
+  const chip = (uci, move, ...rest) => `<button class="kc-m" data-uci="${esc(uci)}"><b>${esc(move)}</b>${rest.join('')}</button>`;
+  const rows = [];
+  if (sfOn) {
+    rows.push(`<div class="card-row"><span class="card-k">Stockfish</span><span class="kc-moves">${
+      !sf ? wait : !sf.length ? over : sf.map((l) => chip(l.uci, l.move, evPill(l.eval_white))).join('')}</span></div>`);
+  }
+  if (humansOn) {
+    const mm = lastMaia?.fen === fen ? lastMaia.moves : null;
+    const mover = turn === 'w' ? 'maia-white' : 'maia-black';
+    rows.push(`<div class="card-row"><span class="card-k">Humans <select class="kc-rating" title="Rating of the side to move">${
+      $(mover).innerHTML}</select></span><span class="kc-moves">${!mm ? wait : !mm.length ? over : mm.map((m) => {
+      // same number as the Stockfish row when it has this move (see renderMaia)
+      const ev = (sf || []).find((l) => l.uci === m.uci)?.eval_white ?? m.eval_white;
+      return chip(m.uci, m.move, `<span class="kc-pct">${m.pct < 1 ? '<1' : Math.round(m.pct)}%</span>`, evPill(ev));
+    }).join('')}</span></div>`);
+    box.dataset.mover = mover;
+  }
+  box.classList.toggle('collapsed', recall('keyCardFolded') === '1');
+  box.innerHTML = `<div class="card-head"><b>Move ${num} · ${turn === 'w' ? 'White' : 'Black'} to move</b><span class="card-caret">▾</span></div>`
+    + `<div class="card-body">${rows.join('')}</div>`;
+  box.querySelector('.card-head').onclick = () => {
+    store('keyCardFolded', box.classList.toggle('collapsed') ? '1' : '0');
+  };
+  const sel = box.querySelector('.kc-rating');
+  if (sel) {
+    sel.value = $(box.dataset.mover).value;
+    // drive the panel's dropdown, which stores the rating and refetches
+    sel.onchange = () => { $(box.dataset.mover).value = sel.value; $(box.dataset.mover).dispatchEvent(new Event('change')); };
+  }
+  box.querySelectorAll('.kc-m').forEach((el) => { el.onclick = () => playMaiaMove(el.dataset.uci); });
 }
 
 function setupMaia(cfg) {
@@ -772,6 +834,7 @@ function setupMaia(cfg) {
     syncDisabled();
     refresh();
     renderShapes();
+    renderKeyCard();
   };
 }
 
@@ -780,6 +843,7 @@ function setEngineVisible(on) {
   $('engine-toggle').checked = on;
   $('evalbar').classList.toggle('off', !on);
   $('engine-lines').classList.toggle('hidden', !on);
+  renderKeyCard();
 }
 
 function setEngine(on) {
@@ -787,6 +851,7 @@ function setEngine(on) {
   if (!state.play) store('engineOn', on ? '1' : '0');
   $('evalbar').classList.toggle('off', !on);
   $('engine-lines').classList.toggle('hidden', !on);
+  renderKeyCard();
   if (on) requestEval(currentGame());
 }
 
@@ -951,6 +1016,7 @@ function update() {
   syncCards();
   requestEval(c);
   requestMaia(c);
+  renderKeyCard();  // placeholders until the new numbers arrive
   requestExplorer(c);
   noteMove();
 }
@@ -2305,6 +2371,7 @@ function updateEditor() {
   $('chat-context').textContent = 'Asking about: the set-up position (starts an analysis board)';
 
   requestMaia(null);  // no move history on a set-up position; the lines would be the old position's
+  renderKeyCard();
   // live engine check: also catches positions the server refuses (e.g. side not to move in check)
   clearTimeout(evalTimer);
   const token = ++evalToken;

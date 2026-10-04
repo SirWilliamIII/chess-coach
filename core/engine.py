@@ -115,12 +115,13 @@ class Engine:
         self.close()
 
     def lines(self, board: chess.Board, multipv: int = 3, seconds: float = 1.0,
-              depth: int | None = None) -> list[dict]:
+              depth: int | None = None, root_moves: list[chess.Move] | None = None) -> list[dict]:
         """Top engine lines for the side to move.
 
         `seconds` is the time limit. With `depth` set, the search stops at that depth *or* after
         `seconds`, whichever comes first — so `seconds` becomes a ceiling and `depth` the target.
         Time alone gives uneven quality (a quiet middlegame can reach only depth ~15 in 0.3 s).
+        `root_moves` limits the search to those moves (to score moves the engine wouldn't pick).
         """
         check_position(board)
         if board.is_game_over():
@@ -128,7 +129,7 @@ class Engine:
         # Keyed on the position (not move history) plus the exact search budget, so a shallow
         # review search is never passed off as a deep coach search. Repetition history is ignored,
         # which can differ only in draw-by-repetition scoring.
-        key = (board.epd(), multipv, seconds, depth)
+        key = (board.epd(), multipv, seconds, depth, tuple(m.uci() for m in root_moves or ()))
         with self._cache_lock:
             hit = self._cache.get(key)
             if hit is not None:
@@ -137,7 +138,7 @@ class Engine:
                 return copy.deepcopy(hit)
         limit = chess.engine.Limit(time=seconds, depth=depth)
         started = time.monotonic()
-        infos = self._call(lambda e: e.analyse(board, limit, multipv=multipv))
+        infos = self._call(lambda e: e.analyse(board, limit, multipv=multipv, root_moves=root_moves))
         out = []
         for info in infos:
             pv = info.get("pv", [])

@@ -269,20 +269,25 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .eline .ev.w { color: #fff; }
 .eline .ev.b { color: var(--muted); }
 .eline .pv { overflow: hidden; text-overflow: ellipsis; color: #d5d4d0; }
+.eline .emove { font-weight: 700; color: #d5d4d0; min-width: 52px; }
+.elines-more { font-size: 12px; color: var(--muted); padding: 2px 0; }
+.eline.full { font-size: 12px; }
 #maia-pane { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
 .maia-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .maia-head .toggle { margin-bottom: 0; }
 .maia-ratings { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .maia-ratings select { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; font-size: 12px; padding: 1px 2px; }
 #maia-lines { margin-top: 4px; }
-.mline { display: grid; grid-template-columns: 52px 1fr 34px 58px; gap: 8px; align-items: center; padding: 2px 4px; margin: 0 -4px; border-radius: 4px; cursor: pointer; }
+.mline { display: grid; grid-template-columns: 52px 1fr 34px 48px; gap: 8px; align-items: center; padding: 2px 4px; margin: 0 -4px; border-radius: 4px; cursor: pointer; }
 .mline:hover { background: rgba(255, 255, 255, 0.06); }
 .mline .mmove { font-weight: 700; }
 .mline .mbar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
 .mline .mbar span { display: block; height: 100%; background: var(--muted); }
 .mline.best .mbar span { background: var(--accent); }
 .mline .mpct { text-align: right; color: #d5d4d0; }
-.mline .mev { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.mline .ev { font-weight: 700; text-align: right; }
+.mline .ev.w { color: #fff; }
+.mline .ev.b { color: var(--muted); }
 
 /* ---------- chat ---------- */
 .chat-head {
@@ -679,3 +684,17 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 /* squares in lesson text: gold and dotted, so they don't read as clickable moves */
 .study-card .sq { color: #f0d58a; font-weight: 600; border-bottom: 1px dotted #b08a3a; background: none; }
 .study-card .sq:hover, .study-card .sq.on { background: rgba(240,213,138,.18); color: #fff2c8; }
+
+/* ---------- key numbers card above the chat (renderKeyCard) ---------- */
+.key-card { margin: 10px 14px 0; padding: 9px 12px; border-radius: 10px; background: #363431; border-left: 3px solid var(--accent); }
+.key-card.collapsed .card-caret { transform: rotate(-90deg); }
+.key-card.collapsed .card-body { display: none; }
+.key-card .card-k { min-width: 92px; }
+.kc-rating { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; font-size: 11px; padding: 0 2px; }
+.kc-moves { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+.kc-m { display: inline-flex; gap: 6px; align-items: baseline; background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; color: #d5d4d0; font: inherit; font-size: 13px; cursor: pointer; }
+.kc-m:hover { background: rgba(255,255,255,.1); }
+.kc-m .ev { font-weight: 700; font-size: 12px; }
+.kc-m .ev.w { color: #fff; }
+.kc-m .ev.b { color: var(--muted); }
+.kc-pct { color: var(--muted); font-size: 12px; }

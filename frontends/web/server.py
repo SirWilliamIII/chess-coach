@@ -718,7 +718,16 @@ def maia_moves(req: MaiaReq):
     clamp = lambda r: max(0, min(5000, r))
     rating = clamp(req.rating)
     opp = clamp(req.opp_rating or req.rating)
-    return {"rating": rating, "opp_rating": opp, "moves": S.maia.moves(board, rating, opp)}
+    moves = S.maia.moves(board, rating, opp)
+    if moves:
+        # Stockfish's eval of each human move, searching only those; the card engine so it never
+        # waits behind the eval bar's search on S.engine
+        roots = [chess.Move.from_uci(m["uci"]) for m in moves]
+        evals = {l["uci"]: l["eval_white"]
+                 for l in S.card_engine.lines(board, multipv=len(roots), seconds=0.5, root_moves=roots)}
+        for m in moves:
+            m["eval_white"] = evals.get(m["uci"])
+    return {"rating": rating, "opp_rating": opp, "moves": moves}
 
 
 class ChatReq(BaseModel):
