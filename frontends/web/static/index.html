@@ -21,6 +21,7 @@
       <button id="btn-setup" class="btn ghost">Set up position</button>
       <button id="btn-study" class="btn ghost">Learn openings</button>
       <span class="actions-sep" aria-hidden="true"></span>
+      <button id="btn-positions" class="link">📌 Positions</button>
       <button id="btn-library" class="link">📚 Lessons</button>
       <button id="btn-load" class="link">Load game</button>
     </div>
@@ -44,6 +45,7 @@
         <button class="navbtn" id="nav-next" title="Forward (→)" data-tip="Forward (→)">▶</button>
         <button class="navbtn" id="nav-end" title="End (End)" data-tip="End (End)">⏭</button>
         <button class="navbtn" id="nav-flip" title="Flip board (f)" data-tip="Flip board (f)">⇅</button>
+        <button class="navbtn" id="nav-save" title="Save this position (s)" data-tip="Save position (s)">💾</button>
       </div>
     </section>
 
@@ -94,6 +96,8 @@
           <button class="link" id="btn-chat-reset" title="Start a fresh conversation">New chat</button>
         </div>
       </div>
+      <div class="opening-tag hidden" id="opening-tag"></div>
+      <div class="win-strip hidden" id="win-strip"></div>
       <div class="key-card hidden" id="key-card"></div>
       <div class="chat-log" id="chat-log"></div>
       <div class="chips" id="chips"></div>
@@ -179,6 +183,27 @@
     <p class="hint">Ask the coach for ideas and plans at any point. It will teach the idea rather than just give away the move, unless you ask for the move.</p>
     <div class="field" id="play-continue-row"></div>
     <div class="row end"><button class="btn" id="play-go">Start game</button></div>
+  </dialog>
+
+  <dialog id="dlg-save-pos">
+    <form method="dialog" class="dlg-head"><h2>Save this position</h2><button class="link">Close</button></form>
+    <div class="pos-save-row">
+      <div class="pos-mini" id="pos-save-board"></div>
+      <div class="pos-save-fields">
+        <label class="field"><span class="label">Title</span><input id="pos-title" maxlength="200" autocomplete="off"></label>
+        <div class="card-sub" id="pos-save-sub"></div>
+      </div>
+    </div>
+    <div class="row end"><button class="btn" id="pos-save-go">Save</button></div>
+  </dialog>
+
+  <dialog id="dlg-positions" class="wide">
+    <form method="dialog" class="dlg-head"><h2>📌 Saved positions</h2><button class="link">Close</button></form>
+    <div class="row pos-tools">
+      <input id="pos-q" placeholder="Filter by title, opening or game…" autocomplete="off">
+      <button class="btn ghost small" id="pos-save-current">💾 Save current position</button>
+    </div>
+    <div id="pos-list" class="pos-list"></div>
   </dialog>
 
   <dialog id="dlg-library" class="wide">

@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import eco, favorites, gm_moments, library, maia, openings, opening_quips, opponent_card, repertoire, study, usage
+from core import eco, favorites, gm_moments, library, maia, openings, opening_quips, opponent_card, positions, repertoire, scoreboard, study, usage
 from core import org_spend as org_spend_mod
 from core.coach import Coach, prompt_hash
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
@@ -40,6 +40,9 @@ class State:
     # the bot-game card's instant parts (quick card, "If they…" replies): their own process, so they never
     # queue behind the eval bar / GM check / coach on S.engine, which held them up 3+ s per move
     card_engine: Engine | None = None
+    # the scoreboard's two parallel searches (top 5, the human moves): a few seconds each, so they get
+    # their own processes rather than holding up the eval bar, the coach or the bot-game card
+    sb_engines: tuple[Engine, Engine] | None = None
     bot: Bot | None = None
     maia: maia.Maia | None = None
     review: dict | None = None
@@ -56,6 +59,7 @@ S = State()
 async def lifespan(app):
     S.engine = Engine()
     S.card_engine = Engine(threads=2, hash_mb=64)  # 2 of the 4 performance cores; S.engine uses 4
+    S.sb_engines = (Engine(threads=3, hash_mb=128), Engine(threads=3, hash_mb=64))  # with the above: 12 threads on 10 cores, rarely all busy
     S.bot = Bot()
     S.maia = maia.Maia()  # the model itself loads on the first request
     new_analysis(chess.STARTING_FEN)
@@ -63,6 +67,8 @@ async def lifespan(app):
     yield
     S.engine.close()
     S.card_engine.close()
+    for e in S.sb_engines:
+        e.close()
     S.bot.close()
 
 
@@ -232,6 +238,54 @@ def favorite_set(game_id: str, req: FavoriteReq):
         favorites.set_title(game_id, None)
         fav["title"] = None
     return {"favorite": True, "title": fav["title"]}
+
+
+# ---------- saved board positions (core/positions.py) ----------
+
+@app.get("/api/positions")
+def positions_list():
+    return positions.all_()
+
+
+class PositionReq(BaseModel):
+    title: str
+    start_fen: str
+    moves: list[str] = []  # SAN, from start_fen to the saved position
+    orientation: str = "white"
+    source: str | None = None
+
+
+@app.post("/api/positions")
+def position_save(req: PositionReq):
+    title = req.title.strip()[:200]
+    if not title:
+        raise HTTPException(400, "give the position a title")
+    parse_fen(req.start_fen)  # 400 on a bad start position
+    try:
+        return positions.save(title, req.start_fen, req.moves, req.orientation, (req.source or "")[:200] or None)
+    except ValueError:
+        raise HTTPException(400, "those moves don't replay from the start position")
+
+
+class PositionTitleReq(BaseModel):
+    title: str
+
+
+@app.post("/api/positions/{pos_id}")
+def position_rename(pos_id: int, req: PositionTitleReq):
+    title = req.title.strip()[:200]
+    if not title:
+        raise HTTPException(400, "the title can't be empty")
+    if not positions.rename(pos_id, title):
+        raise HTTPException(404, "no such position")
+    return {"id": pos_id, "title": title}
+
+
+@app.delete("/api/positions/{pos_id}")
+def position_delete(pos_id: int):
+    if not positions.remove(pos_id):
+        raise HTTPException(404, "no such position")
+    return {"deleted": pos_id}
 
 
 PREFETCH = {"status": "idle", "done": 0, "total": 0, "new": 0, "error": None}
@@ -560,6 +614,28 @@ def opening_for_position(req: GmReq):
     return {"opening": {**hit, **opening_quips.pick(hit["name"])} if hit else None}
 
 
+class OpeningLineReq(BaseModel):
+    start_fen: str
+    moves: list[str] = []  # SAN
+
+
+@app.post("/api/opening_line")
+def opening_line(req: OpeningLineReq):
+    """Every named opening position along a line (offline ECO data, exact positions): [{ply, eco, name,
+    family}], ply = moves played. The scoreboard keeps the deepest one at or before the shown move."""
+    board = parse_fen(req.start_fen)
+    out = []
+    for i, san in enumerate(req.moves):
+        try:
+            board.push_san(san)
+        except ValueError:
+            break  # a line that doesn't replay: keep what matched so far
+        hit = eco.lookup(board)
+        if hit:
+            out.append({"ply": i + 1, **hit})
+    return {"names": out}
+
+
 class CardRepliesReq(BaseModel):
     fen: str
     uci: str
@@ -728,6 +804,24 @@ def maia_moves(req: MaiaReq):
         for m in moves:
             m["eval_white"] = evals.get(m["uci"])
     return {"rating": rating, "opp_rating": opp, "moves": moves}
+
+
+SB_LOCK = threading.Lock()  # one scoreboard search at a time...
+SB_LATEST = [0]             # ...and only for the newest request: stepping through a game shouldn't queue them
+
+
+@app.post("/api/scoreboard")
+def scoreboard_view(req: MaiaReq):
+    board = with_history(parse_fen(req.fen), req.start_fen, req.moves)
+    clamp = lambda r: max(0, min(5000, r))
+    rating = clamp(req.rating)
+    SB_LATEST[0] += 1  # FastAPI runs sync handlers on a thread pool; a lost race only means one extra search
+    me = SB_LATEST[0]
+    with SB_LOCK:
+        if me != SB_LATEST[0]:
+            return {"stale": True}  # the board has already moved on
+        return scoreboard.build(*S.sb_engines, S.maia if maia.available() else None,
+                                board, rating, clamp(req.opp_rating or rating))
 
 
 class ChatReq(BaseModel):

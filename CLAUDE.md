@@ -12,7 +12,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - `data/` is gitignored (reviews, lessons, library, opening files). `data/openings*.md` is partly course
   material and must never be committed.
 
-## Current state (2026-10-03)
+## Current state (2026-10-04)
 
 - **Opening lessons built** (`data/studies/`, per clone):
 
@@ -31,13 +31,17 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - **Human moves in lessons** (first version, Najdorf + Vienna Game only; see the lessons section). Not done:
   a live Learn session by the user, the masters/players toggle on the start card, notes for human nodes, and
   running it in `build()` for new lessons.
+- **Built 2026-10-04, not yet used live by the user:** the scoreboard above the chat (Stockfish vs Maia lists,
+  win strip, opening name, alert and big-play chat cards; see "Scoreboard"), refresh keeps the board, saved
+  positions (📌; see "Games"), `./start` reading host/port from `.env`.
 - **Favourite games with titles** (see "Games"). **Board drawing reworked** (colours, threat arrows; see
   "Board").
 - Next focus is still opening lessons; see TODOs.
 
 ## Running and testing
 
-- `./start` (venv on first run, then the web app on :8000; `--host` to bind elsewhere) or
+- `./start` (venv on first run, then the web app on :8000; host/port from `CHESS_HOST`/`CHESS_PORT` in `.env`,
+  default 127.0.0.1:8000, flags override; the primary clone's `.env` binds the Tailscale IP) or
   `.venv/bin/python -m frontends.web.server [--host H] [--port P]`. Default host `127.0.0.1`.
 - **`.env` is gitignored** and must exist per clone: `ANTHROPIC_API_KEY`, `LICHESS_TOKEN`, optional
   `CHESS_USER`, `PLAYER_RATING` (Lichess scale, default 1300), `ANTHROPIC_ADMIN_KEY` + `MONTHLY_SPEND_LIMIT`
@@ -70,19 +74,20 @@ file says what is true now. Last full cleanup: 2026-10-03.
 ### Server and state
 
 - **Single-user, single global state.** `server.py` keeps one `S` (`S.review`, `S.coach`, `S.engine`,
-  `S.card_engine`, `S.bot`, `S.maia`). Not built for concurrent users, by design.
+  `S.card_engine`, `S.sb_engines`, `S.bot`, `S.maia`). Not built for concurrent users, by design.
 - **One game load at a time.** `POST /api/load` returns 409 while `S.job` runs; a load doesn't cancel the
   running one.
-- **Two Stockfish processes.** `S.engine` (4 threads; eval bar, GM check, coach tools, full card) and
+- **Four Stockfish processes.** `S.engine` (4 threads; eval bar, GM check, coach tools, full card),
   `S.card_engine` (2 threads; the bot-game quick card and "If they…" replies, so they never queue behind the
-  main engine). `Engine._call` is serialized with a lock: overlapping `analyse` calls returned empty lines
+  main engine), and `S.sb_engines` (3 + 3 threads; the scoreboard's two parallel searches, see
+  "Scoreboard"). `Engine._call` is serialized with a lock: overlapping `analyse` calls returned empty lines
   and 500'd. `Bot` has its own process and lock.
 - **Engine search: time vs depth.** `Engine.lines()`/`evaluate()` take an optional `depth` (stop at that
   depth or after `seconds`, whichever first). The coach's tools use `TOOL_DEPTH` 22 / `TOOL_MAX_SECONDS` 4
   (measured: reaches depth 19-22). Game review (0.3 s/position), eval bar (0.6 s) and the GM/trick finders
   stay time-only on purpose, so borderline review classifications are noisy.
 - **Engine memo:** `Engine.lines()` caches in memory (`LINES_CACHE_SIZE` 1024) on `(epd, multipv, seconds,
-  depth)`. Not persisted, ignores repetition history, and a different budget is a separate entry.
+  depth, root_moves)`. Not persisted, ignores repetition history, and a different budget is a separate entry.
 - **Three different caches:** the local *answer* cache (`data/library.sqlite`, exact match on question +
   position + prompt hash + player colour), the *engine* memo above, and Anthropic's *prompt* cache (5 min,
   server-side). The library stores tool names and inputs only, never engine output.
@@ -152,7 +157,13 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - **"Find game by username"** has chess.com, Lichess, Saved (offline) and ★ Favourites tabs.
   `/api/games?site=lichess` maps Lichess's list to the chess.com row shape (AI/anonymous players have no
   rating). The Lichess name is `localStorage` `meLichess`; `state.me` stays the chess.com name.
-- **Loaded games open at move 1** (`state.ply = 0` in `setReview()`), including reloads and saved games.
+- **Loaded games open at move 1** (`state.ply = 0` in `setReview()`), including saved games.
+- **Refresh keeps the board** (`saveBoard()` at the end of `update()`, `restoreBoard()` in `init()`): a
+  localStorage snapshot (`board`: ply, extra moves, orientation, the bot game's `state.play` minus
+  `backLesson`/`thinking`), used only when `reviewKey()` matches the review the server still holds, and only
+  lines that still replay. Bot games restore via `playView()` and the bot moves if it was its turn; the clock
+  doesn't run while away. Not restored: lessons, demos, replay mode, the chat log (the coach's conversation
+  is server-side and continues). Per browser, so each device on the tailnet has its own snapshot.
 - **Favourites (2026-10-03).** `core/favorites.py`: a `favorites` table in `data/library.sqlite` (game_id,
   title, names, ratings, result, date, opening, full PGN from `pgn_of()`, so it outlives `data/reviews/`).
   `POST /api/favorites/{game_id}`: `{favorite}` toggles, `{title}` sets a title and favourites the game (""
@@ -162,6 +173,13 @@ file says what is true now. Last full cleanup: 2026-10-03.
   so a board click never blurs). Opening a favourite whose review is gone re-analyses the stored PGN. Loaded
   games only (`canTitle()`): bot games and the analysis board have no game_id. Reviews carry `date` only from
   2026-10-03 (`_date()` in `core/review.py`). Not tested: the re-analyse fallback, Safari/Firefox.
+- **Saved positions (📌, 2026-10-04).** `core/positions.py`: a `positions` table in `data/library.sqlite`
+  (title, the line as start FEN + SAN moves, final FEN, orientation, source like "A vs B" / "Bot game vs …" /
+  "Set-up position", deepest ECO name). 💾 under the board (key `s`) or "💾 Save" in the position editor →
+  title dialog (suggested: opening + move number); "📌 Positions" in the header lists them with static mini
+  boards (`miniBoard()`, Unicode glyphs, no chessground), filter, rename, delete. Opening one starts an
+  analysis board from the start FEN with the moves as `state.extra`, so ◀ walks back through the line; the
+  original game context (names, review) isn't reattached. Server-side, so shared by every device.
 - **A loaded game is a replay; a different move branches off to the bot.** "Replay as [White][Black]" →
   `startReplay(color)`, paused at the current move. Stepping pauses it; playing your game move resumes. A
   different move sets `state.replay.deviation`: "Play X vs bot" (`branchToBot()`) or "Take it back". The bot
@@ -260,6 +278,53 @@ file says what is true now. Last full cleanup: 2026-10-03.
   **Send the move history** (it reads the last 8 positions).
 - Maia-1 (lc0 + band weights) was tried first and replaced: its answers jumped between neighbouring bands.
   lc0 and `data/maia/*.pb.gz` are still on this machine, unused. Maia-2 needs Python ≤ 3.12.
+
+### Scoreboard (`core/scoreboard.py`, `renderKeyCard()` in `app.js`, 2026-10-04)
+
+- Who's winning: `#win-strip` (`renderWinStrip()`) at the top of the chat, outside the foldable card so it's
+  always in view: Stockfish's win % (same curve as the eval bar; quick number, then the deep one; keeps the old
+  bar while loading). Maia's "at these ratings" line was removed (user's call); the server still sends
+  `human_white_win`.
+- The card above the chat (`#key-card`): two competing ranked lists in separate panels (`.sb-lists`, stacked
+  ≤ 1350 px; Stockfish white accent, Maia blue). Stockfish's top 5: bar = mover's win chance, its own finer
+  colour scale (3/8/15 % behind #1, `sbTierSf()`). Maia's top 5 at the side to move's rating: bar = play % scaled
+  to the favourite (exact % only on hover), coloured on the coarse "is it a mistake" scale. The two scales differ
+  on purpose (user's reasoning): a Stockfish slot carries a value (#2 is second-best), a Maia slot only
+  popularity, so the same move often ranks and colours differently, and that gap is the point. Hovering a row
+  lights up the same move in the other list; no standing marker (per-move colours, then neutral rings, were too
+  much noise). A row click draws its move (blue arrow, red + ring for a capture; again to clear); a click on the
+  move name plays it (`playMaiaMove()`: only an arrow where you can't move, e.g. the bot's turn). The card keeps the same shape every move (user's call); quick numbers (`lastEval`/`lastMaia`) show at
+  once, `POST /api/scoreboard` replaces them.
+- **Opening name** (`requestOpening()`, `POST /api/opening_line`: every ECO-named position along the line):
+  a gold "📖 Opening" chat banner the first time a game reaches a non-generic name (`isBlandOpening()` skips
+  "King's Pawn Game" etc.; once per game, reset in `setReview()`), then `#opening-tag` above the win bar shows
+  the deepest name at or before the shown move, growing with variations (Caro-Kann → … Advance Variation →
+  …, Botvinnik-Carls Defense). Exact positions only, so transpositions into a named line are found but a
+  move-order the table lacks isn't. In bot games the older opening quip can name the same opening again.
+- **Alerts are chat cards** (`sbPostAlert()`, `.sb-msg`), posted once per position (`sbShown`), only when called
+  for. Last play: the move lost ≥ 15 % (red/orange, + "gave it straight back", lead change), or it was
+  Stockfish's #1 but not Maia's #1 and the popular move was ≥ 5 % worse (green "⭐ found"), or it punished a
+  ≥ 15 % loss (green ⚡), or a lead change alone. Next play: the server's top alert (click draws the move while
+  the board is still on that position). **Big plays** (`sbPostBigPlays()`): one running card, re-posted at
+  the bottom when the list changes. On a loaded game a lost-move alert repeats what `noteMove()`'s card says.
+- **Search:** depth 16 or 3 s (`DEPTH`/`MAX_SECONDS`): top 5 on one sb engine and the Maia moves
+  (`root_moves`, up to 8) on the other, in parallel. Measured 2026-10-04 (38 saved-game positions, multipv 5, vs
+  depth 22): depth 12 within 5 win % on 95%, depth 15 and 18 on 100%; time 1.5 s median / 5.2 s p90 at depth 15,
+  3.7 s / 7.3 s at 18. Same #1 move only 74-76% (near-equal moves swap), which is why rows show evals.
+  **Latest wins:** `SB_LOCK` + `SB_LATEST` return `{"stale": true}` for a request a newer one overtook. Cached client-side (`sbCache`,
+  fen + ratings) so stepping back is instant and last play can read the parent position.
+- **Evals are the side to move's view** in the lists and banner text (`moverEval()` / `mover_eval()`, user's
+  call): no "+", negative = bad for whoever is to move, whatever colour. The eval bar and win strip stay White's.
+- **Units:** every threshold is win % lost by the mover (Lichess curve), never raw eval: −3.0 from +9 means
+  nothing, from +1 it decides the game. Tiers 5/15/30 (`tier()`) drive all styling (amber/orange/red, t2/t3 and green
+  banners pulse once; `prefers-reduced-motion` respected).
+- **Next-play alerts** (`alerts()`, first one shown): mate, disaster (a Maia top-4 move ≥ 5 % likely loses
+  ≥ 30), danger zone (Maia % on moves losing ≥ 30 reaches `DANGER_PCT` 20), only move (#2 ≥ 20 worse),
+  popular move wrong (Maia #1 ≥ 15 or flips the lead), no overlap (no Maia top-4 move in Stockfish's top 4; this is symmetric, so "vice versa" is the same
+  check), hidden best (Stockfish #1 not in Maia's top 4). Clicking an alert draws its move, never plays it.
+- **Thresholds are first guesses**, not tuned on games. Not built: points/material, momentum graph, king
+  danger. Last play for a loaded game's own moves uses the review's `win_pct_lost`; elsewhere it needs both
+  positions' scoreboards (visited), else no last-play banner.
 
 ### Opening lessons (`core/study.py` + the "opening lessons" section of `app.js`)
 
@@ -372,6 +437,16 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - The opponent row reads "Bot Stockfish" for the Stockfish level (`botElo()` falls back to the whole name).
 - Not built: clock-aware Maia, a "practical move" ranking (Stockfish candidates played out with Maia),
   "how findable was the best move", Maia-based decoys/curveballs at your rating outside lessons.
+
+### Scoreboard (built 2026-10-04)
+
+- Tune the alert thresholds on real games (all first guesses): `POPULAR_PCT` 5 is the first knob if alerts
+  fire too often (6 of 14 positions in one test stretch).
+- On a loaded game, the "Last play" alert for a lost move repeats `noteMove()`'s card; offered to show it only
+  for the extras (found it / punished / lead change). In bot games the opening quip can repeat the opening
+  banner. Both await the user's call.
+- The "Moves & engine" panel's Maia rows still play a move on click (the scoreboard's rows draw an arrow).
+- Not built: restoring the chat log on refresh (the conversation itself is server-side and continues).
 
 ### Other open items
 

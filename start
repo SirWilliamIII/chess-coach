@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # One-step launcher: sets up the venv on first run, then starts the web app.
 #
-#   ./start                 web app on http://localhost:8000
-#   ./start --host 0.0.0.0  reachable from other devices on your network
+#   ./start                 web app on http://localhost:8000 (or CHESS_HOST/CHESS_PORT from .env)
+#   ./start --host 0.0.0.0  reachable from other devices on your network (flags beat .env)
 #   ./start cli review 1 --me <user>   terminal version instead
 #
 # Secrets can live in a .env file next to this script, e.g.
 #   ANTHROPIC_API_KEY=sk-ant-...
 #   CHESS_USER=yourname
+#   CHESS_HOST=100.x.y.z    e.g. this machine's Tailscale IP (tailscale ip -4)
+#   CHESS_PORT=8000
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
 
@@ -40,4 +42,5 @@ if [[ "${1:-}" == "cli" ]]; then
   shift
   exec .venv/bin/python cli.py "$@"
 fi
-exec .venv/bin/python -m frontends.web.server "$@"
+# .env defaults first: argparse keeps the last value, so flags given to ./start still win
+exec .venv/bin/python -m frontends.web.server --host "${CHESS_HOST:-127.0.0.1}" --port "${CHESS_PORT:-8000}" "$@"

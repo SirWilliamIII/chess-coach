@@ -117,6 +117,11 @@ const cg = Chessground($('board'), {
       drawOpt:  { key: 'drawOpt',  color: '#0e7c7b', opacity: 1, lineWidth: 6 },
       drawCtrl: { key: 'drawCtrl', color: '#b01e1e', opacity: 1, lineWidth: 6 },
       drawFn:   { key: 'drawFn',   color: '#6b2fa0', opacity: 1, lineWidth: 6 },
+      // scoreboard: a clicked move's arrow, red when it captures (with a ring on the captured piece)
+      sbMove:    { key: 'sbMove',    color: '#2a6fdb', opacity: 0.85, lineWidth: 9 },
+      sbCap:     { key: 'sbCap',     color: '#d32f2f', opacity: 0.85, lineWidth: 9 },
+      sbMoveMid: { key: 'sbMoveMid', color: '#2a6fdb', opacity: 0.85, lineWidth: 9 },
+      sbCapMid:  { key: 'sbCapMid',  color: '#d32f2f', opacity: 0.85, lineWidth: 9 },
       // first legs of L-shaped (knight) drawings: no arrowhead, see marker[id$="Mid"] in style.css
       greenMid:    { key: 'greenMid',    color: '#15781B', opacity: 0.6, lineWidth: 10 },
       drawNoneMid: { key: 'drawNoneMid', color: '#d35400', opacity: 1, lineWidth: 6 },
@@ -531,7 +536,7 @@ function renderInfo() {
   if (state.play) return renderPlayInfo();
   if (state.study) return renderStudyInfo();
   if (!r.moves.length) {
-    $('board-sub').textContent = 'Move pieces freely and ask the coach about any position.';
+    $('board-sub').textContent = '';
     // visible toggle: the dashed-underline name labels alone don't read as clickable
     $('summary').innerHTML = `<div class="me-pick"><span class="label">I'm playing</span><div class="seg">`
       + ['white', 'black'].map((c) => `<button data-me="${c}" class="${r.player_color === c ? 'on' : ''}">${c === 'white' ? 'White' : 'Black'}</button>`).join('')
@@ -761,43 +766,293 @@ function renderMaia() {
   $('maia-lines').querySelectorAll('.mline').forEach((el) => { el.onclick = () => playMaiaMove(el.dataset.uci); });
 }
 
-// ---- key numbers: Stockfish's top 3 and Maia's top 5 on one card above the chat, refreshed every move.
-// Not a .msg, so the code that folds every chat card leaves it alone; it re-renders from lastEval/lastMaia.
+// ---- scoreboard: Stockfish's top 5 next to Maia's top 5 at the chosen rating, the odds the next move is
+// good or a disaster, alerts for the moments worth flagging, and the last/big plays. Sits above the chat;
+// not a .msg, so the code that folds every chat card leaves it alone. The quick numbers (lastEval/lastMaia)
+// show at once; the deeper /api/scoreboard search (depth 18, a few seconds) replaces them and adds the rest.
 
-function evPill(e) {
-  return `<span class="ev ${/^#?-/.test(e ?? '') ? 'b' : 'w'}">${esc(e ?? '')}</span>`;
+const SB_BIG = 15;    // win % lost: a "big play" (core/scoreboard.py BIG)
+const SB_GOOD = 5;    // within this of best: a good move
+const sbCache = new Map();  // fen|ratings → scoreboard, so stepping back is instant and last play can read its parent
+let sbToken = 0;
+let sbTimer = null;
+let sbError = null;
+let sbArrow = null;   // {fen, uci}: the scoreboard move whose arrow is on the board
+const sbShown = new Set();  // banners already drawn (per position), so a new one animates and a re-render doesn't
+
+// The scoreboard's evals are from the side to move's point of view (the card says whose move it is):
+// positive is good for them, negative means the move hurts them, whichever colour they play.
+function moverEval(e, turn) {
+  if (e == null) return e;
+  const m = /^(#?)([+-]?)(.*)$/.exec(e);
+  const neg = (m[2] === '-') !== (turn === 'b');
+  return `${m[1]}${neg && !/^0(\.0+)?$/.test(m[3]) ? '-' : ''}${m[3]}`;
+}
+
+function evPill(e, t) {
+  return `<span class="ev ${/^#?-/.test(e ?? '') ? 'b' : 'w'}${t ? ` t${t}` : ''}">${esc(e ?? '')}</span>`;
+}
+
+function sbRatings(fen) {
+  // the side to move plays at its own rating, facing the other side's (as in requestMaia)
+  const white = fen.split(' ')[1] === 'w';
+  const r = (id) => +$(id).value || 1500;
+  return white ? [r('maia-white'), r('maia-black')] : [r('maia-black'), r('maia-white')];
+}
+
+function sbGet(fen) {
+  return sbCache.get(`${fen}|${sbRatings(fen).join('|')}`);
+}
+
+function requestScoreboard(c) {
+  clearTimeout(sbTimer);
+  const token = ++sbToken;
+  sbError = null;
+  if (!c || !state.engineOn || state.editor || sbGet(c.fen())) return;
+  const fen = c.fen();
+  const [rating, opp] = sbRatings(fen);
+  const line = currentLine();
+  sbTimer = setTimeout(async () => {
+    try {
+      const data = await api('/api/scoreboard', {
+        fen, rating, opp_rating: opp, start_fen: line.startFen, moves: line.sans.slice(0, line.at),
+      });
+      if (data.stale) return;  // a newer position's request superseded this one on the server
+      sbCache.set(`${fen}|${rating}|${opp}`, data);
+      if (sbCache.size > 500) sbCache.delete(sbCache.keys().next().value);
+    } catch (e) {
+      if (token === sbToken) sbError = e.message;
+    }
+    if (token === sbToken) renderKeyCard();
+  }, 250);
+}
+
+// The current line as positions: fens[k] is after k moves, plays[k-1] the move that led there.
+function sbLine() {
+  const line = currentLine();
+  const c = new Chess(line.startFen);
+  const fens = [c.fen()], plays = [];
+  for (const san of line.sans.slice(0, line.at)) {
+    const m = c.move(san);
+    if (!m) break;
+    plays.push({ uci: m.from + m.to + (m.promotion || ''), san: m.san, label: `${c.moveNumber() - (m.color === 'b' ? 1 : 0)}${m.color === 'w' ? '.' : '...'}${m.san}` });
+    fens.push(c.fen());
+  }
+  return { fens, plays, kind: line.kind };
+}
+
+// Win % the k-th move (1-based) cost its player: the saved review for a loaded game's own moves, else the
+// scoreboards of the positions before and after it (only those already visited); null when unknown.
+function sbDrop(L, k) {
+  if (L.kind === 'review' && k <= state.ply) {
+    const v = state.review.moves[k - 1]?.win_pct_lost;
+    if (typeof v === 'number') return v;
+  }
+  const before = sbGet(L.fens[k - 1]);
+  if (!before || before.over) return null;
+  const uci = L.plays[k - 1].uci;
+  const row = [...before.sf, ...(before.humans || [])].find((r) => r.uci === uci);
+  if (row) return row.drop;
+  const after = sbGet(L.fens[k]);
+  if (!after) return null;
+  if (after.over) return 0;  // mate or a draw on the board: nothing left to lose
+  return Math.max(0, before.sf[0].win - (100 - after.sf[0].win));
+}
+
+// A click on a scoreboard row shows the move instead of playing it: an arrow, red for a capture (plus a
+// ring on the piece it takes, which for en passant isn't on the arrow's square). Clicking it again clears it.
+function sbShowMove(uci) {
+  const c = currentGame();
+  const fen = c.fen();
+  if (sbArrow?.fen === fen && sbArrow.uci === uci) {
+    sbArrow = null;
+    cg.setAutoShapes(baseShapes());
+  } else {
+    const mv = c.moves({ verbose: true }).find((m) => m.from + m.to + (m.promotion || '') === uci || m.from + m.to === uci);
+    if (!mv) return;
+    const cap = !!mv.captured;
+    const brush = cap ? 'sbCap' : 'sbMove';
+    const taken = mv.flags.includes('e') ? mv.to[0] + mv.from[1] : mv.to;
+    sbArrow = { fen, uci };
+    cg.setAutoShapes([...baseShapes(), ...(mv.piece === 'n' ? knightShapes(mv.from, mv.to, brush) : [{ orig: mv.from, dest: mv.to, brush }]),
+      ...(cap ? [{ orig: taken, brush: 'sbCap' }] : [])]);
+  }
+  $('key-card').querySelectorAll('.sb-row').forEach((el) => el.classList.toggle('on', sbArrow?.fen === fen && el.dataset.uci === sbArrow.uci));
+}
+
+function sbVerdict(d) {
+  return d >= 30 ? 'blunder' : d >= 20 ? 'mistake' : d >= 10 ? 'inaccuracy' : d >= SB_GOOD ? 'slip' : d < 2 ? 'best or close' : 'good';
+}
+
+const sbTier = (d) => (d >= 30 ? 3 : d >= SB_BIG ? 2 : d >= SB_GOOD ? 1 : 0);
+// Stockfish's list is its best moves in order, so the gaps are small and the colour can only worsen going
+// down: a finer scale (3/8/15 % behind #1) shows them. Maia's list keeps the coarse "is it a mistake" scale.
+const sbTierSf = (d) => (d >= 15 ? 3 : d >= 8 ? 2 : d >= 3 ? 1 : 0);
+
+// Who's winning, once at the top of the chat so it stays in view when the scoreboard is folded: the
+// quick eval at once, the scoreboard's deeper number when it lands.
+function renderWinStrip(fen, sb) {
+  const box = $('win-strip');
+  const quick = lastEval?.fen === fen && lastEval.lines.length ? lastEval.lines[0].cp_white : null;
+  const w = sb && !sb.over ? sb.white_win : quick != null ? winPct(Math.max(-1500, Math.min(1500, quick))) : null;
+  if (w == null) return;  // keep the last position's bar until this one's number lands, so the chat doesn't jump
+  box.classList.remove('hidden');
+  box.innerHTML = `<div class="sb-win" title="Stockfish's win chance (Lichess' curve), the same measure as the eval bar; not a prediction for players of these ratings">
+    <span class="sb-w">White ${Math.round(w)}%</span><span class="sb-bar"><span style="width:${w}%"></span></span>
+    <span class="sb-b">${Math.round(100 - w)}% Black</span></div>`;
+}
+
+// Alerts and big plays go into the chat as their own cards, so the scoreboard above keeps the same shape on
+// every move. Each alert is posted once per position (revisiting doesn't repeat it).
+function sbPostAlert(fen, b, label, pre = '') {
+  const key = `${fen}|${label}|${b.kind}`;
+  if (sbShown.has(key)) return;
+  if (sbShown.size > 2000) sbShown.clear();
+  sbShown.add(key);
+  const msg = addMsg('coach sb-msg', `<div class="sb-alert ${b.tier ? `t${b.tier}` : 'good'} fresh"><span class="sb-al">${label}</span> ${pre}${esc(b.text)}</div>`);
+  if (b.uci) {
+    // show, don't play: the flagged move may be the blunder; only meaningful while the board is still there
+    const al = msg.querySelector('.sb-alert');
+    al.classList.add('clickable');
+    al.title = 'Show the move on the board';
+    al.onclick = () => { if (currentGame().fen() === fen) sbShowMove(b.uci); };
+  }
+}
+
+let sbBigKey = '';  // the big plays last posted, so the card is re-posted only when the list changes
+
+function sbPostBigPlays(big) {
+  const key = big.map((b) => b.label).join(' ');
+  if (!big.length || key === sbBigKey) return;
+  sbBigKey = key;
+  // one running card: the previous one goes, the updated list lands at the bottom
+  document.querySelectorAll('#chat-log .sb-big').forEach((el) => el.remove());
+  const msg = addMsg('coach sb-msg sb-big', `<div class="sb-bigcard"><span class="sb-al" title="Moves that cost 15% win chance or more (💥), and the replies that took advantage (⚡)">Big plays</span>`
+    + `${big.slice(-6).map((b) => `<button class="link sb-jump" data-k="${b.k}">${b.html}</button>`).join('')}</div>`);
+  msg.querySelectorAll('.sb-jump').forEach((el) => { el.onclick = () => goToLine(+el.dataset.k); });
 }
 
 function renderKeyCard() {
   const box = $('key-card');
   const sfOn = state.engineOn;
   const humansOn = maiaOn();
+  if (state.editor || !state.review || !sfOn) $('win-strip').classList.add('hidden');
   if (state.editor || !state.review || !(sfOn || humansOn)) return void box.classList.add('hidden');
   box.classList.remove('hidden');
   const fen = currentGame().fen();
   const [, turn, , , , num] = fen.split(' ');
-  const sf = lastEval?.fen === fen ? lastEval.lines : null;
+  const side = turn === 'w' ? 'White' : 'Black';
+  const mover = turn === 'w' ? 'maia-white' : 'maia-black';
+  const sb = sfOn ? sbGet(fen) : null;
+  const deep = sb && !sb.over;
+  if (sfOn) renderWinStrip(fen, sb);
   const wait = '<span class="card-sub">…</span>';
   const over = '<span class="card-sub">Game over</span>';
-  const chip = (uci, move, ...rest) => `<button class="kc-m" data-uci="${esc(uci)}"><b>${esc(move)}</b>${rest.join('')}</button>`;
+  const fmt = (p) => (p < 1 ? '<1' : Math.round(p));
   const rows = [];
+
+  // Two ranked lists side by side, one move per row, so the gap between the top and the bottom shows as
+  // bar length. Stockfish's bar is the mover's win chance (near-equal moves look equal, a bad one is short);
+  // Maia's is how often players pick it, coloured by how good the move is (a long red bar = popular blunder).
+  const sfMoves = sfOn ? (deep ? sb.sf : (lastEval?.fen === fen ? lastEval.lines : null)) || [] : [];
+  const humanMoves = humansOn ? (deep ? sb.humans : (lastMaia?.fen === fen ? lastMaia.moves : null)) || [] : [];
+  const row = (uci, move, width, t, tip, ...rest) =>
+    `<button class="sb-row${t ? ` t${t}` : ''}" data-uci="${esc(uci)}" title="${esc(tip)}"><b class="sb-mv" title="Play ${esc(move)}">${esc(move)}</b>`
+    + `<span class="sb-rbar"><span style="width:${Math.max(2, Math.min(100, width))}%"></span></span>${rest.join('')}</button>`;
+  const moverWin = (cp) => { const w = winPct(Math.max(-1500, Math.min(1500, cp))); return turn === 'w' ? w : 100 - w; };
+  const lists = [];
+
   if (sfOn) {
-    rows.push(`<div class="card-row"><span class="card-k">Stockfish</span><span class="kc-moves">${
-      !sf ? wait : !sf.length ? over : sf.map((l) => chip(l.uci, l.move, evPill(l.eval_white))).join('')}</span></div>`);
+    const sf = sfOn && (deep || lastEval?.fen === fen) ? sfMoves : null;
+    lists.push(`<div class="sb-list sf"><div class="sb-lh" title="Stockfish's best moves, best first. Bar: ${side}'s win chance after the move"><span class="sb-who">Stockfish<small>the best moves</small></span><span class="sb-col">win chance</span></div>${
+      !sf ? wait : !sf.length ? over : sf.map((l, i) => {
+        const w = deep ? l.win : moverWin(l.cp_white);
+        const drop = deep ? l.drop : moverWin(sfMoves[0].cp_white) - w;
+        const t = sbTierSf(drop);
+        const tip = `${Math.round(w)}% win chance for ${side}` + (i ? `; ${Math.round(drop)}% behind the best` : '')
+          + (deep && l.human_pct != null ? `; ${fmt(l.human_pct)}% of players at this rating play it` : '') + (deep ? '' : ' (quick search; the deeper one is coming)');
+        return row(l.uci, l.move, w, t, tip, evPill(moverEval(l.eval_white, turn), t), `<span class="sb-num">${Math.round(w)}%</span>`);
+      }).join('')}</div>`);
   }
+
   if (humansOn) {
-    const mm = lastMaia?.fen === fen ? lastMaia.moves : null;
-    const mover = turn === 'w' ? 'maia-white' : 'maia-black';
-    rows.push(`<div class="card-row"><span class="card-k">Humans <select class="kc-rating" title="Rating of the side to move">${
-      $(mover).innerHTML}</select></span><span class="kc-moves">${!mm ? wait : !mm.length ? over : mm.map((m) => {
-      // same number as the Stockfish row when it has this move (see renderMaia)
-      const ev = (sf || []).find((l) => l.uci === m.uci)?.eval_white ?? m.eval_white;
-      return chip(m.uci, m.move, `<span class="kc-pct">${m.pct < 1 ? '<1' : Math.round(m.pct)}%</span>`, evPill(ev));
-    }).join('')}</span></div>`);
+    const mm = deep || lastMaia?.fen === fen ? humanMoves : null;
+    // bars scale to the most popular move, so a 25% favourite fills the row and the rest compare to it
+    const top = Math.max(1, ...(mm || []).map((m) => m.pct));
+    lists.push(`<div class="sb-list maia"><div class="sb-lh" title="What players of this rating play here (Maia), most popular first. Bar: share of players who'd pick the move (exact % on hover); colour: how good it is"><span class="sb-who">Maia <select class="kc-rating" title="Rating of the side to move">${
+      $(mover).innerHTML}</select><small>what players actually play · bar: how often</small></span></div>${!mm ? wait : !mm.length ? over : mm.map((m) => {
+      if (!deep) {
+        const ev = (lastEval?.fen === fen ? lastEval.lines : []).find((l) => l.uci === m.uci)?.eval_white ?? m.eval_white;
+        return row(m.uci, m.move, 100 * m.pct / top, 0, `${fmt(m.pct)}% of players at this rating play it`, evPill(moverEval(ev, turn)));
+      }
+      const tip = `${fmt(m.pct)}% of players at this rating play it; `
+        + (m.drop < SB_GOOD ? 'about as good as the best move' : `costs ${Math.round(m.drop)}% win chance (${sbVerdict(m.drop)})`)
+        + (m.sf_rank ? `; Stockfish's #${m.sf_rank}` : '');
+      return row(m.uci, m.move, 100 * m.pct / top, m.tier, tip, evPill(moverEval(m.eval_white, turn), m.tier));
+    }).join('')}</div>`);
     box.dataset.mover = mover;
   }
+  // two competing lists, so they get separate panels
+  if (lists.length) rows.push(`<div class="sb-lists${lists.length > 1 ? ' two' : ''}">${lists.join('')}</div>`);
+
+  // Banners, only when the moment calls for one: the last move (a big loss, or Stockfish's top move that
+  // wasn't the popular one, or punishing a blunder) and the next move (the server's most important alert).
+  let last = null;
+  let big = [];
+  if (deep) {
+    // the last move and the big ones so far, from the saved review or the scoreboards already seen
+    const L = sbLine();
+    const n = L.plays.length;
+    if (n) {
+      const d = sbDrop(L, n);
+      const prev = n > 1 ? sbDrop(L, n - 1) : null;
+      const p = L.plays[n - 1];
+      const before = sbGet(L.fens[n - 1]);
+      let lead = '';
+      if (before && !before.over) {
+        // lead change: the bar crosses from one side's edge to the other's (55/45 leaves a dead zone)
+        const a = before.white_win, b = sb.white_win;
+        if ((a >= 55 && b <= 45) || (a <= 45 && b >= 55)) lead = `${b > 50 ? 'White' : 'Black'} takes the lead`;
+      }
+      if (d != null && d >= SB_BIG) {
+        const extra = [prev != null && prev >= SB_BIG ? 'gave it straight back' : '', lead].filter(Boolean).join(' · ');
+        last = { tier: sbTier(d), kind: 'blunder',
+          text: `💥 ${p.label} was ${/^[aeiou]/.test(sbVerdict(d)) ? 'an' : 'a'} ${sbVerdict(d)}: −${Math.round(d)}% win chance${extra ? ` · ${extra}` : ''}` };
+      } else {
+        const pop = before?.humans?.[0];
+        const found = before && !before.over && before.sf[0].uci === p.uci && pop && pop.uci !== p.uci && pop.drop >= SB_GOOD;
+        const punished = prev != null && prev >= SB_BIG && d != null && d < SB_GOOD;
+        if (found) {
+          const pct = before.sf[0].human_pct;
+          const who = `~${sbRatings(L.fens[n - 1])[0]} players`;
+          last = { tier: 0, kind: 'found', text: `⭐ ${p.label}: Stockfish's top move, which ${pct != null ? `only ${fmt(pct)}% of ${who} find` : `${who} rarely find`}`
+            + `; most play ${pop.move}${punished ? `. It punishes ${L.plays[n - 2].label}` : ''}` };
+        } else if (punished) {
+          last = { tier: 0, kind: 'punished', text: `⚡ ${p.label} punishes ${L.plays[n - 2].label}${lead ? ` · ${lead}` : ''}` };
+        } else if (lead) {
+          last = { tier: 2, kind: 'lead', text: `⇅ ${p.label}: ${lead}` };
+        }
+      }
+      for (let k = 1; k <= n; k++) {
+        const dk = sbDrop(L, k);
+        if (dk == null) continue;
+        if (dk >= SB_BIG) big.push({ k, label: L.plays[k - 1].label, html: `💥 ${esc(L.plays[k - 1].label)} <span class="t${sbTier(dk)}">−${Math.round(dk)}%</span>` });
+        else if (dk < SB_GOOD && k > 1 && (sbDrop(L, k - 1) ?? 0) >= SB_BIG) big.push({ k, label: `⚡${L.plays[k - 1].label}`, html: `⚡ ${esc(L.plays[k - 1].label)}` });
+      }
+    }
+  }
+
+  // the next move: the most important alert (the Maia-based ones need the Maia list on)
+  const next = deep ? sb.alerts.find((a) => humansOn || !['disaster', 'danger', 'popular_wrong', 'no_overlap', 'hidden_best'].includes(a.kind)) : null;
+  const icon = { disaster: '💥', danger: '⚠', mate: '♚', only_move: '❗', popular_wrong: '⚠', no_overlap: '⇄', hidden_best: '🔎' };
+  if (last) sbPostAlert(fen, last, 'Last play');
+  if (next) sbPostAlert(fen, next, 'Next play', icon[next.kind] ? `${icon[next.kind]} ` : '');
+  sbPostBigPlays(big);  // after the alerts: it's the running summary, so it sits at the bottom
+
+  const status = !sfOn ? '' : sbError ? `<span class="card-sub" title="${esc(sbError)}">deep search failed</span>`
+    : deep ? `<span class="card-sub" title="Stockfish search depth">d${sb.depth}</span>` : sb?.over ? '' : '<span class="card-sub">analysing…</span>';
   box.classList.toggle('collapsed', recall('keyCardFolded') === '1');
-  box.innerHTML = `<div class="card-head"><b>Move ${num} · ${turn === 'w' ? 'White' : 'Black'} to move</b><span class="card-caret">▾</span></div>`
+  box.innerHTML = `<div class="card-head"><b>Move ${num} · ${side} to move</b>${status}<span class="card-caret">▾</span></div>`
     + `<div class="card-body">${rows.join('')}</div>`;
   box.querySelector('.card-head').onclick = () => {
     store('keyCardFolded', box.classList.toggle('collapsed') ? '1' : '0');
@@ -808,7 +1063,16 @@ function renderKeyCard() {
     // drive the panel's dropdown, which stores the rating and refetches
     sel.onchange = () => { $(box.dataset.mover).value = sel.value; $(box.dataset.mover).dispatchEvent(new Event('change')); };
   }
-  box.querySelectorAll('.kc-m').forEach((el) => { el.onclick = () => playMaiaMove(el.dataset.uci); });
+  box.querySelectorAll('.sb-row').forEach((el) => {
+    // the row shows the move as an arrow; the move name itself plays it (where you could play it yourself,
+    // else playMaiaMove only shows the arrow too)
+    el.onclick = (e) => (e.target.closest('.sb-mv') ? playMaiaMove(el.dataset.uci) : sbShowMove(el.dataset.uci));
+    // hovering a row lights up the same move in the other list
+    const twins = () => box.querySelectorAll(`.sb-row[data-uci="${el.dataset.uci}"]`);
+    el.onmouseenter = () => twins().forEach((t) => t.classList.add('hot'));
+    el.onmouseleave = () => twins().forEach((t) => t.classList.remove('hot'));
+    el.classList.toggle('on', sbArrow?.fen === fen && el.dataset.uci === sbArrow.uci);
+  });
 }
 
 function setupMaia(cfg) {
@@ -816,7 +1080,10 @@ function setupMaia(cfg) {
   $('maia-pane').classList.toggle('hidden', !state.maiaReady);
   if (!state.maiaReady) return;
   const old = recall('maiaRating') || 1500;  // the single rating from before White/Black were split
-  const refresh = () => requestMaia(state.editor ? null : currentGame());
+  const refresh = () => {
+    requestMaia(state.editor ? null : currentGame());
+    requestScoreboard(state.editor ? null : currentGame());
+  };
   for (const [id, key] of [['maia-white', 'maiaWhite'], ['maia-black', 'maiaBlack']]) {
     const saved = +(recall(key) || old);
     $(id).innerHTML = cfg.maia_ratings.map((r) =>
@@ -851,8 +1118,11 @@ function setEngine(on) {
   if (!state.play) store('engineOn', on ? '1' : '0');
   $('evalbar').classList.toggle('off', !on);
   $('engine-lines').classList.toggle('hidden', !on);
+  if (on) {
+    requestEval(currentGame());
+    requestScoreboard(currentGame());
+  }
   renderKeyCard();
-  if (on) requestEval(currentGame());
 }
 
 // ---------------------------------------------------------------- opening explorer
@@ -1016,9 +1286,58 @@ function update() {
   syncCards();
   requestEval(c);
   requestMaia(c);
-  renderKeyCard();  // placeholders until the new numbers arrive
+  requestScoreboard(c);
+  renderKeyCard();  // quick numbers or placeholders until the deep ones arrive
+  requestOpening();
   requestExplorer(c);
   noteMove();
+  saveBoard();
+}
+
+// ---- the board survives a page refresh: a snapshot in localStorage, restored by init() only when the
+// server still has the same game loaded (it keeps one global review), so it never lands on the wrong game.
+// Lessons, demos and replays aren't restored; a bot game is (its moves live only in the page).
+
+const reviewKey = (r) => [r.game_id || '', r.start_fen, r.moves.length, r.white, r.black].join('|');
+
+function saveBoard() {
+  if (!state.review || state.study || state.demo) return;
+  // backLesson holds a whole lesson tree and can't come back without it; thinking restarts on load
+  const play = state.play ? { ...state.play, thinking: false, backLesson: undefined } : null;
+  store('board', JSON.stringify({ key: reviewKey(state.review), ply: state.ply, extra: state.extra,
+    orientation: state.orientation, play }));
+}
+
+// a saved line only counts if it still replays from its start position
+function replays(startFen, sans) {
+  try {
+    const c = new Chess(startFen);
+    return sans.every((san) => c.move(san));
+  } catch { return false; }
+}
+
+function restoreBoard(review) {
+  let snap = null;
+  try { snap = JSON.parse(recall('board') || 'null'); } catch {}
+  if (!snap || snap.key !== reviewKey(review)) return false;
+  const play = snap.play && replays(snap.play.startFen, snap.play.moves) ? snap.play : null;
+  if (play?.clock) play.clock.lastTick = Date.now();  // the time away isn't charged to anyone
+  setReview(review, null, play);
+  if (!play) {
+    state.ply = Math.max(0, Math.min(snap.ply || 0, review.moves.length));
+    const base = state.ply ? review.moves[state.ply - 1].fen_after : review.start_fen;
+    state.extra = Array.isArray(snap.extra) && replays(base, snap.extra) ? snap.extra : [];
+  }
+  if (snap.orientation === 'white' || snap.orientation === 'black') state.orientation = snap.orientation;
+  if (play) playView(play.view);  // a bot game draws its board from state.extra, which playView fills
+  else update();
+  // refreshed while the bot was to move: let it move now
+  if (play && !play.over) {
+    const c = new Chess(play.startFen);
+    play.moves.forEach((san) => c.move(san));
+    if (c.turn() !== play.color[0]) botMove();
+  }
+  return true;
 }
 
 // ---------------------------------------------------------------- chat
@@ -1921,6 +2240,8 @@ function setReview(review, note, play = null, { keepChat = false } = {}) {
   state.play = play;
   opponentCommentCount = 0;
   openingNote = { family: null, key: null, count: 0 };
+  openingBannerShown = false;
+  $('opening-tag').classList.add('hidden');  // a new game names its own opening
   notedPlies.clear();
   bigMomentAsked.clear();
   state.review = review;
@@ -2362,10 +2683,12 @@ function updateEditor() {
   $('summary').innerHTML = `<div class="play-buttons">
       <button class="btn small" id="ed-play" ${problem ? 'disabled' : ''}>Play vs bot from here</button>
       <button class="btn ghost small" id="ed-analyse" ${problem ? 'disabled' : ''}>Analyse</button>
+      <button class="btn ghost small" id="ed-save" ${problem ? 'disabled' : ''} title="Save this set-up to 📌 Positions">💾 Save</button>
       <button class="btn ghost small" id="ed-cancel">Cancel</button>
     </div><div class="ed-status ${problem ? 'bad' : ''}" id="ed-status">${esc(problem || 'Position OK')}</div>`;
   $('ed-play').onclick = () => { pendingFen = editorFen(); openPlayDialog(); };
   $('ed-analyse').onclick = analyseEditorPosition;
+  $('ed-save').onclick = openSavePosition;
   $('ed-cancel').onclick = () => closeEditor();
   $('variation').classList.add('hidden');
   $('chat-context').textContent = 'Asking about: the set-up position (starts an analysis board)';
@@ -2388,7 +2711,7 @@ function updateEditor() {
       if (token !== evalToken || !state.editor) return;
       $('ed-status').textContent = e.message;
       $('ed-status').classList.add('bad');
-      $('ed-play').disabled = $('ed-analyse').disabled = true;
+      $('ed-play').disabled = $('ed-analyse').disabled = $('ed-save').disabled = true;
       $('engine-lines').innerHTML = '';
     }
   }, 250);
@@ -3432,6 +3755,38 @@ function studyWalkthrough() {
     + 'Explain the ideas behind those moves; keep it concise.', { hideQuestion: true });
 }
 
+// ---- opening name: a banner in the chat the first time a game reaches a named opening (offline ECO data,
+// exact positions), then the deepest name reached so far stays above the win bar, growing as variations
+// are recognised. Generic names ("King's Pawn Game") show in the tag but don't spend the banner.
+
+const openingLines = new Map();  // start fen + moves → [{ply, eco, name, family}] from /api/opening_line
+let openingBannerShown = false;  // reset per game in setReview()
+
+async function requestOpening() {
+  if (state.demo || state.editor || !state.review) return;  // a demo board keeps the game's tag
+  const line = currentLine();
+  const key = `${line.startFen}|${line.sans.join(' ')}`;
+  if (!openingLines.has(key)) {
+    try {
+      openingLines.set(key, (await api('/api/opening_line', { start_fen: line.startFen, moves: line.sans })).names);
+    } catch { return; }  // offline data, so only a server hiccup lands here; the tag just stays as it was
+    if (openingLines.size > 200) openingLines.delete(openingLines.keys().next().value);
+  }
+  const now = currentLine();
+  if (`${now.startFen}|${now.sans.join(' ')}` !== key) return;  // the line changed while we waited
+  const hit = openingLines.get(key).filter((n) => n.ply <= now.at).pop();
+  const tag = $('opening-tag');
+  tag.classList.toggle('hidden', !hit);
+  if (!hit) return;
+  tag.innerHTML = `<span class="ot-eco">${esc(hit.eco)}</span><span class="ot-name">${esc(hit.name)}</span>`;
+  tag.title = `${hit.eco} · ${hit.name}`;
+  if (!openingBannerShown && !isBlandOpening(hit.family)) {
+    openingBannerShown = true;
+    addMsg('coach sb-msg', `<div class="sb-alert opening fresh"><span class="sb-al">Opening</span> 📖 ${esc(hit.name)}`
+      + ` <span class="ot-eco">${esc(hit.eco)}</span></div>`);
+  }
+}
+
 // ---- opening reactions ("Caro-Kann player, I see…"): free and instant, no Claude call. The name
 // comes from the server's offline ECO table (/api/opening); this fires when an opponent move lands
 // on a named opening, only in the first moves of a game that started from the standard position,
@@ -4059,6 +4414,141 @@ async function startGame() {
   if (new Chess(play.startFen).turn() !== color[0]) botMove();
 }
 
+// ---------------------------------------------------------------- saved positions
+// 💾 saves whatever the board shows (a loaded game, a pasted PGN, a set-up position, a bot game) as its
+// line: start position + moves, so reopening it on the analysis board can still step back through it.
+// Stored server-side (core/positions.py), so every device on the tailnet sees the same list.
+
+const PIECE_GLYPH = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+
+// a small static board for the list and the save dialog (no chessground: dozens of these at once)
+function miniBoard(fen, orientation = 'white') {
+  const rows = fen.split(' ')[0].split('/');
+  const cells = [];
+  rows.forEach((row, r) => {
+    let f = 0;
+    for (const ch of row) {
+      if (/\d/.test(ch)) {
+        for (let i = 0; i < +ch; i++, f++) cells.push({ r, f, piece: '' });
+      } else {
+        cells.push({ r, f, piece: ch });
+        f++;
+      }
+    }
+  });
+  if (orientation === 'black') cells.reverse();
+  return cells.map(({ r, f, piece }) => `<span class="pm-sq ${(r + f) % 2 ? 'd' : 'l'}">${piece
+    ? `<span class="pm-pc ${piece === piece.toUpperCase() ? 'w' : 'b'}">${PIECE_GLYPH[piece.toLowerCase()]}</span>` : ''}</span>`).join('');
+}
+
+// what's on the board now, as a line, plus a few words about where it came from
+function boardToSave() {
+  if (state.editor) {
+    return { start_fen: editorFen(), moves: [], fen: editorFen(), source: 'Set-up position' };
+  }
+  const line = currentLine();
+  const moves = line.sans.slice(0, line.at);
+  const r = state.review;
+  const source = state.play ? `Bot game vs ${state.play.levelName}`
+    : state.study ? `Lesson: ${state.study.data?.name || 'opening'}`
+    : r.moves.length ? `${r.white} vs ${r.black}`
+    : line.startFen !== START_FEN ? 'Set-up position' : 'Analysis board';
+  return { start_fen: line.startFen, moves, fen: currentGame().fen(), source };
+}
+
+function openSavePosition() {
+  if (!state.review && !state.editor) return;
+  const b = boardToSave();
+  const [, turn, , , , num] = b.fen.split(' ');
+  const where = `Move ${num}, ${turn === 'w' ? 'White' : 'Black'} to move`;
+  const opening = $('opening-tag').classList.contains('hidden') ? '' : $('opening-tag').querySelector('.ot-name')?.textContent || '';
+  $('pos-save-board').innerHTML = miniBoard(b.fen, state.orientation);
+  $('pos-title').value = opening ? `${opening.split(',')[0]}, move ${num}` : where;
+  $('pos-save-sub').textContent = `${where} · ${b.source}`;
+  $('pos-save-go').onclick = async () => {
+    const title = $('pos-title').value.trim();
+    if (!title) return void $('pos-title').focus();
+    try {
+      await api('/api/positions', { title, start_fen: b.start_fen, moves: b.moves, orientation: state.orientation, source: b.source });
+    } catch (e) {
+      $('pos-save-sub').textContent = e.message;
+      return;
+    }
+    $('dlg-save-pos').close();
+    addMsg('system', `📌 Saved “${esc(title)}”. Find it under 📌 Positions.`);
+  };
+  $('dlg-save-pos').showModal();
+  $('pos-title').select();
+}
+
+let savedPositions = [];
+
+async function openPositions() {
+  $('dlg-positions').showModal();
+  $('pos-list').innerHTML = '<div class="card-sub">Loading…</div>';
+  try { savedPositions = await api('/api/positions'); } catch (e) { return void ($('pos-list').textContent = e.message); }
+  renderPositions();
+}
+
+function renderPositions() {
+  const q = $('pos-q').value.trim().toLowerCase();
+  const list = savedPositions.filter((p) => !q || [p.title, p.opening, p.source].join(' ').toLowerCase().includes(q));
+  if (!list.length) {
+    $('pos-list').innerHTML = `<div class="card-sub">${savedPositions.length ? 'Nothing matches.' : 'No saved positions yet: 💾 under the board saves the one on it.'}</div>`;
+    return;
+  }
+  $('pos-list').innerHTML = list.map((p) => {
+    const [, turn, , , , num] = p.fen.split(' ');
+    const date = new Date(p.created_at * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    return `<div class="pos-item" data-id="${p.id}">
+      <button class="pos-mini" title="Open on the analysis board">${miniBoard(p.fen, p.orientation)}</button>
+      <div class="pos-info">
+        <div class="pos-title" title="Double-click to rename">${esc(p.title)}</div>
+        <div class="card-sub">Move ${num}, ${turn === 'w' ? 'White' : 'Black'} to move${p.opening ? ` · ${esc(p.opening)}` : ''}</div>
+        <div class="card-sub">${esc(p.source || '')}${p.source ? ' · ' : ''}${date}</div>
+        <div class="pos-actions"><button class="btn small pos-open">Open</button>
+          <button class="link pos-rename">Rename</button><button class="link pos-del">Delete</button></div>
+      </div></div>`;
+  }).join('');
+  $('pos-list').querySelectorAll('.pos-item').forEach((el) => {
+    const p = savedPositions.find((x) => x.id === +el.dataset.id);
+    el.querySelector('.pos-mini').onclick = el.querySelector('.pos-open').onclick = () => openSavedPosition(p);
+    const rename = async () => {
+      const title = prompt('Rename this position', p.title)?.trim();
+      if (!title || title === p.title) return;
+      try { await api(`/api/positions/${p.id}`, { title }); } catch (e) { return void alert(e.message); }
+      p.title = title;
+      renderPositions();
+    };
+    el.querySelector('.pos-rename').onclick = rename;
+    el.querySelector('.pos-title').ondblclick = rename;
+    el.querySelector('.pos-del').onclick = async () => {
+      if (!confirm(`Delete “${p.title}”?`)) return;
+      try { await api(`/api/positions/${p.id}`, undefined, 'DELETE'); } catch (e) { return void alert(e.message); }
+      savedPositions = savedPositions.filter((x) => x.id !== p.id);
+      renderPositions();
+    };
+  });
+}
+
+// reopen on a fresh analysis board from its start position, with the moves on top, at the saved move
+async function openSavedPosition(p) {
+  let review;
+  try { review = await api('/api/analysis', { fen: p.start_fen }); } catch (e) { return void alert(e.message); }
+  $('dlg-positions').close();
+  setReview(review, null);
+  state.extra = p.moves.slice();
+  state.orientation = p.orientation;
+  update();
+  addMsg('system', `📌 ${esc(p.title)}${p.source ? ` (${esc(p.source)})` : ''}`);
+}
+
+$('nav-save').onclick = openSavePosition;
+$('btn-positions').onclick = openPositions;
+$('pos-q').oninput = renderPositions;
+$('pos-save-current').onclick = () => { $('dlg-positions').close(); openSavePosition(); };
+$('pos-title').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); $('pos-save-go').click(); } };
+
 // ---------------------------------------------------------------- wiring
 
 $('pb-takeback').onclick = takeback;
@@ -4282,6 +4772,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Home') goTo(0);
   else if (e.key === 'End') $('nav-end').click();
   else if (e.key === 'f') $('nav-flip').click();
+  else if (e.key === 's' && !e.metaKey && !e.ctrlKey) openSavePosition();
   else if (e.key === 'Escape' && pinnedSquares.size) { pinnedSquares.clear(); paintSquares(); }
   else if (e.key === 'Escape' && state.demo) closeDemo();
   else if (e.key === 'Escape' && state.replay) stopReplay();
@@ -4302,8 +4793,12 @@ document.addEventListener('keydown', (e) => {
   $('engine-lines').classList.toggle('hidden', !engineOn);
   const review = await api('/api/review');
   const linked = +(location.hash.match(/ply=(\d+)/)?.[1] || 0);
-  setReview(review, cfg.coach_ready
-    ? 'Load one of your games, or play moves on the board and ask the coach about them.'
+  if (restoreBoard(review)) {
+    if (!cfg.coach_ready) addMsg('system', esc('Coach offline: set ANTHROPIC_API_KEY and restart the server to chat. Board and engine work without it.'));
+    return;
+  }
+  // no intro text in the chat; only the warning when the coach can't answer
+  setReview(review, cfg.coach_ready ? null
     : 'Coach offline: set ANTHROPIC_API_KEY and restart the server to chat. Board and engine work without it.');
   if (linked) goTo(linked);
 })();
