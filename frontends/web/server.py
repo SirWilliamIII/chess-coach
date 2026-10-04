@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import eco, favorites, gm_moments, library, maia, openings, opening_quips, opponent_card, positions, repertoire, scoreboard, study, usage
+from core import eco, endgames, favorites, gm_moments, library, maia, openings, opening_quips, opponent_card, positions, repertoire, scoreboard, study, tablebase, usage
 from core import org_spend as org_spend_mod
 from core.coach import Coach, prompt_hash
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
@@ -784,6 +784,7 @@ class MaiaReq(BaseModel):
     opp_rating: int | None = None  # defaults to `rating`
     start_fen: str | None = None  # with `moves`: the line that led here, which Maia uses as input too
     moves: list[str] = []         # SAN
+    include: list[str] = []       # scoreboard only: UCI moves to score even outside both lists
 
 
 @app.post("/api/maia")
@@ -821,7 +822,45 @@ def scoreboard_view(req: MaiaReq):
         if me != SB_LATEST[0]:
             return {"stale": True}  # the board has already moved on
         return scoreboard.build(*S.sb_engines, S.maia if maia.available() else None,
-                                board, rating, clamp(req.opp_rating or rating))
+                                board, rating, clamp(req.opp_rating or rating), req.include[:4])
+
+
+# ---------------------------------------------------------------- endgame trainer
+
+@app.get("/api/endgame/presets")
+def endgame_presets():
+    return [{"group": g, "spec": spec, "label": label} for g, spec, label in endgames.PRESETS]
+
+
+class EndgameReq(BaseModel):
+    spec: str            # "KRP-KR" (yours - theirs), "rand:N" or "pawns:N"
+    mode: str            # win / draw / lies
+    color: str = "white"
+
+
+@app.post("/api/endgame/new")
+def endgame_new(req: EndgameReq):
+    if req.color not in ("white", "black"):
+        raise HTTPException(400, "bad color")
+    try:
+        # the scoreboard's first engine: idle while a drill is being set up
+        return endgames.generate(S.sb_engines[0], req.spec, req.mode, req.color == "white")
+    except endgames.NoPosition as e:
+        raise HTTPException(422, str(e))
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, f"bad request: {e}")
+
+
+class FenReq(BaseModel):
+    fen: str
+
+
+@app.post("/api/endgame/probe")
+def endgame_probe(req: FenReq):
+    """The tablebase verdict for the side to move and for each of its moves; {"covered": false} when the
+    position has more than 7 pieces or the service can't be reached."""
+    tb = tablebase.probe(parse_fen(req.fen))
+    return {"covered": True, **tb} if tb else {"covered": False}
 
 
 class ChatReq(BaseModel):

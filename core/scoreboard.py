@@ -60,13 +60,20 @@ def _mate_for_mover(line: dict, mover: chess.Color) -> int | None:
     return abs(n) if (n > 0) == (mover == chess.WHITE) else None
 
 
-def build(sf_engine, human_engine, maia, board: chess.Board, rating: int, opp_rating: int) -> dict:
-    """The scoreboard for `board` (with its move history, which Maia reads). `maia` may be None."""
+def build(sf_engine, human_engine, maia, board: chess.Board, rating: int, opp_rating: int,
+          include: list[str] = ()) -> dict:
+    """The scoreboard for `board` (with its move history, which Maia reads). `maia` may be None.
+    `include`: UCI moves to score even if neither list has them (the move that was played here); they come
+    back in "extra"."""
     if board.is_game_over():
         return {"over": True}
     humans = maia.moves(board, rating, opp_rating, top=max(HUMAN_SCORED, HUMAN_SHOWN)) if maia else []
     pick = [m for i, m in enumerate(humans) if i < HUMAN_SHOWN or m["pct"] >= MIN_SCORED_PCT][:HUMAN_SCORED]
     roots = [chess.Move.from_uci(m["uci"]) for m in pick]
+    for u in include:
+        mv = chess.Move.from_uci(u)
+        if mv in board.legal_moves and mv not in roots:
+            roots.append(mv)
     # The two searches run at once on the two Stockfish processes, so the wait is the slower one, not the
     # sum (depth 18 with 5 lines alone measured 3.7 s median, 7.3 s p90 on this machine, 2026-10-04).
     with ThreadPoolExecutor(1) as pool:
@@ -76,10 +83,11 @@ def build(sf_engine, human_engine, maia, board: chess.Board, rating: int, opp_ra
         scored = job.result() if job else []
     if not sf:
         raise RuntimeError("Stockfish returned no lines")
-    return summarize(board.turn, sf, humans, scored, rating)
+    return summarize(board.turn, sf, humans, scored, rating, include)
 
 
-def summarize(mover: chess.Color, sf: list[dict], humans: list[dict], scored: list[dict], rating: int) -> dict:
+def summarize(mover: chess.Color, sf: list[dict], humans: list[dict], scored: list[dict], rating: int,
+              include: list[str] = ()) -> dict:
     """Rows, odds and alerts from the two searches. `scored` is Stockfish limited to the human moves."""
     side = "White" if mover == chess.WHITE else "Black"
     best = _win(sf[0]["cp_white"], mover)
@@ -126,6 +134,17 @@ def summarize(mover: chess.Color, sf: list[dict], humans: list[dict], scored: li
             s = sum(h["pct"] * (h["wdl"][0] + h["wdl"][1] / 2) for h in wdl) / sum(h["pct"] for h in wdl)
             out["human_white_win"] = round(s if mover == chess.WHITE else 100 - s, 1)
     out["alerts"] = alerts(side, sf_rows, human_rows, rating, out["odds"])
+    # included moves that are in neither list: scored like a human move outside the top 5
+    shown = {r["uci"] for r in sf_rows} | {r["uci"] for r in out["humans"]}
+    out["extra"] = []
+    for u in include:
+        if u in shown or u not in by_uci:
+            continue
+        l = by_uci[u]
+        w = _win(l["cp_white"], mover)
+        drop = max(floor, best - w)
+        out["extra"].append({"move": l["move"], "uci": u, "eval_white": l["eval_white"], "win": round(w, 1),
+                             "drop": round(drop, 1), "tier": tier(drop), "sf_rank": None, "pct": pct.get(u)})
     return out
 
 

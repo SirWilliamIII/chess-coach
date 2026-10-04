@@ -49,7 +49,7 @@ header {
 .fav-btn { background: none; border: none; padding: 0 6px 0 0; font-size: 16px; color: var(--muted); cursor: pointer; }
 .fav-btn.on { color: #f9c74f; }
 .title-input { width: 100%; max-width: 420px; font: inherit; padding: 2px 6px; }
-.actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 /* header hierarchy: the two ways to start (bigger, green) > analysis board (grey button) > Lessons
    and Load game (quiet text links, set apart by a divider) */
 .actions .btn.primary { padding: 9px 18px; font-size: 16px; }
@@ -69,29 +69,52 @@ header {
 
 main {
   display: grid;
-  /* board + chat are the main event, roughly equal-width (Bootstrap-style 5-5-2 with the game
-     panel as the slim strip); the board's own square-aspect cap (see .board-wrap) means on wide
-     screens it won't actually grow to fill its full 5fr, which is what opens up the extra breathing
-     room between it and chat, on top of the gap below.
-     Game panel placed after the board and chat columns here but pinned to the rightmost column
-     below, rather than reordered in the DOM, so it doesn't shift the small-screen rules further
-     down (those size chat and the game panel by DOM order, not by this placement). */
-  grid-template-columns: minmax(360px, 5fr) minmax(340px, 5fr);
-  gap: 28px; padding: 16px; align-items: start; max-width: 1500px; margin: 0 auto;
+  /* three columns (user's call, 2026-10-04): the board and the scoreboard are the focus, the chat a narrow
+     feed on the right. The board column is as wide as the board (--board-w below). */
+  grid-template-columns: auto minmax(320px, 380px) minmax(300px, 360px);
+  justify-content: center;  /* spare width goes to the edges, not the scoreboard */
+  gap: 20px; padding: 16px; align-items: start; max-width: 1700px; margin: 0 auto;
+  /* the board's size, set here so the other columns can match its height; room left for the other two
+     columns (340 + 300), the gaps, the padding and the eval bar */
+  /* height left after the header (--head-h, measured by app.js since it wraps to 1-3 rows) and 196 px for the
+     padding, name rows, file letters and nav */
+  --board-w: min(var(--board-max), calc(100vh - var(--head-h, 62px) - 196px), calc(100vw - var(--reserve)));
+  --board-max: 720px;
+  --reserve: 740px;  /* the side columns, gaps, padding and the eval strip */
+  --strip: 46px;  /* eval bar (28) + the gap that holds the rank labels (18) */
 }
-/* explicit row too, not just column: the game panel comes before chat in the DOM, and mixing one
-   explicitly-placed item (game panel) with two auto-placed ones (board, chat) let the auto-placed
-   chat panel drop into a second implicit row instead of sharing row 1 with the board */
+/* Hiding a side panel (user's call): it shrinks to a 30 px tab, the board may grow into the space */
+body.hide-score main { grid-template-columns: auto 30px minmax(300px, 440px); --reserve: 450px; --board-max: 860px; }
+body.hide-chat main { grid-template-columns: auto minmax(320px, 440px) 30px; --reserve: 470px; --board-max: 860px; }
+body.hide-score.hide-chat main { grid-template-columns: auto 30px 30px; --reserve: 180px; --board-max: 960px; }
+body.hide-score .score-panel, body.hide-chat .chat-panel { display: none; }
+.panel-tab { display: none; grid-row: 1; align-self: stretch; width: 30px; padding: 0; border: 0; border-radius: 8px;
+  background: var(--panel); color: var(--muted); cursor: pointer; font: inherit; font-size: 12px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .1em; }
+.panel-tab span { display: inline-block; writing-mode: vertical-rl; }
+.panel-tab:hover { color: var(--text); background: #33312e; }
+.tab-score { grid-column: 2; }
+.tab-chat { grid-column: 3; }
+body.hide-score .tab-score, body.hide-chat .tab-chat { display: block; }
+.panel-hide { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 15px; padding: 0 2px; line-height: 1; }
+.panel-hide:hover { color: var(--text); }
+.feed-right { display: flex; align-items: center; gap: 12px; }
+/* explicit rows too: auto-placed panels next to explicitly placed ones can drop into an implicit row */
 .board-col { grid-column: 1; grid-row: 1; }
-.chat-panel { grid-column: 2; grid-row: 1; }
+.score-panel { grid-column: 2; grid-row: 1; }
+/* only as tall as its content now that the lists are compact; visible overflow so the Moves & engine
+   dropdown isn't clipped by the shorter panel */
+.panel.score-panel { height: auto; overflow: visible; }
+.chat-panel { grid-column: 3; grid-row: 1; }
 
 /* ---------- board ---------- */
-.board-col { display: flex; flex-direction: column; gap: 6px; --board-w: min(640px, calc(100vh - 170px), calc(100vw - 32px - 34px)); }
-.board-row { display: flex; gap: 6px; }
+.board-col { display: flex; flex-direction: column; gap: 6px; }
+.board-row { display: flex; gap: 18px; }
 .board-wrap {
   position: relative;
   width: var(--board-w);
   aspect-ratio: 1;
+  margin-bottom: 18px;  /* room for the file letters under the board */
 }
 #board { width: 100%; height: 100%; transition: filter .5s ease; }
 .board-wrap.game-over #board { filter: brightness(.55) saturate(.7); }
@@ -109,15 +132,13 @@ cg-board square.selected { background-color: rgba(255, 255, 51, 0.55); }
 cg-board square.move-dest { background: radial-gradient(rgba(0,0,0,.18) 19%, transparent 20%); }
 cg-board square.oc.move-dest { background: radial-gradient(transparent 0%, transparent 79%, rgba(0,0,0,.18) 80%); }
 cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,0,0,1) 0%, rgba(231,0,0,1) 25%, rgba(169,0,0,0) 89%, rgba(158,0,0,0) 100%); }
-.cg-wrap coords { opacity: 1; font-family: inherit; font-weight: 700; font-size: clamp(10px, 1.8vmin, 14px); }
-.cg-wrap coords.ranks { left: 3px; top: 1px; width: auto; }
-.cg-wrap coords.ranks coord { transform: none; }
-.cg-wrap coords.files { left: 0; bottom: 1px; height: auto; text-transform: none; }
-.cg-wrap coords.files coord { text-align: right; padding-right: 4px; }
-/* label colour contrasts with the square it sits on (a1 is dark) */
-.cg-wrap coords coord { color: var(--sq-dark); }
-.orientation-white coords.ranks coord:nth-child(odd), .orientation-black coords.ranks coord:nth-child(even),
-.orientation-white coords.files coord:nth-child(odd), .orientation-black coords.files coord:nth-child(even) { color: var(--sq-light); }
+.cg-wrap coords { opacity: 1; font-family: inherit; font-weight: 700; font-size: 12px; }
+/* outside the board (user's call): 1-8 in the strip left of it, a-h underneath, one muted colour */
+.cg-wrap coords.ranks { left: -15px; top: 0; width: 12px; height: 100%; }
+.cg-wrap coords.ranks coord { transform: none; display: flex; align-items: center; justify-content: center; }
+.cg-wrap coords.files { left: 0; bottom: -19px; width: 100%; height: 16px; text-transform: none; }
+.cg-wrap coords.files coord { text-align: center; padding: 0; transform: none; }
+.cg-wrap coords coord { color: var(--muted); }
 
 .evalbar {
   position: relative; width: 28px; border-radius: 3px; overflow: hidden;
@@ -134,8 +155,8 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .evalbar.flipped.black-better span { top: auto; bottom: 4px; }
 .evalbar.off { visibility: hidden; }
 
-/* max-width = eval bar strip (34px, same as padding-left) + board, so a right-aligned item lines up with the board's right edge */
-.player { max-width: calc(34px + var(--board-w)); box-sizing: border-box; font-weight: 600; padding-left: 34px; min-height: 24px; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* max-width = eval bar strip (--strip, same as padding-left) + board, so a right-aligned item lines up with the board's right edge */
+.player { max-width: calc(var(--strip) + var(--board-w)); box-sizing: border-box; font-weight: 600; padding-left: var(--strip); min-height: 24px; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .captured { display: inline-flex; align-items: center; gap: 4px; }
 .capgroup { display: inline-flex; }
 .capgroup i { width: 20px; height: 20px; background-size: cover; display: inline-block; opacity: .85; }
@@ -169,13 +190,14 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 /* ---------- panels ---------- */
 .panel {
   background: var(--panel); border-radius: 8px; display: flex; flex-direction: column;
-  height: calc(min(640px, calc(100vh - 170px)) + 56px); min-height: 420px; overflow: hidden;
+  /* as tall as the whole board column: the board plus the line above it, both name rows and the nav */
+  height: calc(var(--board-w) + 160px); min-height: 420px; overflow: hidden;
 }
-/* the game panel lives in the chat header now: just the "Moves & engine" trigger, with everything
-   else in the #gp-details dropdown, which anchors to this (position: relative) wrapper */
+/* the game panel sits above the board (.board-head-right): just the "Moves & engine" trigger, with
+   everything else in the #gp-details dropdown, which anchors to this (position: relative) wrapper */
 .game-panel { position: relative; }
 .game-info { padding: 12px 14px 4px; font-weight: 600; }
-.board-sub { color: var(--muted); font-size: 13px; padding-left: 34px; min-height: 18px; }
+.board-sub { color: var(--muted); font-size: 13px; padding-left: var(--strip); min-height: 18px; }
 .summary { padding: 4px 14px 8px; display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; }
 
 .gp-toggle {
@@ -187,15 +209,13 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .gp-toggle::before { content: "▾ "; }
 .gp-toggle.collapsed::before { content: "▸ "; }
 
-/* docked in the title slot (left of the header) the dropdown opens rightward instead */
-.game-panel.in-title #gp-details { left: 0; right: auto; }
 
 /* dropdown: floats over whatever's below/beside it instead of pushing the grid around; wider than
    its narrow trigger column so the explorer filters aren't cramped */
 #gp-details {
-  /* the game panel is the rightmost column now, so this opens leftward — free to cover the chat
-     panel beside it rather than spill off the page's right edge */
-  position: absolute; top: 100%; right: 0; z-index: 15; margin-top: 2px;
+  /* the trigger sits at the board's right edge; the dropdown opens to its right, over the scoreboard
+     column, so it never covers the board (the editor's palette is in it) */
+  position: absolute; top: 0; left: calc(100% + 18px); z-index: 15;
   width: min(320px, calc(100vw - 48px));
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
   box-shadow: 0 14px 32px rgba(0,0,0,.5);
@@ -252,7 +272,7 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
   border-top: 1px solid var(--line); padding: 8px 14px; font-size: 13px;
   display: flex; justify-content: space-between; align-items: center; gap: 8px; background: #2d3326;
 }
-.nav { display: flex; gap: 4px; }
+.nav { display: flex; gap: 4px; margin-left: var(--strip); width: var(--board-w); }
 .navbtn { flex: 1; background: #3c3a37; border: 0; color: var(--text); border-radius: 5px; padding: 6px 0; font-size: 14px; position: relative; }
 .navbtn:hover { background: #4b4845; }
 .navbtn:disabled { opacity: 0.35; cursor: default; background: #3c3a37; }
@@ -290,14 +310,16 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .mline .ev.b { color: var(--muted); }
 
 /* ---------- chat ---------- */
-.chat-head {
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px;
-  padding: 12px 14px; font-weight: 700; border-bottom: 1px solid var(--line);
-}
-.chat-head .game-info { justify-self: start; padding: 0; }
-.chat-head .summary { justify-self: center; padding: 0; position: relative; }
-.chat-head-right { justify-self: end; display: flex; align-items: center; gap: 10px; }
-.chat-head-right .btn, .chat-head-right .link { white-space: nowrap; }
+.head-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+/* compact so the pickers fit beside the top player's name */
+.head-row .me-pick { gap: 6px; }
+.head-row .me-pick .seg button { padding: 4px 7px; }
+.sb-rating { display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: #7aa7ff;
+  text-transform: uppercase; letter-spacing: .05em; }
+.sb-rating select { background: transparent; color: #e8e6e1; border: 1px solid var(--line); border-radius: 4px; font-size: 12px; padding: 2px 1px; }
+.score-body { flex: 1; overflow-y: auto; padding-bottom: 12px; container-type: inline-size; }
+.feed-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px;
+  font-weight: 700; border-bottom: 1px solid var(--line); flex: none; }
 .chat-log { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 .msg { max-width: 92%; padding: 9px 12px; border-radius: 10px; word-wrap: break-word; }
 .msg p { margin: 0 0 16px; }
@@ -364,15 +386,24 @@ dialog textarea { width: 100%; resize: vertical; }
 .game-row .meta { color: var(--muted); font-size: 12px; grid-column: 1 / -1; }
 
 /* ---------- small screens ---------- */
-@media (max-width: 1150px) {
-  main { grid-template-columns: minmax(0, 1fr); }
-  .board-col { grid-column: 1; grid-row: 1; }
+@media (max-width: 1200px) {
+  /* board + scoreboard side by side, the chat full width underneath */
+  main { grid-template-columns: auto minmax(320px, 380px); --board-max: 640px; --reserve: 430px; }
   .chat-panel { grid-column: 1 / -1; grid-row: 2; height: 520px; }
+  /* the chat sits below here, so its hidden tab is a bar across the page */
+  body.hide-chat main { grid-template-columns: auto minmax(320px, 380px); --reserve: 430px; }
+  body.hide-score main { grid-template-columns: auto 30px; --reserve: 120px; --board-max: 860px; }
+  body.hide-score.hide-chat main { grid-template-columns: auto 30px; --reserve: 120px; }
+  .tab-chat { grid-column: 1 / -1; grid-row: 2; width: auto; height: 30px; }
+  .tab-chat span { writing-mode: horizontal-tb; }
 }
 @media (max-width: 760px) {
   main { grid-template-columns: 1fr; padding: 12px 16px; }
-  .board-col, .chat-panel { grid-column: 1; grid-row: auto; }
-  .board-col { --board-w: calc(100vw - 32px - 34px); }
+  .board-col, .score-panel, .chat-panel { grid-column: 1; grid-row: auto; }
+  body.hide-score main, body.hide-chat main, body.hide-score.hide-chat main { grid-template-columns: 1fr; }
+  .panel-tab { grid-column: 1 !important; grid-row: auto !important; width: auto; height: 30px; }
+  .panel-tab span { writing-mode: horizontal-tb; }
+  main { --board-w: calc(100vw - 32px - 46px); }
   .actions-sep { display: none; }  /* the divider would dangle at the end of a wrapped row */
   .panel { height: auto; max-height: 520px; }
   .game-panel .moves { max-height: 200px; }
@@ -687,44 +718,49 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 
 /* ---------- key numbers card above the chat (renderKeyCard) ---------- */
 .key-card { flex: none; margin: 10px 14px 0; padding: 9px 12px; border-radius: 10px; background: #363431; border-left: 3px solid var(--accent); }
+/* in the scoreboard column the column is the frame: no card chrome, tighter spacing */
+.score-body .key-card { margin: 22px 14px 12px; padding: 0; background: none; border: 0; border-radius: 0; }
+.score-body .sb-lists { margin-top: 6px; gap: 10px; }
 .key-card.collapsed .card-caret { transform: rotate(-90deg); }
 .key-card.collapsed .card-body { display: none; }
 .key-card .card-k { min-width: 74px; }
-.kc-rating { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; font-size: 11px; padding: 0 2px; }
 .kc-moves { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
 .kc-pct { color: var(--muted); font-size: 12px; }
 .key-card .card-head .card-sub { flex: 0 1 auto; margin-left: auto; font-size: 12px; }
-/* scoreboard: impact tiers (win % lost: t1 5+, t2 15+, t3 30+), the same scale for chips, pills, rows and alerts */
+/* scoreboard lists: white text, bars one neutral colour; red/green only on the extremes (.bad / .great). Alerts keep the tiers */
 .sb-lists { display: grid; grid-template-columns: 1fr; gap: 12px; margin: 10px 0 6px; }
-.sb-lists.two { grid-template-columns: 1fr 1fr; }
-@media (max-width: 1350px) { .sb-lists.two { grid-template-columns: 1fr; } }
-.sb-list { background: #2a2826; border-radius: 8px; padding: 8px 10px 6px; border-top: 3px solid var(--sb-c); min-width: 0; }
+.sb-lists.two { grid-template-columns: 1fr 1fr; gap: 8px; }
+.sb-list { background: #2a2826; border-radius: 8px; padding: 6px 8px 4px; border-top: 3px solid var(--sb-c); min-width: 0; }
 .sb-list.sf { --sb-c: #e8e6e1; }
 .sb-list.maia { --sb-c: #7aa7ff; }
-.sb-lh { display: flex; align-items: flex-end; justify-content: space-between; gap: 6px; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
-.sb-who { font-size: 13px; font-weight: 800; color: var(--sb-c); text-transform: uppercase; letter-spacing: .05em; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
-.sb-who small { flex-basis: 100%; font-size: 11px; font-weight: 400; color: var(--muted); text-transform: none; letter-spacing: 0; }
-.sb-col { font-size: 11px; color: var(--muted); white-space: nowrap; }
-.sb-row { display: grid; grid-template-columns: 56px 1fr 46px; align-items: center; gap: 6px; width: 100%;
-  background: none; border: 0; border-radius: 4px; padding: 4px 4px; color: #d5d4d0; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
-.sb-list.sf .sb-row { grid-template-columns: 56px 1fr 46px 32px; }
+.sb-lh { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; padding-bottom: 4px; border-bottom: 1px solid var(--line); min-height: 22px; }
+.sb-who { font-size: 12px; font-weight: 800; color: var(--sb-c); text-transform: uppercase; letter-spacing: .05em; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.sb-row { display: grid; grid-template-columns: 42px 1fr 40px; align-items: center; gap: 6px; width: 100%;
+  background: none; border: 0; border-radius: 4px; padding: 2px 3px; color: #fff; font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; }
 .sb-row:hover { background: rgba(255,255,255,.06); }
-.sb-row.on { background: rgba(42,111,219,.22); box-shadow: inset 2px 0 0 #2a6fdb; }
-.sb-mv { font-weight: 700; justify-self: start; padding: 0 6px; margin-left: -6px; border-radius: 999px; border: 1px solid transparent; }
-.sb-mv:hover { border-color: #8a8782; background: rgba(255,255,255,.08); }  /* hints that the name itself is a button */
+.sb-mv { font-weight: 700; }
 .sb-row.hot { background: rgba(255,255,255,.08); }
-.sb-rbar { height: 8px; background: #1e1d1b; border-radius: 4px; overflow: hidden; }
+.sb-rbar { height: 6px; background: #1e1d1b; border-radius: 4px; overflow: hidden; }
 .sb-rbar span { display: block; height: 100%; background: #b9b7b2; border-radius: 4px; transition: width .3s ease; }
-.sb-row.t1 .sb-rbar span { background: #e0a040; }
-.sb-row.t2 .sb-rbar span { background: #ff7a5c; }
-.sb-row.t3 .sb-rbar span { background: #ff4d4d; }
 .sb-row .ev { font-weight: 700; font-size: 12px; text-align: right; }
-.sb-row .ev.w { color: #fff; }
-.sb-row .ev.b { color: var(--muted); }
-.sb-row .ev.t1 { color: #e0a040; }
-.sb-row .ev.t2 { color: #ff7a5c; }
-.sb-row .ev.t3 { color: #fff; background: #d83a3a; border-radius: 4px; padding: 0 4px; justify-self: end; }
-.sb-num { color: var(--muted); font-size: 12px; text-align: right; }
+.sb-row .ev.w, .sb-row .ev.b { color: #fff; }
+.sb-row.bad .sb-mv, .sb-row.bad .ev { color: #ff5c5c; }
+.sb-row.great .sb-mv, .sb-row.great .ev { color: #7fd36a; }
+/* two sections: your last move's position, then now (your turn) */
+.sb-sec + .sb-sec { margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--line); }
+.sb-sec-h { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.sb-sec-h .card-sub { margin-left: auto; font-size: 11.5px; }
+.sb-sec-t { font-size: 17px; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; color: #fff; white-space: nowrap; }
+.sb-sec-mv { font-size: 13.5px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-after { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.sb-cost { font-size: 12.5px; font-weight: 700; color: #fff; }
+.sb-cost.bad { color: #ff5c5c; }
+.sb-cost.great { color: #7fd36a; }
+.score-body .sb-sec .sb-lists { margin-top: 10px; margin-bottom: 0; }
+.sb-row.played { background: rgba(255,255,255,.1); box-shadow: inset 2px 0 0 #fff; }
+.sb-sep { border-top: 1px dashed var(--line); margin: 3px 0; }
+.sb-rt { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 0; }
+.sb-sec:not(.live) .sb-row { cursor: default; }
 
 .opening-tag { flex: none; margin: 10px 16px -4px; display: flex; gap: 8px; align-items: baseline; min-width: 0;
   font-size: 13px; color: #e8e6e1; font-weight: 600; }
@@ -745,6 +781,11 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .sb-jump { font-size: 13px; color: #d5d4d0; }
 .sb-alert { margin: 6px 0; padding: 6px 10px; border-radius: 8px; font-size: 13px; background: rgba(255,255,255,.05); cursor: default; }
 .sb-alert.clickable { cursor: pointer; }
+.sb-alert.clickable:hover { filter: brightness(1.12); }
+.sb-alert.stale { cursor: default; opacity: .6; }
+/* the move number in the corner, as a reference; the card is the link to that moment */
+.sb-alert { position: relative; }
+.sb-num { position: absolute; top: 7px; right: 10px; font-size: 11px; font-weight: 700; opacity: .7; font-variant-numeric: tabular-nums; }
 /* scoreboard alerts and big plays as chat cards: the banner is the whole message */
 .msg.sb-msg { padding: 0; background: none; max-width: 100%; align-self: stretch; }
 .msg.sb-msg .sb-alert { margin: 0; padding: 9px 12px; font-size: 13.5px; }
@@ -785,3 +826,83 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .pos-title { font-weight: 700; color: #fff; overflow-wrap: anywhere; cursor: text; }
 .pos-actions { margin-top: auto; display: flex; gap: 10px; align-items: center; }
 @media (max-width: 520px) { .pos-save-row { flex-direction: column; } }
+
+/* the chat is a narrow feed (user's call, 2026-10-04): the coach's written answers stay readable, the
+   automatic cards (opening, last/next play, big plays, per-move review cards) and the chips get smaller */
+.chat-panel .msg.coach { font-size: 14px; }
+.chat-panel .msg.card, .chat-panel .msg.card .card-row { font-size: 12.5px; }
+.chat-panel .msg.card .card-head b { font-size: 13.5px; }
+.chat-panel .msg.card .card-sub { font-size: 12px; }
+.chat-panel .msg.sb-msg .sb-alert { font-size: 12.5px; padding: 7px 10px; line-height: 1.35; }
+.chat-panel .sb-bigcard { font-size: 12.5px; padding: 6px 10px; }
+.chat-panel .msg.system { font-size: 12px; }
+.chat-panel .chip { font-size: 12px; padding: 3px 9px; }
+.chat-panel .msg.sb-msg .sb-alert:has(.sb-num) { padding-right: 52px; }
+
+/* ---------- endgame trainer ---------- */
+.eg-opts .seg button { white-space: nowrap; }
+.eg-opts { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
+.eg-grid { display: flex; flex-direction: column; gap: 14px; margin: 10px 0 4px; max-height: min(60vh, 560px); overflow-y: auto; }
+.eg-grid.busy { opacity: .5; pointer-events: none; }
+.eg-gh { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 6px; }
+.eg-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.eg-tile { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px;
+  background: #2a2826; border: 1px solid var(--line); border-radius: 10px; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  transition: border-color .15s, transform .15s, background .15s; }
+.eg-tile:hover { border-color: #7aa7ff; background: #302e2b; transform: translateY(-1px); }
+.eg-art { display: flex; align-items: baseline; gap: 6px; font-size: 22px; line-height: 1; }
+.eg-art .w { color: #f4f2ed; }
+.eg-art .b { color: #9d9a94; }
+.eg-vs { font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.eg-n { font-size: 20px; font-weight: 800; color: #f4f2ed; }
+.eg-label { font-size: 12.5px; font-weight: 600; }
+.eg-st { position: absolute; top: 8px; right: 10px; font-size: 11px; font-weight: 700; color: #7fd36a; }
+.eg-foot { margin-top: 10px; }
+.eg-card { background: #363431; border-radius: 10px; padding: 10px 12px; border-left: 3px solid #7aa7ff; }
+.eg-card.ok { border-left-color: #7fd36a; }
+.eg-card.fail { border-left-color: #ff5c5c; }
+.eg-ch { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.eg-card .eg-art { font-size: 20px; }
+.eg-goal { font-weight: 700; color: #fff; font-size: 13.5px; }
+.eg-lie { margin-top: 4px; color: #f2d06b; font-weight: 600; font-size: 12.5px; }
+.eg-card .card-sub { display: block; margin-top: 4px; }
+.eg-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+
+/* scoreboard type (user's call): lighter than the heavy 700-900 weights, which read big and round;
+   fixed-width digits so the eval column lines up */
+.score-body { font-variant-numeric: tabular-nums; }
+.score-body .sb-sec-t { font-size: 13px; font-weight: 600; letter-spacing: .12em; color: #e8e6e1; }
+.score-body .sb-sec-mv { font-size: 13px; font-weight: 500; color: #d5d4d0; }
+.score-body .sb-cost { font-weight: 600; }
+.score-body .sb-who { font-size: 11px; font-weight: 600; letter-spacing: .1em; }
+.score-body .sb-rt { font-weight: 500; }
+.score-body .sb-row { font-size: 12.5px; }
+.score-body .sb-mv { font-weight: 500; }
+.score-body .sb-row .ev { font-weight: 500; }
+.score-body .sb-w, .score-body .sb-b { font-weight: 500; }
+.opening-tag { font-weight: 500; }
+.sb-rating { font-weight: 600; }
+
+/* above the board: title line (game, opening/title, Moves & engine), then the top name with the pickers,
+   status and Takeback beside it. Both as wide as the board, starting at its left edge */
+.board-head, .top-row { display: flex; align-items: center; gap: 6px 12px; padding-left: var(--strip);
+  width: calc(var(--strip) + var(--board-w)); box-sizing: border-box; }
+.board-head { min-height: 28px; }
+.board-head .game-info { padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.board-head .board-sub { padding-left: 0; min-height: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board-head-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+.top-row { flex-wrap: wrap; min-height: 32px; }
+.top-row .player.top { padding-left: 0; max-width: none; flex: 0 1 auto; }
+.top-row .head-row { margin-left: auto; }
+.top-row .summary { padding: 0; position: relative; }
+.top-row .btn { white-space: nowrap; }
+.score-top { display: flex; align-items: center; gap: 8px; margin: 12px 14px 0 16px; min-height: 18px; }
+.score-top .opening-tag { margin: 0; flex: 1; min-width: 0; }
+.score-top .panel-hide { margin-left: auto; }
+
+/* scoreboard type, lighter again (user's call: still too thick) */
+.score-body .sb-row, .score-body .sb-mv, .score-body .sb-row .ev, .score-body .sb-w, .score-body .sb-b,
+.score-body .sb-sec-mv, .score-body .sb-rt, .opening-tag { font-weight: 400; }
+.score-body .sb-sec-t, .score-body .sb-who, .score-body .sb-cost { font-weight: 500; }
+.score-body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+@media (max-width: 760px) { #gp-details { left: auto; right: 0; top: 100%; margin-top: 2px; } }  /* one column: no room beside */
