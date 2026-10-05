@@ -11,27 +11,37 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header>
+  <!-- side nav (user's call, 2026-10-05: chess.com-style tree instead of a header row); ids unchanged -->
+  <nav class="side-nav" id="side-nav">
+    <button class="nav-collapse" id="nav-collapse" title="Hide the menu">‹</button>
     <div class="brand"><img class="logo" src="/static/logo-mark.png" alt="">Chess Coach</div>
-    <div class="game-title" id="game-title"></div>
-    <div class="actions">
-      <button id="btn-play" class="btn primary">Play game</button>
-      <button id="btn-games" class="btn primary">Find game by username</button>
-      <button id="btn-analysis" class="btn ghost">Analysis board</button>
-      <button id="btn-setup" class="btn ghost">Set up position</button>
-      <button id="btn-study" class="btn ghost">Learn openings</button>
-      <span class="actions-sep" aria-hidden="true"></span>
-      <button id="btn-endgames" class="link">♔ Endgames</button>
-      <button id="btn-positions" class="link">📌 Positions</button>
-      <button id="btn-library" class="link">📚 Lessons</button>
-      <button id="btn-load" class="link">Load game</button>
-    </div>
-  </header>
+    <details class="nav-group" data-group="play" open>
+      <summary><span class="nav-ico">♟</span>Play</summary>
+      <button id="btn-play" class="nav-item">Play game</button>
+      <button id="btn-analysis" class="nav-item">Analysis board</button>
+      <button id="btn-setup" class="nav-item">Set up position</button>
+    </details>
+    <details class="nav-group" data-group="games" open>
+      <summary><span class="nav-ico">📂</span>Games</summary>
+      <button id="btn-games" class="nav-item">Find game by username</button>
+      <button id="btn-load" class="nav-item">Load game</button>
+      <button id="btn-positions" class="nav-item">📌 Positions</button>
+    </details>
+    <details class="nav-group" data-group="learn" open>
+      <summary><span class="nav-ico">🎓</span>Learn</summary>
+      <button id="btn-study" class="nav-item">Learn openings</button>
+      <button id="btn-endgames" class="nav-item">♔ Endgames</button>
+      <button id="btn-library" class="nav-item">📚 Lessons</button>
+    </details>
+  </nav>
 
   <main>
     <section class="board-col">
       <!-- game title + Moves & engine above the board; side pickers, game status and Takeback beside the top name -->
       <div class="board-head">
+        <!-- the opening, as the page's title (user's call, 2026-10-05): deepest ECO name at the shown move -->
+        <div class="opening-tag hidden" id="opening-tag"></div>
+        <div class="game-title" id="game-title"></div>
         <div class="game-info" id="game-info"></div>
         <div class="board-sub" id="board-sub"></div>
         <div class="board-head-right">
@@ -101,17 +111,21 @@
       </div>
     </section>
 
-    <!-- the scoreboard column: opening, who's winning, then This move / Last move (Stockfish vs Maia) -->
-    <section class="panel score-panel" id="score-panel">
-      <div class="score-body">
+    <!-- the scoreboard column: opening + who's winning above the panel, level with the rows above the board
+         (user's call), then the panel: Best move / Previous move (Stockfish vs Maia) -->
+    <div class="score-col">
+      <div class="score-head">
         <div class="score-top">
-          <div class="opening-tag hidden" id="opening-tag"></div>
           <button class="panel-hide" data-hide="score" title="Hide the scoreboard">⇥</button>
         </div>
         <div class="win-strip hidden" id="win-strip"></div>
-        <div class="key-card hidden" id="key-card"></div>
       </div>
-    </section>
+      <section class="panel score-panel" id="score-panel">
+        <div class="score-body">
+          <div class="key-card hidden" id="key-card"></div>
+        </div>
+      </section>
+    </div>
 
     <!-- a hidden panel leaves a thin tab in its place; click it to bring the panel back -->
     <button class="panel-tab tab-score" data-show="score" title="Show the scoreboard"><span>Scoreboard</span></button>
@@ -119,7 +133,8 @@
 
     <section class="panel chat-panel">
       <div class="feed-head"><span>Coach</span>
-        <span class="feed-right"><button class="link" id="btn-chat-reset" title="Start a fresh conversation">New chat</button>
+        <span class="feed-right"><label class="auto-coach" title="Let the coach speak up by itself (paid Claude calls): big moments when stepping through a game, one-liners on the opponent's moves in replays, GM-moment alerts in bot games and replays. Off: it only answers what you ask."><input type="checkbox" id="auto-coach"> Auto</label>
+        <button class="link" id="btn-chat-reset" title="Start a fresh conversation">New chat</button>
         <button class="panel-hide" data-hide="chat" title="Hide the coach">⇥</button></span></div>
       <div class="chat-log" id="chat-log"></div>
       <div class="chips" id="chips"></div>

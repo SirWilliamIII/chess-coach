@@ -71,6 +71,24 @@ def check_position(board: chess.Board) -> None:
             raise ValueError(f"Illegal position: {msg}")
 
 
+# Stockfish only scores the 50-move rule once the clock plus its search depth reaches 100 plies; below this
+# the clock can't change the result, so it stays out of the cache key (keeps hits for the same position)
+RULE50_KEY_FROM = 60
+
+
+def _history_key(board: chess.Board) -> tuple:
+    """The part of the move history that can change Stockfish's answer: the positions since the last
+    capture or pawn move (only those can repeat) and, near the 50-move rule, the clock. A bare FEN with no
+    moves gives `(None, ())`, as does any position right after an irreversible move."""
+    b = board.copy()
+    earlier = []
+    for _ in range(min(board.halfmove_clock, len(board.move_stack))):
+        b.pop()
+        earlier.append(b.epd())
+    clock = board.halfmove_clock if board.halfmove_clock >= RULE50_KEY_FROM else None
+    return clock, tuple(earlier)
+
+
 class Engine:
     def __init__(self, path: str | None = None, threads: int | None = None, hash_mb: int = 256):
         self._path = path or find_stockfish()
@@ -126,10 +144,10 @@ class Engine:
         check_position(board)
         if board.is_game_over():
             return []
-        # Keyed on the position (not move history) plus the exact search budget, so a shallow
-        # review search is never passed off as a deep coach search. Repetition history is ignored,
-        # which can differ only in draw-by-repetition scoring.
-        key = (board.epd(), multipv, seconds, depth, tuple(m.uci() for m in root_moves or ()))
+        # Keyed on the position plus the exact search budget, so a shallow review search is never
+        # passed off as a deep coach search, plus the history Stockfish can see (`_history_key`): the
+        # same position with a repetition available is a different search.
+        key = (board.epd(), _history_key(board), multipv, seconds, depth, tuple(m.uci() for m in root_moves or ()))
         with self._cache_lock:
             hit = self._cache.get(key)
             if hit is not None:

@@ -751,11 +751,13 @@ def set_me_color(req: MeColorReq):
 class EvalReq(BaseModel):
     fen: str
     lines: int = 1
+    start_fen: str | None = None  # with `moves`: the line that led here, so repetition draws are seen
+    moves: list[str] = []         # SAN
 
 
 @app.post("/api/eval")
 def evaluate(req: EvalReq):
-    board = parse_fen(req.fen)
+    board = with_history(parse_fen(req.fen), req.start_fen, req.moves)
     if board.is_checkmate():
         return {"eval": "#0", "cp": -10_000 if board.turn else 10_000, "lines": []}
     if board.is_game_over():

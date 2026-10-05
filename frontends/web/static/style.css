@@ -36,25 +36,46 @@ input, textarea {
 }
 input:focus, textarea:focus { outline: 2px solid var(--accent-dark); border-color: transparent; }
 
-header {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 10px 16px; background: var(--panel-2); border-bottom: 1px solid var(--line);
-  flex-wrap: wrap;
+/* side nav (user's call, 2026-10-05: chess.com-style tree on the left instead of a header row). Fixed to the
+   viewport; body's padding makes room, and --nav-w is part of the board's width budget. */
+:root { --nav-w: 190px; }
+.side-nav {
+  position: fixed; top: 0; left: 0; bottom: 0; width: var(--nav-w); z-index: 20; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 4px; padding: 14px 10px;
+  background: var(--panel-2); border-right: 1px solid var(--line);
 }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; }
+body { padding-left: var(--nav-w); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; padding: 0 6px 12px; }
 .brand .logo { height: 34px; width: auto; flex: none; }
-/* the game's title (favourites); fills the gap between brand and buttons so all of it takes a double-click */
-.game-title { flex: 1; align-self: stretch; display: flex; align-items: center; min-width: 40px;
-  font-weight: 600; font-size: 16px; color: var(--muted); overflow: hidden; white-space: nowrap; }
+.nav-group summary {
+  display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-radius: 6px; cursor: pointer;
+  font-size: 16px; font-weight: 700; list-style: none; user-select: none;
+}
+.nav-group summary::-webkit-details-marker { display: none; }
+.nav-group summary::after { content: '›'; margin-left: auto; color: var(--muted); transition: transform .15s; }
+.nav-group[open] summary::after { transform: rotate(90deg); }
+.nav-group summary:hover, .nav-item:hover { background: #3a3835; }
+.nav-ico { width: 22px; text-align: center; font-size: 18px; }
+.nav-item {
+  display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 6px;
+  padding: 6px 6px 6px 38px; color: var(--muted); font-size: 14px; font-weight: 600;
+}
+.nav-item:hover { color: var(--text); }
+/* collapse (user's call): ‹ folds the nav to a thin strip whose › opens it again; the board takes the width */
+.nav-collapse { position: absolute; top: 18px; right: 6px; background: none; border: 0; border-radius: 4px;
+  color: var(--muted); font-size: 20px; line-height: 1; padding: 2px 6px; }
+.nav-collapse:hover { color: var(--text); background: #3a3835; }
+body.nav-collapsed { --nav-w: 24px; }
+body.nav-collapsed .side-nav { padding: 0; overflow: hidden; }
+body.nav-collapsed .side-nav > :not(.nav-collapse) { display: none; }
+body.nav-collapsed .nav-collapse { position: static; width: 100%; height: 100%; border-radius: 0; padding: 0; font-size: 18px; }
+/* the game's title (favourites), first in the row above the board; double-click edits it */
+.game-title { flex: 0 1 auto; min-width: 0; font-weight: 600; font-size: 16px; color: var(--muted);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.game-title:empty { display: none; }
 .fav-btn { background: none; border: none; padding: 0 6px 0 0; font-size: 16px; color: var(--muted); cursor: pointer; }
 .fav-btn.on { color: #f9c74f; }
 .title-input { width: 100%; max-width: 420px; font: inherit; padding: 2px 6px; }
-.actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-/* header hierarchy: the two ways to start (bigger, green) > analysis board (grey button) > Lessons
-   and Load game (quiet text links, set apart by a divider) */
-.actions .btn.primary { padding: 9px 18px; font-size: 16px; }
-.actions-sep { width: 1px; align-self: stretch; margin: 4px 6px; background: var(--line); }
-.actions .link { font-size: 14px; font-weight: 600; padding: 6px 8px; }
 
 .btn {
   background: var(--accent); color: #fff; border: 0; border-radius: 6px;
@@ -76,9 +97,9 @@ main {
   gap: 20px; padding: 16px; align-items: start; max-width: 1700px; margin: 0 auto;
   /* the board's size, set here so the other columns can match its height; room left for the other two
      columns (340 + 300), the gaps, the padding and the eval bar */
-  /* height left after the header (--head-h, measured by app.js since it wraps to 1-3 rows) and 196 px for the
+  /* height left after the top bar (--head-h, only ≤ 1000 px where the nav sits on top; measured by app.js) and 196 px for the
      padding, name rows, file letters and nav */
-  --board-w: min(var(--board-max), calc(100vh - var(--head-h, 62px) - 196px), calc(100vw - var(--reserve)));
+  --board-w: min(var(--board-max), calc(100vh - var(--head-h, 0px) - 196px), calc(100vw - var(--nav-w) - var(--reserve)));
   --board-max: 720px;
   --reserve: 740px;  /* the side columns, gaps, padding and the eval strip */
   --strip: 46px;  /* eval bar (28) + the gap that holds the rank labels (18) */
@@ -87,7 +108,27 @@ main {
 body.hide-score main { grid-template-columns: auto 30px minmax(300px, 440px); --reserve: 450px; --board-max: 860px; }
 body.hide-chat main { grid-template-columns: auto minmax(320px, 440px) 30px; --reserve: 470px; --board-max: 860px; }
 body.hide-score.hide-chat main { grid-template-columns: auto 30px 30px; --reserve: 180px; --board-max: 960px; }
-body.hide-score .score-panel, body.hide-chat .chat-panel { display: none; }
+/* only board + scoreboard (user's call): more air between them; ≤ 1380 px has its own layout */
+@media (min-width: 1381px) {
+  body.hide-chat:not(.hide-score) .score-col { margin-left: 40px; }
+  /* both wider: scoreboard up to 560 px, board cap 960. --reserve counts the scoreboard at its 320 px minimum
+     (+40 margin), so the board takes width first and the scoreboard grows into what's left */
+  body.hide-chat:not(.hide-score) main { grid-template-columns: auto minmax(320px, 560px) 30px; --reserve: 510px; --board-max: 960px; }
+}
+body.hide-score .score-col, body.hide-chat .chat-panel { display: none; }
+/* side panels start level with the board's top edge, not the row above it (user's call); --board-top is
+   measured by app.js since those rows wrap. Heights shrink by the same amount so the bottoms stay level. */
+@media (min-width: 761px) {
+  /* the head (opening, win strip) fills the height above the board: its two rows mirror .board-head and
+     .top-row, so the panel below starts at the board's top edge */
+  .score-head { height: var(--board-top, auto); display: grid; grid-template-rows: minmax(28px, auto) minmax(32px, auto);
+    row-gap: 6px; align-content: start; }
+  .score-head > * { align-self: center; }
+  main .panel.score-panel { max-height: calc(var(--board-w) + 160px - var(--board-top, 0px)); }
+}
+@media (min-width: 1381px) {  /* the chat is a column only here; below, it sits under the board */
+  main .chat-panel { margin-top: var(--board-top, 0px); height: calc(var(--board-w) + 160px - var(--board-top, 0px)); }
+}
 .panel-tab { display: none; grid-row: 1; align-self: stretch; width: 30px; padding: 0; border: 0; border-radius: 8px;
   background: var(--panel); color: var(--muted); cursor: pointer; font: inherit; font-size: 12px; font-weight: 800;
   text-transform: uppercase; letter-spacing: .1em; }
@@ -101,7 +142,7 @@ body.hide-score .tab-score, body.hide-chat .tab-chat { display: block; }
 .feed-right { display: flex; align-items: center; gap: 12px; }
 /* explicit rows too: auto-placed panels next to explicitly placed ones can drop into an implicit row */
 .board-col { grid-column: 1; grid-row: 1; }
-.score-panel { grid-column: 2; grid-row: 1; }
+.score-col { grid-column: 2; grid-row: 1; min-width: 0; }
 /* only as tall as its content now that the lists are compact; visible overflow so the Moves & engine
    dropdown isn't clipped by the shorter panel */
 .panel.score-panel { height: auto; overflow: visible; }
@@ -386,7 +427,7 @@ dialog textarea { width: 100%; resize: vertical; }
 .game-row .meta { color: var(--muted); font-size: 12px; grid-column: 1 / -1; }
 
 /* ---------- small screens ---------- */
-@media (max-width: 1200px) {
+@media (max-width: 1380px) {  /* 1200 + the side nav */
   /* board + scoreboard side by side, the chat full width underneath */
   main { grid-template-columns: auto minmax(320px, 380px); --board-max: 640px; --reserve: 430px; }
   .chat-panel { grid-column: 1 / -1; grid-row: 2; height: 520px; }
@@ -397,14 +438,27 @@ dialog textarea { width: 100%; resize: vertical; }
   .tab-chat { grid-column: 1 / -1; grid-row: 2; width: auto; height: 30px; }
   .tab-chat span { writing-mode: horizontal-tb; }
 }
+/* narrow: the nav becomes a top bar, groups side by side and always open */
+@media (max-width: 1000px) {
+  :root, body.nav-collapsed { --nav-w: 0px; }
+  .nav-collapse { display: none; }
+  body.nav-collapsed .side-nav { padding: 8px 12px; }
+  body.nav-collapsed .side-nav > :not(.nav-collapse) { display: revert; }
+  body.nav-collapsed .side-nav > .brand { display: flex; }
+  .side-nav { position: static; width: auto; flex-direction: row; flex-wrap: wrap; align-items: flex-start;
+    gap: 4px 16px; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .brand { padding: 4px 6px; width: 100%; }
+  .nav-group summary { pointer-events: none; padding: 4px 6px; font-size: 14px; }
+  .nav-group summary::after { display: none; }
+  .nav-item { padding: 4px 6px 4px 38px; }
+}
 @media (max-width: 760px) {
   main { grid-template-columns: 1fr; padding: 12px 16px; }
-  .board-col, .score-panel, .chat-panel { grid-column: 1; grid-row: auto; }
+  .board-col, .score-col, .chat-panel { grid-column: 1; grid-row: auto; }
   body.hide-score main, body.hide-chat main, body.hide-score.hide-chat main { grid-template-columns: 1fr; }
   .panel-tab { grid-column: 1 !important; grid-row: auto !important; width: auto; height: 30px; }
   .panel-tab span { writing-mode: horizontal-tb; }
   main { --board-w: calc(100vw - 32px - 46px); }
-  .actions-sep { display: none; }  /* the divider would dangle at the end of a wrapped row */
   .panel { height: auto; max-height: 520px; }
   .game-panel .moves { max-height: 200px; }
 }
@@ -897,8 +951,7 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .top-row .summary { padding: 0; position: relative; }
 .top-row .btn { white-space: nowrap; }
 .score-top { display: flex; align-items: center; gap: 8px; margin: 12px 14px 0 16px; min-height: 18px; }
-.score-top .opening-tag { margin: 0; flex: 1; min-width: 0; }
-.score-top .panel-hide { margin-left: auto; }
+.score-top { justify-content: flex-end; }
 
 /* scoreboard type, lighter again (user's call: still too thick) */
 .score-body .sb-row, .score-body .sb-mv, .score-body .sb-row .ev, .score-body .sb-w, .score-body .sb-b,
@@ -906,3 +959,38 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .score-body .sb-sec-t, .score-body .sb-who, .score-body .sb-cost { font-weight: 500; }
 .score-body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 @media (max-width: 760px) { #gp-details { left: auto; right: 0; top: 100%; margin-top: 2px; } }  /* one column: no room beside */
+.sb-row.ghost { cursor: default; opacity: .35; }
+.sb-row.ghost .sb-mv { color: var(--muted); }
+.sb-sec-h .card-sub.sb-wait { margin-left: 0; }
+.auto-coach { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; color: var(--muted); cursor: pointer; }
+.auto-coach input { margin: 0; }
+
+/* Stockfish over Maia in each section (user's call: side by side, two sections read as four scoreboards),
+   full-width rows, and a big gap between Best move and Previous move */
+.score-body .sb-lists.two { grid-template-columns: 1fr; gap: 8px; }
+.score-body .sb-row { grid-template-columns: 56px 1fr 52px; padding: 2px 6px; }
+.score-body .sb-sec + .sb-sec { margin-top: 40px; padding-top: 22px; }
+/* never taller than the board column: the lists scroll inside instead of pushing the page */
+.panel.score-panel { max-height: calc(var(--board-w) + 160px); overflow: hidden; }
+.score-panel .score-body { overflow-y: auto; min-height: 0; }
+.score-body .sb-row { padding: 1px 6px; line-height: 1.3; }
+.score-body .sb-list { padding: 4px 8px 3px; }
+.score-body .sb-lh { min-height: 18px; margin-bottom: 2px; padding-bottom: 3px; }
+.score-body .sb-sec + .sb-sec { margin-top: 32px; padding-top: 18px; }
+
+/* scoreboard head outside the panel: no side margins of its own beyond the panel's inner edge */
+.score-head .score-top { margin: 0 2px 0 4px; }
+.score-head .win-strip { margin: 0; padding: 0 4px; }
+/* same text rendering as inside the panel (it lived in .score-body before; heavier without it) */
+.score-head { font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+/* spacing (user's calls, 2026-10-05): 20 px under each section title, lists padded 5 px more, 13 px between
+   Stockfish and Maia; Best move and Previous move alike */
+.score-body .sb-sec .sb-lists { margin-top: 20px; }
+.score-body .sb-lists.two { gap: 13px; }
+.score-body .sb-list { padding: 9px 13px 8px; }
+/* the opening as the title, first in the row above the names (user's call, 2026-10-05) */
+.board-head .opening-tag { margin: 0; flex: 0 1 auto; font-size: 16px; font-weight: 500; color: var(--text);
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+.board-head .opening-tag .ot-eco { align-self: center; }
+/* in a loaded game the names line (☆ White vs Black · result) gives way first: the opening is the title */
+.board-head .game-info { flex: 0 4 auto; min-width: 90px; }

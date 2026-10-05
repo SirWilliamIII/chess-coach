@@ -546,7 +546,7 @@ function renderInfo() {
     title="${r.favorite ? 'Remove from favourites' : 'Add to favourites'}">${r.favorite ? '★' : '☆'}</button>`
     + `${esc(r.white)} vs ${esc(r.black)} · ${esc(r.result)}`;
   $('fav-btn').onclick = toggleFavorite;
-  $('board-sub').textContent = r.opening || '';
+  $('board-sub').textContent = '';  // the opening title above (#opening-tag) names the opening now
 
   if (state.replay) return renderReplayInfo();
   // a loaded game is replayed: pick a side first, like "Play a game" (your side of the game is marked)
@@ -657,7 +657,10 @@ function requestEval(c) {
   $('engine-lines').innerHTML = '<div class="eline" style="color:var(--muted)">Thinking…</div>';
   evalTimer = setTimeout(async () => {
     try {
-      const data = await api('/api/eval', { fen: c.fen(), lines: 3 });
+      // with the moves that led here, like the scoreboard: otherwise a repetition draw is invisible to it
+      // and the bar and the win strip disagree (the server ignores a line that doesn't reach this FEN)
+      const line = currentLine();
+      const data = await api('/api/eval', { fen: c.fen(), lines: 3, start_fen: line.startFen, moves: line.sans.slice(0, line.at) });
       if (token !== evalToken) return;
       lastEval = { fen: c.fen(), lines: data.lines };
       showEval(data);
@@ -809,16 +812,18 @@ function sbUser() {
   return state.review?.player_color?.[0] || null;
 }
 
-// The two positions on the card (user's call: analyse only your decisions, before and after): `k` = your last
-// move (1-based; its position is fens[k-1]), `now` = the board when it's your turn. While the opponent is to
-// move, `now` is null and that position is never searched.
+// The two positions on the card: `now` = the board (Best move), `k` = your last move (Previous move, 1-based;
+// its position is fens[k-1]). In a bot game or a replay the opponent answers within a second, so its turn
+// isn't searched (`now` null: the section waits, same size); in a loaded game or on the analysis board the
+// opponent's options show too (user's call: the top section shouldn't vanish every other move).
 function sbTargets(L) {
   const u = sbUser();
   const n = L.plays.length;
   const turnAt = (i) => L.fens[i].split(' ')[1];
   let k = n;
   while (u && k >= 1 && turnAt(k - 1) !== u) k--;
-  return { now: !u || turnAt(n) === u ? n : null, k: k >= 1 ? k : null };
+  const auto = (state.play || state.replay) && u && turnAt(n) !== u;
+  return { now: auto ? null : n, k: k >= 1 ? k : null };
 }
 
 // The row for `uci` in a scoreboard, from either list or the extra moves scored on request.
@@ -1002,7 +1007,8 @@ function sbLists(fen, { live, played }) {
   const side = turn === 'w' ? 'White' : 'Black';
   const sb = sfOn ? sbGet(fen) : null;
   const deep = sb && !sb.over;
-  const wait = '<span class="card-sub">…</span>';
+  // placeholder rows while the numbers load, so the section keeps its height
+  const wait = '<div class="sb-row ghost"><b class="sb-mv">·</b><span class="sb-rbar"></span><span></span></div>'.repeat(5);
   const over = '<span class="card-sub">Game over</span>';
   const fmt = (p) => (p < 1 ? '<1' : Math.round(p));
   const quickSf = live && lastEval?.fen === fen ? lastEval.lines : null;
@@ -1124,16 +1130,21 @@ function renderKeyCard() {
   const n = L.plays.length;
   const u = sbUser();
   const { now, k } = sbTargets(L);
-  // This move on top, the last one below (user's call), each under a big header
+  // Best move (the board now) on top, your previous move below (user's call), each under a big header
   const secs = [];
   if (now != null) {
     const [, turn, , , , num] = fen.split(' ');
-    const who = u ? 'your move' : `${turn === 'w' ? 'White' : 'Black'} to move`;
-    const reply = u && n && n !== k ? `<span class="sb-after">after ${esc(L.plays[n - 1].label)}</span>` : '';  // their move between
-    secs.push(`<div class="sb-sec live"><div class="sb-sec-h"><span class="sb-sec-t">This move</span><b class="sb-sec-mv">${num}${turn === 'w' ? '.' : '...'} ${who}</b>`
+    const side = turn === 'w' ? 'White' : 'Black';
+    const who = !u ? `${side} to move` : turn === u ? 'your move' : `${side} (opponent) to move`;
+    const reply = u && turn === u && n && n !== k ? `<span class="sb-after">after ${esc(L.plays[n - 1].label)}</span>` : '';  // their move between
+    secs.push(`<div class="sb-sec live"><div class="sb-sec-h"><span class="sb-sec-t">Best move</span><b class="sb-sec-mv">${num}${turn === 'w' ? '.' : '...'} ${who}</b>`
       + `${reply}${sbStatus(fen)}</div>${sbLists(fen, { live: true })}</div>`);
   } else if (!currentGame().isGameOver()) {
-    secs.push(`<div class="sb-sec"><div class="sb-sec-h"><span class="sb-sec-t">This move</span><span class="card-sub">${state.play ? 'their move' : 'opponent to move'}</span></div></div>`);
+    // the bot (or the replayed game) is about to answer: same-size placeholder instead of a gap
+    const ghost = '<div class="sb-row ghost"><b class="sb-mv">·</b><span class="sb-rbar"></span><span></span></div>'.repeat(5);
+    const lists = ['sf', maiaOn() ? 'maia' : null].filter(Boolean).map((c) => `<div class="sb-list ${c}"><div class="sb-lh"><span class="sb-who">${c === 'sf' ? 'Stockfish' : 'Maia'}</span></div>${ghost}</div>`);
+    secs.push(`<div class="sb-sec"><div class="sb-sec-h"><span class="sb-sec-t">Best move</span><span class="card-sub sb-wait">${state.play ? 'Bot is thinking…' : 'Opponent to move…'}</span></div>`
+      + `<div class="sb-lists${lists.length > 1 ? ' two' : ''}">${lists.join('')}</div></div>`);
   }
   if (k) {
     const p = L.plays[k - 1];
@@ -1141,7 +1152,7 @@ function renderKeyCard() {
     const best = sbGet(L.fens[k - 1])?.sf?.[0]?.uci === p.uci;
     const cost = d == null ? '' : best ? '<span class="sb-cost great" title="Stockfish\'s top move">best</span>'
       : `<span class="sb-cost${d >= 30 ? ' bad' : ''}" title="Win chance this move cost">${d < 1 ? '<1' : `−${Math.round(d)}`}%</span>`;
-    secs.push(`<div class="sb-sec"><div class="sb-sec-h"><span class="sb-sec-t" title="${u ? 'Your last move, in the position you played it' : 'The last move, in the position it was played'}">Last move</span>`
+    secs.push(`<div class="sb-sec"><div class="sb-sec-h"><span class="sb-sec-t" title="${u ? 'Your last move, in the position you played it' : 'The last move, in the position it was played'}">Previous move</span>`
       + `<b class="sb-sec-mv">${esc(p.label)}</b>${cost}${sbStatus(L.fens[k - 1])}</div>${sbLists(L.fens[k - 1], { live: false, played: p.uci })}</div>`);
   }
 
@@ -1187,7 +1198,7 @@ function renderKeyCard() {
   // position only light up their twin: the board is no longer there.
   box.querySelectorAll('.sb-sec').forEach((sec) => {
     const live = sec.classList.contains('live');
-    sec.querySelectorAll('.sb-row').forEach((el) => {
+    sec.querySelectorAll('.sb-row:not(.ghost)').forEach((el) => {
       const twins = () => sec.querySelectorAll(`.sb-row[data-uci="${el.dataset.uci}"]`);
       el.onmouseenter = () => { twins().forEach((t) => t.classList.add('hot')); if (live) { sbShowMove(el.dataset.uci); sbHovering = true; } };
       el.onmouseleave = () => { twins().forEach((t) => t.classList.remove('hot')); if (live) sbHideMove(); };
@@ -1195,7 +1206,7 @@ function renderKeyCard() {
     });
   });
   // a re-render under the pointer (the deep numbers landing) replaces the hovered row without a mouseleave
-  const hovered = box.querySelector('.sb-row:hover');
+  const hovered = box.querySelector('.sb-row:not(.ghost):hover');
   if (hovered) hovered.onmouseenter();
   if (!hovered?.closest('.live') && sbHovering) sbHideMove();
 }
@@ -3942,13 +3953,17 @@ async function openingQuip(c) {
 // call like any question, just triggered automatically and rendered plainly (no GM-alert styling,
 // not saved to the Lessons library); the coach can say `(nothing)` to skip a forced/generic move
 
+// Automatic coach calls (the three above/below) only with "Auto" on in the Coach header; off by default
+// (user's call, 2026-10-04: no Claude spend you didn't ask for). The free opening quips don't depend on it.
+const autoCoach = () => recall('autoCoach') === '1';
+
 let opponentCommentCount = 0;
 const OPPONENT_COMMENT_LIMIT = 4;  // just the opening phase — quiet again after that, for cost
 
 async function commentOnOpponentMove(c, san) {
   if (c.isGameOver()) return;
   if (await openingQuip(c)) return;  // the free opening reaction stands in for the paid one-liner this move
-  if (!state.coachReady || opponentCommentCount >= OPPONENT_COMMENT_LIMIT) return;
+  if (!state.coachReady || !autoCoach() || opponentCommentCount >= OPPONENT_COMMENT_LIMIT) return;
   if (state.review.moves[state.ply - 1]?.win_pct_lost >= BIG_MOMENT_PCT) return;  // noteMove() explains this one
   opponentCommentCount++;
   await ask(`[The opponent just played ${san}. Give your one-line reaction, or say (nothing) if there's really nothing worth saying.]`,
@@ -4075,7 +4090,7 @@ function noteMove() {
 }
 
 async function explainBigMoment(m, ply) {
-  if (!state.coachReady || bigMomentAsked.size >= BIG_MOMENT_MAX || bigMomentAsked.has(ply)) return;
+  if (!state.coachReady || !autoCoach() || bigMomentAsked.size >= BIG_MOMENT_MAX || bigMomentAsked.has(ply)) return;
   const onIt = () => state.ply === ply && !state.demo && !state.extra.length && !state.play;
   await new Promise((r) => setTimeout(r, BIG_MOMENT_DWELL_MS));
   while (state.chatBusy && onIt()) await new Promise((r) => setTimeout(r, 300));
@@ -4234,7 +4249,7 @@ let gmToken = 0;
 const gmSeen = new Set();
 
 async function gmCheck(c, gameMove = null, side = 'player') {
-  if (!state.coachReady || c.isGameOver()) return;
+  if (!state.coachReady || !autoCoach() || c.isGameOver()) return;
   const fen = c.fen();
   if (gmSeen.has(fen)) return;
   const token = ++gmToken;
@@ -4976,6 +4991,8 @@ $('load-go').onclick = () => {
 
 $('btn-study').onclick = openStudyDialog;
 $('btn-endgames').onclick = openEndgames;
+$('auto-coach').checked = autoCoach();
+$('auto-coach').onchange = (e) => store('autoCoach', e.target.checked ? '1' : '0');
 
 // Hide/show the scoreboard and the chat (user's call): a hidden panel becomes a thin tab, the board grows into
 // the space (CSS: body.hide-score / body.hide-chat). Remembered per browser.
@@ -4988,10 +5005,37 @@ function setPanelHidden(which, hidden) {
 document.querySelectorAll('[data-hide]').forEach((b) => { b.onclick = () => setPanelHidden(b.dataset.hide, true); });
 document.querySelectorAll('[data-show]').forEach((b) => { b.onclick = () => setPanelHidden(b.dataset.show, false); });
 for (const w of ['score', 'chat']) if (recall(`hide-${w}`) === '1') document.body.classList.add(`hide-${w}`);
-// the header wraps to 1-3 rows with the window width; the board's height budget reads its real height
+// Side nav groups: open/closed remembered per browser. ≤ 1000 px the nav is a top bar where the groups can't
+// be toggled, so they're all opened there (a closed <details> can't be shown by CSS alone).
+const navNarrow = matchMedia('(max-width: 1000px)');
+document.querySelectorAll('.nav-group').forEach((g) => {
+  if (recall(`nav-${g.dataset.group}`) === '0' && !navNarrow.matches) g.open = false;
+  g.addEventListener('toggle', () => { if (!navNarrow.matches) store(`nav-${g.dataset.group}`, g.open ? '1' : '0'); });
+});
+navNarrow.addEventListener('change', () => document.querySelectorAll('.nav-group').forEach((g) => {
+  g.open = navNarrow.matches || recall(`nav-${g.dataset.group}`) !== '0';
+}));
+function setNavCollapsed(on) {
+  document.body.classList.toggle('nav-collapsed', on);
+  $('nav-collapse').textContent = on ? '›' : '‹';
+  $('nav-collapse').title = on ? 'Show the menu' : 'Hide the menu';
+  store('navCollapsed', on ? '1' : '0');
+  requestAnimationFrame(() => { document.body.dispatchEvent(new Event('chessground.resize')); cg.redrawAll(); });
+}
+$('nav-collapse').onclick = () => setNavCollapsed(!document.body.classList.contains('nav-collapsed'));
+if (recall('navCollapsed') === '1') setNavCollapsed(true);
+// as a top bar the nav wraps to 1-3 rows; the board's height budget reads its real height (0 as a side nav)
 new ResizeObserver(() => {
-  document.documentElement.style.setProperty('--head-h', `${Math.ceil(document.querySelector('header').getBoundingClientRect().height)}px`);
-}).observe(document.querySelector('header'));
+  const h = navNarrow.matches ? Math.ceil($('side-nav').getBoundingClientRect().height) : 0;
+  document.documentElement.style.setProperty('--head-h', `${h}px`);
+}).observe($('side-nav'));
+// the rows above the board (game info, names, buttons) wrap too: the scoreboard lines up with the board's top
+// edge (user's call), so it reads their real height (CSS --board-top)
+const boardTop = () => document.documentElement.style.setProperty('--board-top',
+  `${Math.round($('board-wrap').getBoundingClientRect().top - document.querySelector('.board-col').getBoundingClientRect().top)}px`);
+const boardTopObs = new ResizeObserver(boardTop);
+boardTopObs.observe(document.querySelector('.board-head'));
+boardTopObs.observe(document.querySelector('.top-row'));
 $('btn-setup').onclick = openEditor;  // starts from the position on the board; Cancel returns to it
 $('study-go').onclick = startStudyFromDialog;
 $('study-q').oninput = (e) => { studyPick = null; $('study-go').disabled = true; searchStudies(e.target.value); };
