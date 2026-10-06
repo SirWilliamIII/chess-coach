@@ -21,6 +21,15 @@ MIN_SCORED_PCT = 1  # below this a Maia move is ignored for the odds (noise, and
 # 95%), and depth 18 took 2.4x as long for no visible gain. 16 is the margin.
 DEPTH = 16
 MAX_SECONDS = 3.0
+# Every legal move ranked ("the 28th best of 37"), at a shallow depth: multipv over all moves costs about
+# n times one line. Measured 2026-10-06 on four positions of a saved game (33-41 legal moves, 3 threads):
+# depth 10 took 0.4-1.2 s, depth 12 1.1-9.8 s (the mating position blew up). The cap keeps a bad case short.
+FULL_DEPTH = 10
+FULL_SECONDS = 1.5
+# The rating track: Maia's picks from beginner to GM, opponent at the same rating. 0.25 s for all 11 once
+# Maia is warm (measured 2026-10-06).
+LADDER = range(600, 2700, 200)
+LADDER_SHOWN = 5  # moves kept per rating (enough to read how typical any likely move is at each level)
 
 # Win-chance swings in percentage points, the mover's view. HUGE is the review's "blunder" line.
 NOTABLE, BIG, HUGE = 5, 15, 30
@@ -68,6 +77,8 @@ def build(sf_engine, human_engine, maia, board: chess.Board, rating: int, opp_ra
     if board.is_game_over():
         return {"over": True}
     humans = maia.moves(board, rating, opp_rating, top=max(HUMAN_SCORED, HUMAN_SHOWN)) if maia else []
+    ladder = [{"rating": r, "moves": [{k: m[k] for k in ("move", "uci", "pct")} for m in maia.moves(board, r, r, top=LADDER_SHOWN)]}
+              for r in LADDER] if maia else []
     pick = [m for i, m in enumerate(humans) if i < HUMAN_SHOWN or m["pct"] >= MIN_SCORED_PCT][:HUMAN_SCORED]
     roots = [chess.Move.from_uci(m["uci"]) for m in pick]
     for u in include:
@@ -76,19 +87,29 @@ def build(sf_engine, human_engine, maia, board: chess.Board, rating: int, opp_ra
             roots.append(mv)
     # The two searches run at once on the two Stockfish processes, so the wait is the slower one, not the
     # sum (depth 18 with 5 lines alone measured 3.7 s median, 7.3 s p90 on this machine, 2026-10-04).
+    # The full ranking runs after the human moves on the same process: together still about as long as the
+    # deep top 5 on the other.
+    def second():
+        scored = human_engine.lines(board, multipv=len(roots), seconds=MAX_SECONDS, depth=DEPTH,
+                                    root_moves=roots) if roots else []
+        full = human_engine.lines(board, multipv=board.legal_moves.count(), seconds=FULL_SECONDS, depth=FULL_DEPTH)
+        return scored, full
+
     with ThreadPoolExecutor(1) as pool:
-        job = pool.submit(human_engine.lines, board, multipv=len(roots), seconds=MAX_SECONDS, depth=DEPTH,
-                          root_moves=roots) if roots else None
+        job = pool.submit(second)
         sf = sf_engine.lines(board, multipv=SF_LINES, seconds=MAX_SECONDS, depth=DEPTH)
-        scored = job.result() if job else []
+        scored, full = job.result()
     if not sf:
         raise RuntimeError("Stockfish returned no lines")
-    return summarize(board.turn, sf, humans, scored, rating, include)
+    out = summarize(board.turn, sf, humans, scored, rating, include, full)
+    out["ladder"] = ladder
+    return out
 
 
 def summarize(mover: chess.Color, sf: list[dict], humans: list[dict], scored: list[dict], rating: int,
-              include: list[str] = ()) -> dict:
-    """Rows, odds and alerts from the two searches. `scored` is Stockfish limited to the human moves."""
+              include: list[str] = (), full: list[dict] = ()) -> dict:
+    """Rows, odds and alerts from the searches. `scored` is Stockfish limited to the human moves, `full` a
+    shallow search of every legal move (for "all", the whole ranking)."""
     side = "White" if mover == chess.WHITE else "Black"
     best = _win(sf[0]["cp_white"], mover)
     pct = {m["uci"]: m["pct"] for m in humans}
@@ -145,7 +166,39 @@ def summarize(mover: chess.Color, sf: list[dict], humans: list[dict], scored: li
         drop = max(floor, best - w)
         out["extra"].append({"move": l["move"], "uci": u, "eval_white": l["eval_white"], "win": round(w, 1),
                              "drop": round(drop, 1), "tier": tier(drop), "sf_rank": None, "pct": pct.get(u)})
+    out["all"] = ranking(mover, sf, scored, full, pct)
     return out
+
+
+def ranking(mover: chess.Color, sf: list[dict], scored: list[dict], full: list[dict], pct: dict) -> list[dict]:
+    """Every legal move, best first: the deep top 5 in their order, then the rest by the deepest number we
+    have for them (the human-move search, else the shallow full one), never better than #5. `cost` is pawns
+    behind the best move for the mover (None when a mate is involved: "misses/allows mate" isn't a number)."""
+    sign = 1 if mover == chess.WHITE else -1
+    best_cp = sign * sf[0]["cp_white"]
+    deep = {l["uci"]: l for l in scored}
+    top = [l["uci"] for l in sf]
+    rest = {l["uci"]: deep.get(l["uci"], l) for l in full if l["uci"] not in top}
+    for u, l in deep.items():  # a human move the shallow search lost (time cap): still ranked
+        if u not in top:
+            rest.setdefault(u, l)
+    floor_cp = best_cp - sign * sf[-1]["cp_white"]
+    rows = []
+    for l in sf + sorted(rest.values(), key=lambda l: -sign * l["cp_white"]):
+        cp = sign * l["cp_white"]
+        mate = abs(cp) >= MATE_CP - 1000 or abs(best_cp) >= MATE_CP - 1000
+        cost = None if mate else max(0, best_cp - cp if l["uci"] in top else max(floor_cp, best_cp - cp))
+        drop = max(0.0, _win(sf[0]["cp_white"], mover) - _win(l["cp_white"], mover))
+        rows.append({"move": l["move"], "uci": l["uci"], "eval_white": l["eval_white"],
+                     "cost": None if cost is None else round(cost / 100, 2), "drop": round(drop, 1),
+                     "tier": tier(drop), "pct": pct.get(l["uci"])})
+    # the deep top 5 can disagree with the shallow rest by a few points: keep drops non-decreasing
+    for a, b in zip(rows, rows[1:]):
+        b["drop"] = max(b["drop"], a["drop"])
+        b["tier"] = tier(b["drop"])
+    for i, r in enumerate(rows):
+        r["rank"] = i + 1
+    return rows
 
 
 def alerts(side: str, sf: list[dict], humans: list[dict], rating: int, odds: dict | None = None) -> list[dict]:

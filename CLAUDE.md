@@ -36,12 +36,14 @@ file says what is true now. Last full cleanup: 2026-10-03.
   positions (📌; see "Games"), `./start` reading host/port from `.env`.
 - **Favourite games with titles** (see "Games"). **Board drawing reworked** (colours, threat arrows; see
   "Board").
-- **Built 2026-10-05:** a chess.com-style side nav replacing the header (collapsible), the opening name as the
-  page title above the names, the scoreboard split into a head (⇥, win strip) beside the rows above the board
-  and a panel level with the board's top edge, the "Auto" switch for unrequested coach calls (off by default),
-  and repetition-aware engine searches (eval bar history + cache key). See "Layout", "Coach and cost", "Engine
-  memo".
-- **Next focus: the scoreboard redesign** (user's call, 2026-10-05); opening lessons after that. See TODOs.
+- **Built 2026-10-05:** the opening name as the page title above the names, the "Auto" switch for unrequested
+  coach calls (off by default), and repetition-aware engine searches (eval bar history + cache key). See
+  "Opening name", "Coach and cost", "Engine memo".
+- **Built 2026-10-06, not yet used live by the user:** the scoreboard redesigned around "before your move / after
+  it" (every legal move ranked, the rating track; see "Scoreboard"), one grid layout with the panels level with
+  the board's top and the buttons' bottom, the side nav restyled with one icon set (icon rail ≤ 1360 px). The
+  scoreboard's chat cards (move alerts, next-play alerts, big plays) and the opening banner were removed.
+- **Next focus:** the user's verdict on the 2026-10-06 redesign; opening lessons after that. See TODOs.
 
 ## Running and testing
 
@@ -258,36 +260,36 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - **No hover arrows on the board** (user's call): hovering pieces draws nothing. Board arrows come from
   right-clicks/drags, the lesson guide, the coach's demos, and hovering a scoreboard row (user's call,
   2026-10-04: rows are the exception).
-- **Layout** (user's calls, 2026-10-04/05: board and scoreboard are the focus, chat a narrow feed, scoreboard
-  not too wide or tall):
-  - **Side nav** (replaced the header row, chess.com-style): `nav.side-nav`, fixed left, `--nav-w` 190 px
-    (body `padding-left`). Three `<details class="nav-group">` trees: Play (Play game, Analysis board, Set up
-    position), Games (Find game by username, Load game, 📌 Positions), Learn (Learn openings, ♔ Endgames,
-    📚 Lessons); button ids unchanged. Open/closed per group in localStorage `nav-<group>`. ‹ (`#nav-collapse`,
-    `setNavCollapsed()`, localStorage `navCollapsed`) folds it to a 24 px strip with › to reopen; the board
-    takes the width (1440×900, all panels: 504 px open, 672 collapsed). ≤ 1000 px it's a top bar (`--nav-w` 0,
-    groups side by side, forced open, `--head-h` = its height).
-  - **Columns** (`main`, centred): board | `.score-col` (320-380 px) | `.chat-panel` (300-360 px; `.feed-head`
-    "Coach" + Auto + New chat + ⇥, the log, chips, input; cards and chips in smaller type than answers).
-    ≤ 1380 px (1200 + the nav): board | scoreboard, chat full width below; ≤ 760 px: one column. Above
-    1380 px with the chat hidden: 40 px more gap, scoreboard up to 560 px, board cap 960.
+- **Layout** (2026-10-06 rework; user's calls: board and scoreboard are the focus, chat a narrow feed, panels
+  level with the board, "components vertically symmetrical"):
+  - **One grid** (`main`): the board column is a **subgrid** of five rows (`.board-head`, `.top-row`, board,
+    bottom name, ◀ ▶ buttons); `.side` (scoreboard + coach) spans rows 3-5, so the panels start at the board's top
+    edge and end at the buttons' bottom edge by construction (no JS measuring). `.side` has `contain: size`, so
+    its content never stretches those rows: the board decides the height, the panels scroll inside. Any new
+    direct child of `.board-col` needs a row (there are exactly five).
+  - **Breakpoints:** ≥ 1680 px: board | scoreboard | coach. 761-1679 px: board | one column with the scoreboard
+    over the coach and a drag handle between them (`#side-split`, `setSplit()`, share 0.25-0.85 in localStorage
+    `sideSplit`, default 0.66, double-click resets). ≤ 1360 px the nav is an icon rail by itself. ≤ 760 px: one
+    column, the nav a top bar of icons (`--head-h` = its height). At 1200×800 the side column is ~680 px tall,
+    so the scoreboard scrolls or the coach is small: height is the limit there, the handle decides.
+  - **Side nav:** `nav.side-nav`, `--nav-w` 216 px, section labels (`.nav-h`) and icon rows (`.nav-item`, inline
+    SVG `.ico`, one 24 px line set shared with the board buttons and panel controls; no emoji). No collapsible
+    groups any more (the 2026-10-05 `<details>` tree went). Collapse (`#nav-collapse`, `setNavCollapsed()`,
+    localStorage `navCollapsed`) folds it to a 68 px rail with tooltips (`data-tip`); hidden where the rail is
+    automatic. Button ids unchanged.
+  - **Panels:** both have the same 48 px header (`.panel-head`: title, tools, a minus `[data-hide]` button).
+    The players' rating picker (`#sb-rating`) is in the scoreboard's header (moved from the top name row).
+    Hidden panel (`setPanelHidden()`, `body.hide-score` / `hide-chat`): a 44 px bar when stacked, a 40 px
+    vertical tab when side by side (`.panel-tab`); the side column narrows and the board takes the room.
+    In the side column the chat's chips are one scrolling line and "Asking about…" shows only while typing.
   - **Above the board:** `.board-head` = `#opening-tag` (the page title, see "Opening name"), `#game-title`
     (favourites, hidden when empty), `#game-info` (☆ names · result, shrinks first), `#board-sub`, and Moves &
     engine in `.board-head-right`; then `.top-row` = the top name (`#player-top`) with `.head-row` (`#summary`:
-    I'm playing / Replay as / game status and buttons / the editor's buttons, the Maia rating `#sb-rating`,
-    `#pb-takeback`).
-  - **Vertical alignment:** the side panels start level with the board's top edge, not the rows above it:
-    `--board-top` (offset of `#board-wrap` in `.board-col`, ResizeObserver on `.board-head` + `.top-row`) is the
-    chat's `margin-top` and the height of `.score-head`, whose two rows mirror `.board-head` (⇥) and `.top-row`
-    (win strip). Panel heights shrink by the same amount so the bottoms stay level.
-  - **Sizes:** `--board-w` = min(`--board-max` 720, `100vh - --head-h - 196px`, `100vw - --nav-w - --reserve`);
-    `--strip` (eval bar + rank labels, 46 px). Panels are as tall as the board column (`--board-w + 160px`).
-    Coordinates sit outside the board (ranks in the strip, files below). The nav row (◀ ▶) lines up with the
-    board (`margin-left: --strip`, width `--board-w`).
-  - **Hiding panels:** ⇥ (`[data-hide]`, `setPanelHidden()`) → `body.hide-score` / `body.hide-chat`; the panel
-    becomes a 30 px tab (`.panel-tab`; a bar across the page where the chat sits below), the other widens and
-    `--reserve`/`--board-max` loosen. The board usually doesn't grow: it's height-bound. Remembered in
-    localStorage.
+    I'm playing / Replay as / game status and buttons / the editor's buttons, `#pb-takeback`).
+  - **Sizes:** `--board-w` = min(`--board-max` 880, `100vh - --head-h - 196px`, the width left beside the nav and
+    `--side-w`); `--strip` (eval bar + rank labels, 46 px). 1440×900: 704 px (height-bound); 1920×1080: 880.
+  - **Colour tokens** (`:root`): `--inset`, `--hover`/`--hover-2`, `--faint`, `--maia`, and one severity scale
+    `--t0..--t3` (+ `--t3-text`) for win chance lost (< 5, 5-15, 15-30, 30+), used by every scoreboard mark.
   - **Moves & engine** (`.game-panel`, dropdown `#gp-details`) sits at the board's top right in every mode
     (`dockGamePanel()`); the dropdown opens to its right, over the scoreboard column (the editor palette lives
     in it; ≤ 760 px it drops down). Draggable/resizable (`position: fixed` on first drag), starts closed on
@@ -327,78 +329,52 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - Maia-1 (lc0 + band weights) was tried first and replaced: its answers jumped between neighbouring bands.
   lc0 and `data/maia/*.pb.gz` are still on this machine, unused. Maia-2 needs Python ≤ 3.12.
 
-### Scoreboard (`core/scoreboard.py`, `renderKeyCard()` in `app.js`, 2026-10-04; layout 2026-10-05)
+### Scoreboard (`core/scoreboard.py`, `renderKeyCard()` in `app.js`; redesigned 2026-10-06)
 
-- Who's winning: `#win-strip` (`renderWinStrip()`) in `.score-head`, level with the top name row: Stockfish's
-  win % for White, Lichess curve `50 + 50·(2/(1+e^(−0.00368208·cp)) − 1)` on the eval clamped to ±15 (same as
-  the eval bar; quick number, then the deep one; keeps the old bar while loading). An expected-score curve, not
-  Stockfish's own WDL (where +1.00 ≈ 50% win) and not a prediction for these ratings. Maia's "at these ratings" line was removed (user's call); the server still sends
-  `human_white_win`.
-- **Best move / Previous move (user's calls, 2026-10-04: the card was one move off in bot games, then the top
-  section vanished every other move):** `#key-card` has two sections under big headers (`sbTargets()`).
-  **Best move** = the board now, whoever is to move ("after 2...exd4" names their reply on your turn). In a bot
-  game or a replay the opponent's turn isn't searched (it answers within a second): the section keeps its size
-  with "Bot is thinking…" and placeholder rows (`.sb-row.ghost`, also used while numbers load). **Previous
-  move** = the position where you made your last move, your move marked (`.played`; added under Stockfish's
-  list when it isn't in it, scored via the request's `include` → `extra` rows) and its cost. "You" =
-  `sbUser()`: the bot game's or replay's colour, else the review's `player_color`; null on the analysis board
-  until "I'm playing" is set, where Previous move is simply the last move. `requestScoreboard()` runs the two
-  searches one after the other (the server's latest-wins would drop the first). An opponent's move's cost
-  comes from your move's row before it and your position after (`sbDrop()`).
-- Each section: two competing ranked lists (`sbLists()`; Stockfish white accent, Maia blue), **stacked** Stockfish over
-  Maia with full-width rows (user's call: side by side read as four scoreboards). **Card layout (2026-10-05,
-  from the user's `/Users/will/panels.html` mock-up; user's call: the old panel had no margins and read
-  cluttered):** each section is its own card (`.sb-sec`, 10 px apart) with an eyebrow line (name, "White's
-  view"/"Black's view" via `sbPov()`, since the two sections' evals can be from different sides, and a depth
-  pill), then a title line (the move, its cost, "Maia #N" for your move); each list is an inset box with a
-  coloured dot. The mock-up's eval-scaled/red diverging bars and its "Move result" block were deliberately
-  not taken. All scoreboard CSS is one block at the end of `style.css`. Fits without scrolling at 1300×900;
-  at 1440×900 the board is width-bound (510 px) and the panel scrolls (~125 px). The panel is capped at the
-  board column's height and scrolls inside. A row click suppresses the re-hover arrow until the pointer moves
-  (`sbClicked`), so the next position's top move isn't drawn under a still cursor. Text is weight 400/500 with antialiased smoothing, `.score-head` included
-  (user's call: heavier weights read thick and round). Stockfish's top 5:
-  bar = mover's win chance. Maia's top 5 at your rating: bar = play % scaled to the favourite (exact % on hover).
-  **Plain white text, one bar colour** (user's call): red only for a move losing ≥ 30 % (`.bad`), green only
-  for the only move (#2 ≥ `SB_ONLY` 20 worse, `.great`). The rankings differ on purpose: a Stockfish slot
-  carries a value, a Maia slot only popularity. Hovering a **Best move** row draws its move (`sbShowMove()`: blue
-  arrow, red + ring for a capture) and lights the same move in the other list; clicking plays it
-  (`playMaiaMove()`). Previous-move rows only light their twin (the board isn't there). Quick numbers
-  (`lastEval`/`lastMaia`) fill Best move at once. Maia's rating picker is `#sb-rating` in the top name row next to
-  "I'm playing"/"Replay as" (your colour's rating; the side to move's on the analysis board).
+- **Built around the two moments a move's numbers matter** (user's call, 2026-10-06): before your move ("what
+  does a ~600 / a GM play here, is it any good, what are the 5 best") and after it ("was it good or bad, how
+  much": "You played b8, the 28th best move"). The user found absolute evals confusing (is +1.00 per move
+  cumulative?), so **the card shows costs, never evals**: pawns behind the best move (`cost`, "best", "−0.31",
+  or "misses/allows mate"), graded by win % lost. The eval bar is the only absolute number on the page.
+- **After your move** (`sbAfter()`, on top): eyebrow "You played 9." + grade pill (Best move / Excellent < 2 /
+  Good < 5 / Inaccuracy < 15 / Mistake < 30 / Blunder, `sbGrade()`; loaded games use the review's
+  `win_pct_lost`), the move, "16th best of 39" in the grade's colour, the cost in pawns, a flat strip of every
+  legal move with yours raised (`.sb-rankbar`), and facts: Best X, "~1500s play Y", "Typical at ~N" (the rating
+  whose Maia picks your move most often). Tinted with the grade's colour.
+- **Before your move** (`sbBefore()`): "N of M moves hold" (within `SB_GOOD` 5 % win chance; "Only one move
+  holds" in red), **the strip** (`sbSpectrum()`: every legal move best → worst, colour = tier, height = how
+  often players at the chosen rating pick it, so a tall red tick is a trap people fall into), **Who plays what**
+  (`sbTrack()`: Maia's favourite at 600, 800 … 2600 as runs along one track coloured by cost, your rating
+  marked, "Engine X" beside it), then **the candidates** (`sbCandidates()`: Stockfish's top 5 plus moves ≥ 5 %
+  popular, max 6, with rank, cost and a Maia-blue popularity bar). Hovering any move (row, tick, segment, the
+  engine pill) draws its arrow and names it in the header (`.sb-tip`); clicking a row or tick plays it
+  (`playMaiaMove()`). Quick numbers (`lastEval`/`lastMaia`, `sbQuick()`) fill the candidates at once; the strip
+  and track wait for the deep search (skeletons). Eval off (bot game without it): only "What ~N play" (Maia).
+- **Whose moves:** `sbTargets()`/`sbUser()` unchanged: the bot game's or replay's colour, else the review's
+  `player_color`; null on the analysis board ("Last move", "White to move"). In a bot game or replay the
+  opponent's turn isn't searched ("Bot is thinking" skeleton). `requestScoreboard()` runs your last move's
+  position (with `include`) and the board's, one after the other.
+- **Server** (`scoreboard.build()`): the deep top 5 (`DEPTH` 16 / `MAX_SECONDS` 3) on one sb engine; on the
+  other, Maia's moves (`root_moves`) and then **every legal move** at `FULL_DEPTH` 10 / `FULL_SECONDS` 1.5
+  (measured 2026-10-06, 33-41 legal moves: 0.4-1.2 s; depth 12 was 1.1-9.8 s). `ranking()` → `all`: the deep
+  top 5 first, the rest by their deepest number, never better than #5, drops kept non-decreasing. `ladder`:
+  `maia.moves()` at `LADDER` 600-2600 step 200 (top 5 each, opponent at the same rating; 0.25 s warm). A
+  cold request was ~6 s once (Maia loading), ~4 s warm with a mate on the board. `sf`, `humans`, `extra`,
+  `alerts`, `odds` are still returned; the frontend no longer shows `alerts`.
+- **Latest wins:** `SB_LOCK` + `SB_LATEST` return `{"stale": true}` for a request a newer one overtook. Cached
+  client-side (`sbCache`, fen + ratings) so stepping back is instant.
 - **Opening name** (`requestOpening()`, `POST /api/opening_line`: every ECO-named position along the line):
-  a gold "📖 Opening" chat banner the first time a game reaches a non-generic name (`isBlandOpening()` skips
-  "King's Pawn Game" etc.; once per game, reset in `setReview()`), then `#opening-tag`, the page's title (first in `.board-head`, just above the name row; user's call,
+  `#opening-tag`, the page's title (the chat banner was removed 2026-10-06) (first in `.board-head`, just above the name row; user's call,
   2026-10-05; `#board-sub` no longer repeats the review's opening, so a game the ECO table can't name shows
   none) shows
   the deepest name at or before the shown move, growing with variations (Caro-Kann → … Advance Variation →
   …, Botvinnik-Carls Defense). Exact positions only, so transpositions into a named line are found but a
   move-order the table lacks isn't. In bot games the older opening quip can name the same opening again.
-- **Alerts are chat cards** (`sbPostAlert()`, `.sb-msg`), posted once per position (`sbShown`), only when called
-  for. Each carries its move number in the corner (`.sb-num`) and a click takes the board to that moment
-  (`sbFenIndex()` finds the position in the whole current line; Next play also draws its move). On the analysis
-  board ◀ deletes moves, so a card for a deleted position greys out (`.stale`). Labels "Your move" / "Their move" (`sbPlayAlert()`). A move: lost ≥ 15 % (red/orange, + "gave it straight back", lead change), or it was
-  Stockfish's #1 but not Maia's #1 and the popular move was ≥ 5 % worse (green "⭐ found"), or it punished a
-  ≥ 15 % loss (green ⚡), or a lead change alone. Next play: the server's top alert (click draws the move while
-  the board is still on that position). **Big plays** (`sbPostBigPlays()`): one running card, re-posted at
-  the bottom when the list changes. On a loaded game a lost-move alert repeats what `noteMove()`'s card says.
-- **Search:** depth 16 or 3 s (`DEPTH`/`MAX_SECONDS`): top 5 on one sb engine and the Maia moves
-  (`root_moves`, up to 8) on the other, in parallel. Measured 2026-10-04 (38 saved-game positions, multipv 5, vs
-  depth 22): depth 12 within 5 win % on 95%, depth 15 and 18 on 100%; time 1.5 s median / 5.2 s p90 at depth 15,
-  3.7 s / 7.3 s at 18. Same #1 move only 74-76% (near-equal moves swap), which is why rows show evals.
-  **Latest wins:** `SB_LOCK` + `SB_LATEST` return `{"stale": true}` for a request a newer one overtook. Cached client-side (`sbCache`,
-  fen + ratings) so stepping back is instant and last play can read the parent position.
-- **Evals are the side to move's view** in the lists and banner text (`moverEval()` / `mover_eval()`, user's
-  call): no "+", negative = bad for whoever is to move, whatever colour. The eval bar and win strip stay White's.
-- **Units:** every threshold is win % lost by the mover (Lichess curve), never raw eval: −3.0 from +9 means
-  nothing, from +1 it decides the game. Tiers 5/15/30 (`tier()`) drive all styling (amber/orange/red, t2/t3 and green
-  banners pulse once; `prefers-reduced-motion` respected).
-- **Next-play alerts** (`alerts()`, first one shown): mate, disaster (a Maia top-4 move ≥ 5 % likely loses
-  ≥ 30), danger zone (Maia % on moves losing ≥ 30 reaches `DANGER_PCT` 20), only move (#2 ≥ 20 worse),
-  popular move wrong (Maia #1 ≥ 15 or flips the lead), no overlap (no Maia top-4 move in Stockfish's top 4; this is symmetric, so "vice versa" is the same
-  check), hidden best (Stockfish #1 not in Maia's top 4). Clicking an alert draws its move, never plays it.
-- **Thresholds are first guesses**, not tuned on games. Not built: points/material, momentum graph, king
-  danger. Last play for a loaded game's own moves uses the review's `win_pct_lost`; elsewhere it needs both
-  positions' scoreboards (visited), else no last-play banner.
+- **Removed 2026-10-06 (user: "a lot of it doesn't make sense or isn't needed"):** the win strip (same numbers
+  as the eval bar), the White's/Black's view labels and depth pill, the Stockfish/Maia twin lists, and every
+  scoreboard chat card (your/their move alerts, next-play alerts, big plays). `alerts()` on the server stays,
+  unused; the endgame trainer still uses the `.sb-msg`/`.sb-alert` card styles.
+- **Thresholds are first guesses** (tiers 5/15/30 win %, "holds" < 5), not tuned on games.
 
 ### Endgame trainer (`core/endgames.py`, `core/tablebase.py`, "endgame trainer" in `app.js`, 2026-10-04)
 
@@ -519,13 +495,12 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 ## TODOs / open decisions
 
-### Scoreboard redesign (next focus, user's call 2026-10-05)
+### Scoreboard (after the 2026-10-06 redesign)
 
-- Done: the card layout (2026-10-05, see "Scoreboard"). Rest of the scope not set yet: ask what else should change. Open items that belong to it: the alert
-  thresholds (all first guesses; `POPULAR_PCT` 5 is the first knob, alerts fired on 6 of 14 positions in one
-  test), the "Last play" alert repeating `noteMove()`'s card on loaded games, the opening quip repeating the
-  opening banner in bot games, and whether the win strip should show Stockfish's WDL instead of the Lichess
-  curve. Not built: points/material, momentum graph, king danger.
+- Get the user's verdict from live use. Open: whether "Typical at ~N" (Maia's peak rating for a move) reads
+  as meant; whether the candidates should cap lower when the stacked panel is short; ranking quality of the
+  depth-10 tail (moves past #5) not checked against a deep search. Not built: points/material, momentum graph,
+  king danger, Stockfish's WDL.
 
 ### Opening lessons (after the scoreboard)
 

@@ -11,28 +11,26 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <!-- side nav (user's call, 2026-10-05: chess.com-style tree instead of a header row); ids unchanged -->
+  <!-- side nav: section labels and icon rows; folds to an icon rail (‹, or automatically ≤ 1360 px) and becomes a
+       top bar ≤ 760 px. Button ids are the ones app.js binds -->
   <nav class="side-nav" id="side-nav">
-    <button class="nav-collapse" id="nav-collapse" title="Hide the menu">‹</button>
-    <div class="brand"><img class="logo" src="/static/logo-mark.png" alt="">Chess Coach</div>
-    <details class="nav-group" data-group="play" open>
-      <summary><span class="nav-ico">♟</span>Play</summary>
-      <button id="btn-play" class="nav-item">Play game</button>
-      <button id="btn-analysis" class="nav-item">Analysis board</button>
-      <button id="btn-setup" class="nav-item">Set up position</button>
-    </details>
-    <details class="nav-group" data-group="games" open>
-      <summary><span class="nav-ico">📂</span>Games</summary>
-      <button id="btn-games" class="nav-item">Find game by username</button>
-      <button id="btn-load" class="nav-item">Load game</button>
-      <button id="btn-positions" class="nav-item">📌 Positions</button>
-    </details>
-    <details class="nav-group" data-group="learn" open>
-      <summary><span class="nav-ico">🎓</span>Learn</summary>
-      <button id="btn-study" class="nav-item">Learn openings</button>
-      <button id="btn-endgames" class="nav-item">♔ Endgames</button>
-      <button id="btn-library" class="nav-item">📚 Lessons</button>
-    </details>
+    <div class="brand"><img class="logo" src="/static/logo-mark.png" alt=""><span class="nav-label">Chess Coach</span></div>
+    <div class="nav-sec"><div class="nav-h">Play</div>
+      <button id="btn-play" class="nav-item" data-tip="Play game"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M10.25 8.75v6.5l5-3.25z"/></svg><span class="nav-label">Play game</span></button>
+      <button id="btn-analysis" class="nav-item" data-tip="Analysis board"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/><path d="M7.75 11.5l1.75-1.75 1.5 1.5 2-2.5"/></svg><span class="nav-label">Analysis board</span></button>
+      <button id="btn-setup" class="nav-item" data-tip="Set up position"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M12 4v16M4 12h16"/><path d="M4 4h8v8H4zM12 12h8v8h-8z" class="fill"/></svg><span class="nav-label">Set up position</span></button>
+    </div>
+    <div class="nav-sec"><div class="nav-h">Games</div>
+      <button id="btn-games" class="nav-item" data-tip="Find games by username"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="8.5" r="3.5"/><path d="M4 19.5c.6-3.2 3-5 6-5 1 0 1.9.2 2.7.5"/><circle cx="17" cy="16.5" r="2.75"/><path d="M19 18.5l2 2"/></svg><span class="nav-label">Find games</span></button>
+      <button id="btn-load" class="nav-item" data-tip="Load game"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4.5M7.75 8.5L12 4.25l4.25 4.25"/><path d="M4.5 14.5v4a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-4"/></svg><span class="nav-label">Load game</span></button>
+      <button id="btn-positions" class="nav-item" data-tip="Positions"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-3.75L7 20z"/></svg><span class="nav-label">Positions</span></button>
+    </div>
+    <div class="nav-sec"><div class="nav-h">Learn</div>
+      <button id="btn-study" class="nav-item" data-tip="Learn openings"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7C10 5.5 7.25 5 4 5.5v12.75c3.25-.5 6 0 8 1.5 2-1.5 4.75-2 8-1.5V5.5C16.75 5 14 5.5 12 7z"/><path d="M12 7v12.75"/></svg><span class="nav-label">Learn openings</span></button>
+      <button id="btn-endgames" class="nav-item" data-tip="Endgames"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 17l-1.25-9.5 4.75 3.75L12 5.5l3.5 5.75 4.75-3.75L19 17z"/><path d="M5.5 20h13"/></svg><span class="nav-label">Endgames</span></button>
+      <button id="btn-library" class="nav-item" data-tip="Lessons"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 17.5h5M10.5 20.5h3"/><path d="M12 3.5a5.75 5.75 0 0 0-3.4 10.4c.6.45.9 1.1.9 1.85v.25h5v-.25c0-.75.3-1.4.9-1.85A5.75 5.75 0 0 0 12 3.5z"/></svg><span class="nav-label">Lessons</span></button>
+    </div>
+    <button class="nav-item nav-collapse" id="nav-collapse" data-tip="Expand the menu"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.5 17l-5-5 5-5M18 17l-5-5 5-5"/></svg><span class="nav-label">Collapse</span></button>
   </nav>
 
   <main>
@@ -89,7 +87,6 @@
         <div class="player top" id="player-top"></div>
         <div class="head-row">
           <div class="summary" id="summary"></div>
-          <label class="sb-rating hidden" id="sb-rating"><span>Maia</span><select id="kc-rating"></select></label>
           <button class="btn ghost small hidden" id="pb-takeback" title="Undo your last move (and the bot's reply)">Takeback</button>
         </div>
       </div>
@@ -102,48 +99,46 @@
       </div>
       <div class="player bottom" id="player-bottom"></div>
       <div class="nav">
-        <button class="navbtn" id="nav-start" title="Start (Home)" data-tip="Start (Home)">⏮</button>
-        <button class="navbtn" id="nav-prev" title="Back (←)" data-tip="Back (←)">◀</button>
-        <button class="navbtn" id="nav-next" title="Forward (→)" data-tip="Forward (→)">▶</button>
-        <button class="navbtn" id="nav-end" title="End (End)" data-tip="End (End)">⏭</button>
-        <button class="navbtn" id="nav-flip" title="Flip board (f)" data-tip="Flip board (f)">⇅</button>
-        <button class="navbtn" id="nav-save" title="Save this position (s)" data-tip="Save position (s)">💾</button>
+        <button class="navbtn" id="nav-start" title="Start (Home)" data-tip="Start (Home)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6v12M17.5 6.5L11 12l6.5 5.5z"/></svg></button>
+        <button class="navbtn" id="nav-prev" title="Back (←)" data-tip="Back (←)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6.5L8.5 12l6.5 5.5z"/></svg></button>
+        <button class="navbtn" id="nav-next" title="Forward (→)" data-tip="Forward (→)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6.5l6.5 5.5L9 17.5z"/></svg></button>
+        <button class="navbtn" id="nav-end" title="End (End)" data-tip="End (End)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 6v12M6.5 6.5L13 12l-6.5 5.5z"/></svg></button>
+        <button class="navbtn" id="nav-flip" title="Flip board (f)" data-tip="Flip board (f)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4.5v15M4.5 8L8 4.5 11.5 8M16 19.5v-15M12.5 16l3.5 3.5 3.5-3.5"/></svg></button>
+        <button class="navbtn" id="nav-save" title="Save this position (s)" data-tip="Save position (s)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-3.75L7 20z"/></svg></button>
       </div>
     </section>
 
-    <!-- the scoreboard column: opening + who's winning above the panel, level with the rows above the board
-         (user's call), then the panel: Best move / Previous move (Stockfish vs Maia) -->
-    <div class="score-col">
-      <div class="score-head">
-        <div class="score-top">
-          <button class="panel-hide" data-hide="score" title="Hide the scoreboard">⇥</button>
-        </div>
-        <div class="win-strip hidden" id="win-strip"></div>
-      </div>
+    <!-- the side column: scoreboard and coach, level with the board's top edge and the nav's bottom edge (one
+         grid, see style.css). Side by side on wide screens, stacked otherwise. A hidden panel leaves a tab. -->
+    <div class="side" id="side">
       <section class="panel score-panel" id="score-panel">
+        <header class="panel-head"><span class="panel-title">Scoreboard</span>
+          <span class="panel-tools">
+            <label class="sb-rating hidden" id="sb-rating"><span>Players</span><select id="kc-rating"></select></label>
+            <button class="panel-hide" data-hide="score" title="Hide the scoreboard"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 12h11"/></svg></button>
+          </span></header>
         <div class="score-body">
           <div class="key-card hidden" id="key-card"></div>
         </div>
       </section>
+      <button class="panel-tab tab-score" data-show="score" title="Show the scoreboard"><span>Scoreboard</span></button>
+      <div class="side-split" id="side-split" title="Drag to share the space; double-click to reset"></div>
+
+      <section class="panel chat-panel">
+        <header class="panel-head feed-head"><span class="panel-title">Coach</span>
+          <span class="panel-tools feed-right"><label class="auto-coach" title="Let the coach speak up by itself (paid Claude calls): big moments when stepping through a game, one-liners on the opponent's moves in replays, GM-moment alerts in bot games and replays. Off: it only answers what you ask."><input type="checkbox" id="auto-coach"> Auto</label>
+          <button class="link" id="btn-chat-reset" title="Start a fresh conversation">New chat</button>
+          <button class="panel-hide" data-hide="chat" title="Hide the coach"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 12h11"/></svg></button></span></header>
+        <div class="chat-log" id="chat-log"></div>
+        <div class="chips" id="chips"></div>
+        <div class="context" id="chat-context"></div>
+        <form class="chat-input" id="chat-form">
+          <textarea id="chat-text" rows="2" placeholder="Ask about the position on the board…"></textarea>
+          <button class="btn" type="submit" id="chat-send">Send</button>
+        </form>
+      </section>
+      <button class="panel-tab tab-chat" data-show="chat" title="Show the coach"><span>Coach</span></button>
     </div>
-
-    <!-- a hidden panel leaves a thin tab in its place; click it to bring the panel back -->
-    <button class="panel-tab tab-score" data-show="score" title="Show the scoreboard"><span>Scoreboard</span></button>
-    <button class="panel-tab tab-chat" data-show="chat" title="Show the coach"><span>Coach</span></button>
-
-    <section class="panel chat-panel">
-      <div class="feed-head"><span>Coach</span>
-        <span class="feed-right"><label class="auto-coach" title="Let the coach speak up by itself (paid Claude calls): big moments when stepping through a game, one-liners on the opponent's moves in replays, GM-moment alerts in bot games and replays. Off: it only answers what you ask."><input type="checkbox" id="auto-coach"> Auto</label>
-        <button class="link" id="btn-chat-reset" title="Start a fresh conversation">New chat</button>
-        <button class="panel-hide" data-hide="chat" title="Hide the coach">⇥</button></span></div>
-      <div class="chat-log" id="chat-log"></div>
-      <div class="chips" id="chips"></div>
-      <div class="context" id="chat-context"></div>
-      <form class="chat-input" id="chat-form">
-        <textarea id="chat-text" rows="2" placeholder="Ask about the position on the board…"></textarea>
-        <button class="btn" type="submit" id="chat-send">Send</button>
-      </form>
-    </section>
   </main>
 
   <dialog id="dlg-study">

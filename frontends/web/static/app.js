@@ -767,30 +767,25 @@ function renderMaia() {
   $('maia-lines').querySelectorAll('.mline').forEach((el) => { el.onclick = () => playMaiaMove(el.dataset.uci); });
 }
 
-// ---- scoreboard: Stockfish's top 5 next to Maia's top 5 at the chosen rating, the odds the next move is
-// good or a disaster, alerts for the moments worth flagging, and the last/big plays. Sits above the chat;
-// not a .msg, so the code that folds every chat card leaves it alone. The quick numbers (lastEval/lastMaia)
-// show at once; the deeper /api/scoreboard search (depth 18, a few seconds) replaces them and adds the rest.
+// ---- scoreboard: the two moments a move's numbers matter (user's call, 2026-10-06). Before your move: how
+// forgiving the position is, every legal move on one strip (colour = what it costs, height = how often players
+// at your rating pick it), the candidates (Stockfish's top 5 plus the moves people actually play) and which
+// move each rating picks. After it: where your move ranked and what it cost. Costs are pawns behind the best
+// move, never evals, so no number reads as a running total. The quick numbers (lastEval/lastMaia) fill the
+// candidates at once; the deeper /api/scoreboard search (a few seconds) brings the full ranking and the track.
 
-const SB_BIG = 15;    // win % lost: a "big play" (core/scoreboard.py BIG)
-const SB_GOOD = 5;    // within this of best: a good move
-const sbCache = new Map();  // fen|ratings → scoreboard, so stepping back is instant and last play can read its parent
+const SB_GOOD = 5;  // win % lost: still a good move, a move that "holds" (core/scoreboard.py GOOD)
+const sbCache = new Map();  // fen|ratings → scoreboard, so stepping back is instant and your last move can read its parent
 let sbToken = 0;
 let sbTimer = null;
 let sbError = null;
-const sbShown = new Set();  // banners already drawn (per position), so a new one animates and a re-render doesn't
 
-// The scoreboard's evals are from the side to move's point of view (the card says whose move it is):
-// positive is good for them, negative means the move hurts them, whichever colour they play.
+// Mover's point of view for an eval string: positive is good for whoever is to move.
 function moverEval(e, turn) {
   if (e == null) return e;
   const m = /^(#?)([+-]?)(.*)$/.exec(e);
   const neg = (m[2] === '-') !== (turn === 'b');
   return `${m[1]}${neg && !/^0(\.0+)?$/.test(m[3]) ? '-' : ''}${m[3]}`;
-}
-
-function evPill(e, t) {
-  return `<span class="ev ${/^#?-/.test(e ?? '') ? 'b' : 'w'}${t ? ` t${t}` : ''}">${esc(e ?? '')}</span>`;
 }
 
 function sbRatings(fen) {
@@ -812,10 +807,10 @@ function sbUser() {
   return state.review?.player_color?.[0] || null;
 }
 
-// The two positions on the card: `now` = the board (Best move), `k` = your last move (Previous move, 1-based;
-// its position is fens[k-1]). In a bot game or a replay the opponent answers within a second, so its turn
-// isn't searched (`now` null: the section waits, same size); in a loaded game or on the analysis board the
-// opponent's options show too (user's call: the top section shouldn't vanish every other move).
+// The two positions on the card: `now` = the board (before your move), `k` = your last move (1-based; its
+// position is fens[k-1]). In a bot game or a replay the opponent answers within a second, so its turn isn't
+// searched (`now` null: the card waits, same size); in a loaded game or on the analysis board the opponent's
+// options show too (user's call: the top card shouldn't vanish every other move).
 function sbTargets(L) {
   const u = sbUser();
   const n = L.plays.length;
@@ -826,9 +821,9 @@ function sbTargets(L) {
   return { now: auto ? null : n, k: k >= 1 ? k : null };
 }
 
-// The row for `uci` in a scoreboard, from either list or the extra moves scored on request.
+// The row for `uci` in a scoreboard: the full ranking, else the older lists.
 function sbRow(sb, uci) {
-  return sb && !sb.over ? [...sb.sf, ...(sb.humans || []), ...(sb.extra || [])].find((r) => r.uci === uci) : null;
+  return sb && !sb.over ? [...(sb.all || []), ...sb.sf, ...(sb.humans || []), ...(sb.extra || [])].find((r) => r.uci === uci) : null;
 }
 
 function requestScoreboard(c) {
@@ -878,35 +873,24 @@ function sbLine() {
   for (const san of line.sans.slice(0, line.at)) {
     const m = c.move(san);
     if (!m) break;
-    plays.push({ uci: m.from + m.to + (m.promotion || ''), san: m.san, label: `${c.moveNumber() - (m.color === 'b' ? 1 : 0)}${m.color === 'w' ? '.' : '...'}${m.san}` });
+    plays.push({ uci: m.from + m.to + (m.promotion || ''), san: m.san, num: `${c.moveNumber() - (m.color === 'b' ? 1 : 0)}${m.color === 'w' ? '.' : '...'}` });
     fens.push(c.fen());
   }
   return { fens, plays, kind: line.kind };
 }
 
 // Win % the k-th move (1-based) cost its player: the saved review for a loaded game's own moves, else the
-// scoreboards of the positions before and after it (only those already visited); null when unknown.
+// scoreboard of the position before it; null when unknown.
 function sbDrop(L, k) {
   if (L.kind === 'review' && k <= state.ply) {
     const v = state.review.moves[k - 1]?.win_pct_lost;
     if (typeof v === 'number') return v;
   }
-  const before = sbGet(L.fens[k - 1]);
-  const after = sbGet(L.fens[k]);
-  if (!before || before.over) {
-    // an opponent's move (their positions aren't searched): your move before it, and your position after
-    const mine = k >= 2 ? sbRow(sbGet(L.fens[k - 2]), L.plays[k - 2].uci) : null;
-    return mine && after && !after.over ? Math.max(0, after.sf[0].win - mine.win) : null;
-  }
-  const row = sbRow(before, L.plays[k - 1].uci);
-  if (row) return row.drop;
-  if (!after) return null;
-  if (after.over) return 0;  // mate or a draw on the board: nothing left to lose
-  return Math.max(0, before.sf[0].win - (100 - after.sf[0].win));
+  return sbRow(sbGet(L.fens[k - 1]), L.plays[k - 1].uci)?.drop ?? null;
 }
 
-// Hovering a scoreboard row shows its move: an arrow, red for a capture (plus a ring on the piece it takes,
-// which for en passant isn't on the arrow's square). A Next-play alert's click draws it the same way.
+// Hovering a move shows it: an arrow, red for a capture (plus a ring on the piece it takes, which for en
+// passant isn't on the arrow's square).
 function sbShowMove(uci) {
   const c = currentGame();
   const mv = c.moves({ verbose: true }).find((m) => m.from + m.to + (m.promotion || '') === uci || m.from + m.to === uci);
@@ -918,283 +902,204 @@ function sbShowMove(uci) {
     ...(cap ? [{ orig: taken, brush: 'sbCap' }] : [])]);
 }
 
-let sbHovering = false;  // the arrow on the board came from hovering a row (not an alert's click)
-let sbClicked = false;  // a row was clicked and the pointer hasn't moved since
+let sbHovering = false;  // the arrow on the board came from hovering the scoreboard
+let sbClicked = false;  // a move was clicked and the pointer hasn't moved since
 
 function sbHideMove() {
   sbHovering = false;
   cg.setAutoShapes(baseShapes());
 }
 
-function sbVerdict(d) {
-  return d >= 30 ? 'blunder' : d >= 20 ? 'mistake' : d >= 10 ? 'inaccuracy' : d >= SB_GOOD ? 'slip' : d < 2 ? 'best or close' : 'good';
+const sbTier = (d) => (d >= 30 ? 3 : d >= 15 ? 2 : d >= SB_GOOD ? 1 : 0);
+const sbFmt = (p) => (p == null ? '' : p < 1 ? '<1' : `${Math.round(p)}`);
+const ordinal = (n) => `${n}${[11, 12, 13].includes(n % 100) ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
+
+// The grade of a move by the win chance it cost (the tiers of everything else on the card)
+function sbGrade(d, rank) {
+  if (rank === 1 || d < 2) return [rank === 1 ? 'Best move' : 'Excellent', 'g0'];
+  return d < SB_GOOD ? ['Good', 'g0'] : d < 15 ? ['Inaccuracy', 'g1'] : d < 30 ? ['Mistake', 'g2'] : ['Blunder', 'g3'];
 }
 
-const sbTier = (d) => (d >= 30 ? 3 : d >= SB_BIG ? 2 : d >= SB_GOOD ? 1 : 0);
-const SB_ONLY = 20;  // #2 at least this far behind: #1 is the only move (core/scoreboard.py)
-const sbMark = (drop, only) => (drop >= 30 ? 'bad' : only ? 'great' : '');
-
-// Who's winning, once at the top of the chat so it stays in view when the scoreboard is folded: the
-// quick eval at once, the scoreboard's deeper number when it lands.
-function renderWinStrip(fen, sb) {
-  const box = $('win-strip');
-  const quick = lastEval?.fen === fen && lastEval.lines.length ? lastEval.lines[0].cp_white : null;
-  const w = sb && !sb.over ? sb.white_win : quick != null ? winPct(Math.max(-1500, Math.min(1500, quick))) : null;
-  if (w == null) return;  // keep the last position's bar until this one's number lands, so the chat doesn't jump
-  box.classList.remove('hidden');
-  box.innerHTML = `<div class="sb-win" title="Stockfish's win chance (Lichess' curve), the same measure as the eval bar; not a prediction for players of these ratings">
-    <span class="sb-w">White ${Math.round(w)}%</span><span class="sb-bar"><span style="width:${w}%"></span></span>
-    <span class="sb-b">${Math.round(100 - w)}% Black</span></div>`;
+// What a move costs, as text: pawns behind the best ("best", "−0.31"), or what it does to a mate
+function sbCost(r, turn, bestEval) {
+  if (r.rank === 1) return 'best';
+  if (r.cost != null) return r.cost < 0.005 ? '0.00' : `−${r.cost.toFixed(2)}`;
+  const ev = moverEval(r.eval_white, turn) || '';
+  if (ev.startsWith('#-')) return 'allows mate';
+  if (ev.startsWith('#')) return 'slower mate';
+  return (moverEval(bestEval, turn) || '').startsWith('#') ? 'misses mate' : '';
 }
 
-// Alerts and big plays go into the chat as their own cards, so the scoreboard above keeps the same shape on
-// every move. Each alert is posted once per position (revisiting doesn't repeat it).
-// Where `fen` sits in the current line (all of it, not just up to the shown move): -1 once the line no longer
-// passes through it (a takeback, a new game).
-function sbFenIndex(fen) {
-  const line = currentLine();
-  const c = new Chess(line.startFen);
-  if (c.fen() === fen) return 0;
-  for (let i = 0; i < line.sans.length; i++) {
-    if (!c.move(line.sans[i])) break;
-    if (c.fen() === fen) return i + 1;
+// The quick candidates before the deep search lands: the eval's few lines and Maia's list, scored against the
+// eval's best line (Maia's own moves carry a short search's eval)
+function sbQuick(fen, turn) {
+  const sf = lastEval?.fen === fen ? lastEval.lines : [];
+  const mm = lastMaia?.fen === fen ? lastMaia.moves : [];
+  if (!sf.length && !mm.length) return null;
+  const cpOf = (e) => (e == null || e.startsWith('#') ? null : Math.round(parseFloat(moverEval(e, turn)) * 100));
+  const win = (cp) => winPct(Math.max(-1500, Math.min(1500, cp)));
+  const best = sf[0] ? cpOf(sf[0].eval_white) : null;
+  const rows = sf.map((l, i) => ({ move: l.move, uci: l.uci, eval_white: l.eval_white, rank: i + 1 }));
+  for (const m of mm) if (!rows.some((r) => r.uci === m.uci) && m.pct >= SB_GOOD) rows.push({ move: m.move, uci: m.uci, eval_white: m.eval_white, rank: null });
+  for (const r of rows) {
+    const cp = cpOf(r.eval_white);
+    r.pct = mm.find((m) => m.uci === r.uci)?.pct ?? null;
+    r.cost = best != null && cp != null ? Math.max(0, (best - cp) / 100) : null;
+    r.tier = best != null && cp != null ? sbTier(Math.max(0, win(best) - win(cp))) : 0;
   }
-  return -1;
+  rows.sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99) || (a.cost ?? 99) - (b.cost ?? 99));
+  return { rows, best: sf[0]?.eval_white };
 }
 
-// `num` (e.g. "12..." ) sits in the card's corner; a click takes the board to that moment (user's call), and
-// a Next-play alert also draws its move there. Each alert is posted once per position.
-function sbPostAlert(fen, b, label, pre, num) {
-  const key = `${fen}|${label}|${b.kind}`;
-  if (sbShown.has(key)) return;
-  if (sbShown.size > 2000) sbShown.clear();
-  sbShown.add(key);
-  const msg = addMsg('coach sb-msg', `<div class="sb-alert ${b.tier ? `t${b.tier}` : 'good'} fresh clickable" title="Go to this moment">`
-    + `<span class="sb-num">${esc(num)}</span><span class="sb-al">${label}</span> ${pre}${esc(b.text)}</div>`);
-  const al = msg.querySelector('.sb-alert');
-  al.onclick = () => {
-    const at = sbFenIndex(fen);
-    if (at < 0) {
-      al.classList.add('stale');
-      al.title = 'This position is no longer in the game';
-      return;
-    }
-    goToLine(at);
-    if (b.uci && label === 'Next play') sbShowMove(b.uci);  // show, don't play: the flagged move may be the blunder
-  };
+// Every legal move on one strip, best to worst. Colour: what it costs (the tiers); height: how often players
+// at the chosen rating pick it, so a tall red tick is the trap people fall into. `played` gets a marker.
+function sbSpectrum(sb, played) {
+  const top = Math.max(1, ...sb.all.map((r) => r.pct || 0));
+  const ticks = sb.all.map((r) => `<i class="t${r.tier}${r.uci === played ? ' me' : ''}" data-uci="${esc(r.uci)}" `
+    + `style="--h:${(0.2 + 0.8 * Math.sqrt((r.pct || 0) / top)).toFixed(3)}"></i>`).join('');
+  return `<div class="sb-ticks" title="Every legal move, best (left) to worst (right). Colour: what it costs; height: how often players at this rating pick it">${ticks}</div>`;
 }
 
-let sbBigKey = '';  // the big plays last posted, so the card is re-posted only when the list changes
-
-function sbPostBigPlays(big) {
-  const key = big.map((b) => b.label).join(' ');
-  if (!big.length || key === sbBigKey) return;
-  sbBigKey = key;
-  // one running card: the previous one goes, the updated list lands at the bottom
-  document.querySelectorAll('#chat-log .sb-big').forEach((el) => el.remove());
-  const msg = addMsg('coach sb-msg sb-big', `<div class="sb-bigcard"><span class="sb-al" title="Moves that cost 15% win chance or more (💥), and the replies that took advantage (⚡)">Big plays</span>`
-    + `${big.slice(-6).map((b) => `<button class="link sb-jump" data-k="${b.k}">${b.html}</button>`).join('')}</div>`);
-  msg.querySelectorAll('.sb-jump').forEach((el) => { el.onclick = () => goToLine(+el.dataset.k); });
+// Stockfish's top 5 plus the moves players at your rating actually choose (≥ 5%), in Stockfish's order
+function sbCandidates(rows, turn, bestEval, rating, played) {
+  const top = Math.max(1, ...rows.map((r) => r.pct || 0));
+  return `<div class="sb-table"><div class="sb-cols"><span>#</span><span>Move</span><span>vs best</span><span>~${rating} play it</span></div>${
+    rows.map((r) => `<button class="sb-row t${r.tier}${r.rank === 1 ? ' best' : ''}${r.uci === played ? ' me' : ''}" data-uci="${esc(r.uci)}">`
+      + `<span class="sb-rank">${r.rank ?? '·'}</span><b class="sb-mv">${esc(r.move)}</b><span class="sb-cost">${sbCost(r, turn, bestEval)}</span>`
+      + `<span class="sb-pop"><span class="sb-pbar"><span style="width:${r.pct ? Math.max(3, 100 * r.pct / top) : 0}%"></span></span>`
+      + `<span class="sb-pct">${r.pct != null ? `${sbFmt(r.pct)}%` : '–'}</span></span></button>`).join('')}</div>`;
 }
 
-// Two ranked lists side by side for one position, one move per row, so the gap between the top and the
-// bottom shows as bar length. Stockfish's bar is the mover's win chance; Maia's is how often players pick
-// it. `live`: the board is on this position (quick numbers until the deep search lands, hover/click rows,
-// the rating picker); `played`: the move made here, marked, and added under Stockfish's list if it isn't in it.
-function sbLists(fen, { live, played }) {
-  const sfOn = state.engineOn;
-  const humansOn = maiaOn();
-  const turn = fen.split(' ')[1];
+// Which move each rating picks (Maia's favourite, 600 → 2600), as runs along one track; your rating marked
+function sbTrack(sb, rating) {
+  const lad = (sb.ladder || []).filter((l) => l.moves.length);
+  if (lad.length < 2) return '';
+  const runs = [];
+  for (const l of lad) {
+    const m = l.moves[0];
+    const last = runs[runs.length - 1];
+    if (last?.uci === m.uci) { last.n++; last.to = l.rating; } else runs.push({ uci: m.uci, move: m.move, n: 1, from: l.rating, to: l.rating });
+  }
+  const tier = (u) => sb.all?.find((r) => r.uci === u)?.tier ?? 0;
+  const lo = lad[0].rating, hi = lad[lad.length - 1].rating;
+  const slot = 100 / lad.length;  // each rating owns an equal slot; labels and the marker sit at slot centres
+  const at = (r) => slot * (0.5 + (Math.max(lo, Math.min(hi, r)) - lo) / (hi - lo) * (lad.length - 1));
+  const mid = lad[Math.floor(lad.length / 2)].rating;
+  return `<div class="sb-track"><div class="sb-you" style="left:${at(rating)}%" title="Your rating (~${rating})"></div><div class="sb-segs">${runs.map((r) =>
+    `<span class="sb-seg t${tier(r.uci)}" style="flex:${r.n}" data-uci="${esc(r.uci)}" data-tip="${r.from === r.to ? `~${r.from}` : `~${r.from}–${r.to}`}: ${esc(r.move)}">${esc(r.move)}</span>`).join('')}</div>`
+    + `<div class="sb-ticks-axis">${[lo, mid, hi].map((r) => `<span style="left:${at(r)}%">${r}</span>`).join('')}</div></div>`;
+}
+
+const sbSkeleton = (rows) => `<div class="sb-ticks skel"></div><div class="sb-table">${'<div class="sb-row skel"><span></span></div>'.repeat(rows)}</div>`;
+
+// Card 1: before the move (the board now)
+function sbBefore(L, now, u) {
+  const fen = L.fens[now];
+  const [, turn, , , , num] = fen.split(' ');
   const side = turn === 'w' ? 'White' : 'Black';
-  const sb = sfOn ? sbGet(fen) : null;
-  const deep = sb && !sb.over;
-  // placeholder rows while the numbers load, so the section keeps its height
-  const wait = '<div class="sb-row ghost"><b class="sb-mv">·</b><span class="sb-rbar"></span><span></span></div>'.repeat(5);
-  const over = '<span class="card-sub">Game over</span>';
-  const fmt = (p) => (p < 1 ? '<1' : Math.round(p));
-  const quickSf = live && lastEval?.fen === fen ? lastEval.lines : null;
-  const quickMaia = live && lastMaia?.fen === fen ? lastMaia.moves : null;
-  // Plain white rows; colour only for the extremes: red for a move that throws the game (≥ 30% win chance),
-  // green for the only move that holds (everything else ≥ 20% worse). User's call: no tier colours.
-  const row = (uci, move, width, mark, tip, ev) =>
-    `<button class="sb-row${mark ? ` ${mark}` : ''}${uci === played ? ' played' : ''}" data-uci="${esc(uci)}" title="${esc(tip)}"><b class="sb-mv">${esc(move)}</b>`
-    + `<span class="sb-rbar"><span style="width:${Math.max(2, Math.min(100, width))}%"></span></span>${ev}</button>`;
-  const moverWin = (cp) => { const w = winPct(Math.max(-1500, Math.min(1500, cp))); return turn === 'w' ? w : 100 - w; };
-  const lists = [];
-
-  if (sfOn) {
-    const sf = deep ? sb.sf : quickSf;
-    let html = !sf ? (sb?.over ? over : wait) : !sf.length ? over : sf.map((l, i) => {
-      const w = deep ? l.win : moverWin(l.cp_white);
-      const drop = deep ? l.drop : moverWin(sf[0].cp_white) - w;
-      const second = sf[1] ? (deep ? sf[1].drop : moverWin(sf[0].cp_white) - moverWin(sf[1].cp_white)) : 0;
-      const tip = `${Math.round(w)}% win chance for ${side}` + (i ? `; ${Math.round(drop)}% behind the best` : '')
-        + (deep && l.human_pct != null ? `; ${fmt(l.human_pct)}% of players at this rating play it` : '') + (deep ? '' : ' (quick search; the deeper one is coming)');
-      return row(l.uci, l.move, w, sbMark(drop, i === 0 && second >= SB_ONLY), tip, evPill(moverEval(l.eval_white, turn)));
-    }).join('');
-    const mine = played && deep && !sb.sf.some((l) => l.uci === played) ? sbRow(sb, played) : null;
-    if (mine) {
-      html += `<div class="sb-sep"></div>` + row(mine.uci, mine.move, mine.win, sbMark(mine.drop, false),
-        `Played: ${Math.round(mine.win)}% win chance for ${side}; ${Math.round(mine.drop)}% behind the best`, evPill(moverEval(mine.eval_white, turn)));
-    }
-    lists.push(`<div class="sb-list sf"><div class="sb-lh" title="Stockfish: the best moves, best first. Bar: ${side}'s win chance after the move (exact % on hover)"><span class="sb-who">Stockfish</span></div>${html}</div>`);
-  }
-
-  if (humansOn) {
-    const mm = deep ? sb.humans : quickMaia;
-    // bars scale to the most popular move, so a 25% favourite fills the row and the rest compare to it
+  const rating = sbRatings(fen)[0];
+  const who = !u ? `${side} to move` : turn === u ? 'Your move' : 'Their move';
+  const sb = state.engineOn ? sbGet(fen) : null;
+  const eyebrow = (extra) => `<div class="sb-eyebrow"><span>${who} <span class="sb-num">${num}${turn === 'w' ? '.' : '...'}</span></span>${extra}</div>`;
+  if (sb?.over) return `<section class="sb-card">${eyebrow('')}<div class="sb-head"><b>Game over</b></div></section>`;
+  if (!state.engineOn) {
+    // the eval is off (a bot game without it): no costs, only what players at this rating pick
+    const mm = lastMaia?.fen === fen ? lastMaia.moves : null;
     const top = Math.max(1, ...(mm || []).map((m) => m.pct));
-    const pick = `<span class="sb-rt">~${sbRatings(fen)[0]}</span>`;  // set in the header row (#sb-rating)
-    lists.push(`<div class="sb-list maia"><div class="sb-lh" title="Maia: what players of this rating actually play here, most popular first. Bar: share of players who'd pick the move (exact % on hover); red: throws the game, green: the only good move"><span class="sb-who">Maia ${pick}</span></div>${
-      !mm ? (sb?.over ? over : wait) : !mm.length ? over : mm.map((m) => {
-        if (!deep) {
-          const ev = (quickSf || []).find((l) => l.uci === m.uci)?.eval_white ?? m.eval_white;
-          return row(m.uci, m.move, 100 * m.pct / top, '', `${fmt(m.pct)}% of players at this rating play it`, evPill(moverEval(ev, turn)));
-        }
-        const tip = `${fmt(m.pct)}% of players at this rating play it; `
-          + (m.drop < SB_GOOD ? 'about as good as the best move' : `costs ${Math.round(m.drop)}% win chance (${sbVerdict(m.drop)})`)
-          + (m.sf_rank ? `; Stockfish's #${m.sf_rank}` : '');
-        const only = m.sf_rank === 1 && sb.sf[1] && sb.sf[1].drop >= SB_ONLY;
-        return row(m.uci, m.move, 100 * m.pct / top, sbMark(m.drop, only), tip, evPill(moverEval(m.eval_white, turn)));
-      }).join('')}</div>`);
+    return `<section class="sb-card live">${eyebrow(mm ? '' : '<span class="sb-busy"></span>')}<div class="sb-head"><b>What ~${rating}s play</b>`
+      + `<span class="sb-tip" data-idle="engine off"></span></div><div class="sb-table">${(mm || []).map((m) => `<button class="sb-row maia-only" data-uci="${esc(m.uci)}">`
+      + `<b class="sb-mv">${esc(m.move)}</b><span class="sb-pop"><span class="sb-pbar"><span style="width:${Math.max(3, 100 * m.pct / top)}%"></span></span>`
+      + `<span class="sb-pct">${sbFmt(m.pct)}%</span></span></button>`).join('') || '<div class="sb-row skel"><span></span></div>'.repeat(5)}</div></section>`;
   }
-  // two competing lists, so they get separate panels
-  return lists.length ? `<div class="sb-lists${lists.length > 1 ? ' two' : ''}">${lists.join('')}</div>` : '';
+  const busy = !sb && state.engineOn ? `<span class="sb-busy" title="${esc(sbError || 'Searching every move')}">${sbError ? 'search failed' : ''}</span>` : '';
+  if (!sb) {
+    // quick numbers only: the candidates now, the strip and the track when the deep search lands
+    const q = sbQuick(fen, turn);
+    return `<section class="sb-card live">${eyebrow(busy)}<div class="sb-head"><b class="skel-text">Ranking every move…</b><span class="sb-tip" data-idle=""></span></div>`
+      + `<div class="sb-ticks skel"></div>`
+      + (q ? sbCandidates(q.rows.slice(0, 6), turn, q.best, rating) : `<div class="sb-table">${'<div class="sb-row skel"><span></span></div>'.repeat(5)}</div>`)
+      + `</section>`;
+  }
+  const n = sb.all.length;
+  const hold = sb.all.filter((r) => r.drop < SB_GOOD).length;
+  const head = hold <= 1 ? '<b class="g3">Only one move holds</b>'
+    : hold === n ? `<b>Any move holds</b>` : `<b>${hold} of ${n} moves hold</b>`;
+  const rows = sb.all.filter((r) => r.rank <= 5 || (r.pct ?? 0) >= SB_GOOD).slice(0, 6);
+  const engine = sb.all[0];
+  // what each rating plays first (the user's first question), then how good the candidates are
+  return `<section class="sb-card live">${eyebrow(busy)}<div class="sb-head">${head}`
+    + `<span class="sb-tip" data-idle="within ${SB_GOOD}% of the best" title="A move holds when it costs under ${SB_GOOD}% win chance against the best">within ${SB_GOOD}% of the best</span></div>`
+    + sbSpectrum(sb)
+    + (sb.ladder?.length ? `<div class="sb-sub-h"><span>Who plays what</span><span class="sb-engine" data-uci="${esc(engine.uci)}">Engine <b>${esc(engine.move)}</b></span></div>${sbTrack(sb, rating)}` : '')
+    + sbCandidates(rows, turn, engine.eval_white, rating)
+    + `</section>`;
 }
 
-// The lists' evals are the side to move's view, and the two sections can have different sides to move, so
-// each says whose view it is (otherwise 7.18 above and -7.32 below reads as a swing)
-function sbPov(turn) {
-  return state.engineOn ? `<span class="sb-pov" title="Evals are from this side's point of view: positive is good for them">${turn === 'w' ? 'White' : 'Black'}'s view</span>` : '';
+// The bot (or the replayed game) is about to answer: same shape as card 1, waiting
+function sbWaiting() {
+  return `<section class="sb-card"><div class="sb-eyebrow"><span>${state.play ? 'Bot is thinking' : 'Opponent to move'}</span><span class="sb-busy"></span></div>`
+    + `<div class="sb-head"><b class="skel-text">Their move</b></div>${sbSkeleton(5)}</section>`;
 }
 
-function sbStatus(fen) {
-  if (!state.engineOn) return '';
-  const sb = sbGet(fen);
-  if (sb?.over) return '';
-  if (sb) return `<span class="sb-depth" title="Stockfish search depth">d${sb.depth}</span>`;
-  return sbError ? `<span class="sb-depth" title="${esc(sbError)}">search failed</span>` : '<span class="sb-depth">analysing…</span>';
-}
-
-// A banner for the k-th move (1-based) when the moment calls for one: a big loss, Stockfish's top move that
-// wasn't the popular one, punishing a blunder, or a lead change. Needs the position before it searched.
-function sbPlayAlert(L, k) {
-  const fmt = (p) => (p < 1 ? '<1' : Math.round(p));
-  const d = sbDrop(L, k);
-  const prev = k > 1 ? sbDrop(L, k - 1) : null;
+// After your move: one strip on top of the card (user's wording: "You played b8. b8 was the 28th best move"):
+// the grade, the rank among every legal move, the cost, and a flat strip of all the moves with yours marked
+function sbAfter(L, k, u) {
   const p = L.plays[k - 1];
-  const before = sbGet(L.fens[k - 1]);
-  const after = sbGet(L.fens[k]);
-  // White's win chance on each side of the move: the searched position, else the move's row before it
-  const whiteAfter = after && !after.over ? after.white_win : (() => {
-    const r = sbRow(before, p.uci);
-    return r ? (L.fens[k - 1].split(' ')[1] === 'w' ? r.win : 100 - r.win) : null;
-  })();
-  const whiteBefore = before && !before.over ? before.white_win : null;
-  let lead = '';
-  // lead change: the bar crosses from one side's edge to the other's (55/45 leaves a dead zone)
-  if (whiteBefore != null && whiteAfter != null) {
-    const a = whiteBefore, b = whiteAfter;
-    if ((a >= 55 && b <= 45) || (a <= 45 && b >= 55)) lead = `${b > 50 ? 'White' : 'Black'} takes the lead`;
+  const fen = L.fens[k - 1];
+  const turn = fen.split(' ')[1];
+  const sb = sbGet(fen);
+  const label = `${u ? 'You played' : 'Last move'} <span class="sb-num">${p.num}</span>`;
+  if (!sb || sb.over || !sb.all) {
+    return `<section class="sb-card after"><div class="sb-eyebrow"><span>${label}</span><span class="sb-busy"></span></div>`
+      + `<div class="sb-v-line"><b class="sb-v-mv">${esc(p.san)}</b><span class="sb-v-rank skel-text">ranking…</span></div>`
+      + `<div class="sb-rankbar skel"></div></section>`;
   }
-  if (d != null && d >= SB_BIG) {
-    const extra = [prev != null && prev >= SB_BIG ? 'gave it straight back' : '', lead].filter(Boolean).join(' · ');
-    return { tier: sbTier(d), kind: 'blunder',
-      text: `💥 ${p.label} was ${/^[aeiou]/.test(sbVerdict(d)) ? 'an' : 'a'} ${sbVerdict(d)}: −${Math.round(d)}% win chance${extra ? ` · ${extra}` : ''}` };
-  }
-  const pop = before?.humans?.[0];
-  const found = before && !before.over && before.sf[0].uci === p.uci && pop && pop.uci !== p.uci && pop.drop >= SB_GOOD;
-  const punished = prev != null && prev >= SB_BIG && d != null && d < SB_GOOD;
-  if (found) {
-    const pct = before.sf[0].human_pct;
-    const who = `~${sbRatings(L.fens[k - 1])[0]} players`;
-    return { tier: 0, kind: 'found', text: `⭐ ${p.label}: Stockfish's top move, which ${pct != null ? `only ${fmt(pct)}% of ${who} find` : `${who} rarely find`}`
-      + `; most play ${pop.move}${punished ? `. It punishes ${L.plays[k - 2].label}` : ''}` };
-  }
-  if (punished) return { tier: 0, kind: 'punished', text: `⚡ ${p.label} punishes ${L.plays[k - 2].label}${lead ? ` · ${lead}` : ''}` };
-  if (lead) return { tier: 2, kind: 'lead', text: `⇅ ${p.label}: ${lead}` };
-  return null;
+  const row = sb.all.find((r) => r.uci === p.uci);
+  const n = sb.all.length;
+  const d = sbDrop(L, k) ?? row?.drop ?? 0;
+  const [grade, g] = sbGrade(d, row?.rank);
+  const best = sb.all[0];
+  const rank = !row ? '' : row.rank === 1 ? `top choice of ${n}` : `${ordinal(row.rank)} best of ${n}`;
+  const cost = row && row.rank > 1 ? sbCost(row, turn, best.eval_white) : '';
+  const costTxt = cost.startsWith('−') ? `${cost} pawns` : cost;
+  // the rating whose players pick this move most often (Maia, 600-2600): a rough "level" of the move
+  const peak = (sb.ladder || []).map((l) => ({ r: l.rating, pct: l.moves.find((m) => m.uci === p.uci)?.pct || 0 }))
+    .reduce((a, b) => (b.pct > a.pct ? b : a), { pct: 0 });
+  const pop = (sb.humans || [])[0];
+  const facts = [
+    row?.rank !== 1 ? `<span data-uci="${esc(best.uci)}">Best <b>${esc(best.move)}</b></span>` : '',
+    pop && pop.uci !== p.uci ? `<span data-uci="${esc(pop.uci)}">~${sbRatings(fen)[0]}s play <b>${esc(pop.move)}</b></span>` : '',
+    peak.pct >= 3 ? `<span title="The rating at which Maia most often picks this move (600-2600)">Typical at <b>~${peak.r}</b></span>` : '',
+  ].filter(Boolean).join('');
+  const ticks = sb.all.map((r) => `<i class="t${r.tier}${r.uci === p.uci ? ' me' : ''}" data-uci="${esc(r.uci)}"></i>`).join('');
+  return `<section class="sb-card after ${g}"><div class="sb-eyebrow"><span>${label}</span><span class="sb-grade">${grade}</span></div>`
+    + `<div class="sb-v-line"><b class="sb-v-mv">${esc(p.san)}</b><span class="sb-v-rank">${rank}</span>`
+    + `${costTxt ? `<span class="sb-v-cost" title="${d >= 1 ? `${Math.round(d)}% win chance` : ''}">${costTxt}</span>` : ''}</div>`
+    + `<div class="sb-rankbar">${ticks}</div>${facts ? `<div class="sb-facts">${facts}</div>` : ''}</section>`;
 }
 
 function renderKeyCard() {
   const box = $('key-card');
   const sfOn = state.engineOn;
   const humansOn = maiaOn();
-  if (state.editor || !state.review || !sfOn) $('win-strip').classList.add('hidden');
-  // an endgame drill with the eval off: the lists would only be half there (and Maia's are no help)
+  // an endgame drill with the eval off: the numbers would only be half there (and Maia's are no help)
   if (state.editor || !state.review || !(sfOn || humansOn) || (state.play?.endgame && !sfOn)) {
     $('sb-rating').classList.add('hidden');
     return void box.classList.add('hidden');
   }
   box.classList.remove('hidden');
   const fen = currentGame().fen();
-  const sb = sfOn ? sbGet(fen) : null;
-  if (sfOn) renderWinStrip(fen, sb);
-
-  // Two sections, both about your decisions (user's call): the position where you made your last move, with
-  // that move marked and what it cost; and the board now when it's your turn.
   const L = sbLine();
-  const n = L.plays.length;
   const u = sbUser();
   const { now, k } = sbTargets(L);
-  // Best move (the board now) on top, your previous move below (user's call), each under a big header
-  const secs = [];
-  if (now != null) {
-    const [, turn, , , , num] = fen.split(' ');
-    const side = turn === 'w' ? 'White' : 'Black';
-    const who = !u ? `${side} to move` : turn === u ? 'your move' : `${side} (opponent) to move`;
-    const reply = u && turn === u && n && n !== k ? `<span class="sb-after">after ${esc(L.plays[n - 1].label)}</span>` : '';  // their move between
-    secs.push(`<div class="sb-sec live"><div class="sb-sec-h"><span class="sb-sec-t">Best move</span>${sbPov(turn)}${sbStatus(fen)}</div>`
-      + `<div class="sb-sec-title"><b class="sb-sec-mv">${num}${turn === 'w' ? '.' : '...'} ${who}</b>${reply}</div>${sbLists(fen, { live: true })}</div>`);
-  } else if (!currentGame().isGameOver()) {
-    // the bot (or the replayed game) is about to answer: same-size placeholder instead of a gap
-    const ghost = '<div class="sb-row ghost"><b class="sb-mv">·</b><span class="sb-rbar"></span><span></span></div>'.repeat(5);
-    const lists = ['sf', maiaOn() ? 'maia' : null].filter(Boolean).map((c) => `<div class="sb-list ${c}"><div class="sb-lh"><span class="sb-who">${c === 'sf' ? 'Stockfish' : 'Maia'}</span></div>${ghost}</div>`);
-    secs.push(`<div class="sb-sec"><div class="sb-sec-h"><span class="sb-sec-t">Best move</span></div>`
-      + `<div class="sb-sec-title"><span class="sb-wait">${state.play ? 'Bot is thinking…' : 'Opponent to move…'}</span></div><div class="sb-lists${lists.length > 1 ? ' two' : ''}">${lists.join('')}</div></div>`);
-  }
-  if (k) {
-    const p = L.plays[k - 1];
-    const d = sbDrop(L, k);
-    const before = sbGet(L.fens[k - 1]);
-    const best = before?.sf?.[0]?.uci === p.uci;
-    // where your move sat among Maia's picks at your rating (the useful fact from the mock-up's result block)
-    const mr = maiaOn() && before?.humans ? before.humans.findIndex((m) => m.uci === p.uci) + 1 : 0;
-    const cost = d == null ? '' : best ? '<span class="sb-cost great" title="Stockfish\'s top move">best</span>'
-      : `<span class="sb-cost${d >= 30 ? ' bad' : ''}" title="Win chance this move cost">${d < 1 ? '<1' : `−${Math.round(d)}`}%</span>`;
-    secs.push(`<div class="sb-sec"><div class="sb-sec-h"><span class="sb-sec-t" title="${u ? 'Your last move, in the position you played it' : 'The last move, in the position it was played'}">Previous move</span>`
-      + `${sbPov(L.fens[k - 1].split(' ')[1])}${sbStatus(L.fens[k - 1])}</div>`
-      + `<div class="sb-sec-title"><b class="sb-sec-mv">${esc(p.label)}</b>${cost}`
-      + `${mr ? `<span class="sb-mrank" title="Maia's rank for this move at this rating">Maia #${mr}</span>` : ''}</div>`
-      + `${sbLists(L.fens[k - 1], { live: false, played: p.uci })}</div>`);
-  }
+  // what just happened on top, what to do now below
+  const cards = [];
+  if (k && sfOn) cards.push(sbAfter(L, k, u));
+  if (now != null) cards.push(sbBefore(L, now, u));
+  else if (!currentGame().isGameOver()) cards.push(sbWaiting());
+  box.innerHTML = cards.join('');
 
-  // banners: your move, then the opponent's reply, then the next-move alert for your turn
-  const posts = [];
-  if (k) posts.push([k, u ? 'Your move' : 'Last play']);
-  if (n && n !== k) posts.push([n, 'Their move']);
-  for (const [i, label] of posts) {
-    const a = sbPlayAlert(L, i);
-    if (a) sbPostAlert(L.fens[i], a, label, '', L.plays[i - 1].label.match(/^\d+\.+/)[0]);
-  }
-  const big = [];
-  for (let i = 1; i <= n; i++) {
-    const di = sbDrop(L, i);
-    if (di == null) continue;
-    if (di >= SB_BIG) big.push({ k: i, label: L.plays[i - 1].label, html: `💥 ${esc(L.plays[i - 1].label)} <span class="t${sbTier(di)}">−${Math.round(di)}%</span>` });
-    else if (di < SB_GOOD && i > 1 && (sbDrop(L, i - 1) ?? 0) >= SB_BIG) big.push({ k: i, label: `⚡${L.plays[i - 1].label}`, html: `⚡ ${esc(L.plays[i - 1].label)}` });
-  }
-  // the next move: the most important alert (the Maia-based ones need the Maia list on)
-  const next = now != null && sb && !sb.over ? sb.alerts.find((a) => humansOn || !['disaster', 'danger', 'popular_wrong', 'no_overlap', 'hidden_best'].includes(a.kind)) : null;
-  const icon = { disaster: '💥', danger: '⚠', mate: '♚', only_move: '❗', popular_wrong: '⚠', no_overlap: '⇄', hidden_best: '🔎' };
-  if (next) {
-    const [, turn, , , , num] = fen.split(' ');
-    sbPostAlert(fen, next, 'Next play', icon[next.kind] ? `${icon[next.kind]} ` : '', `${num}${turn === 'w' ? '.' : '...'}`);
-  }
-  sbPostBigPlays(big);  // after the alerts: it's the running summary, so it sits at the bottom
-
-  box.innerHTML = secs.join('');
-  // Maia's rating sits in the header row (user's call): yours, or the side to move's on the analysis board
+  // the rating picker sits in the panel's header: yours, or the side to move's on the analysis board
   const pick = $('sb-rating');
   pick.classList.toggle('hidden', !humansOn);
   if (humansOn) {
@@ -1202,28 +1107,43 @@ function renderKeyCard() {
     const sel = $('kc-rating');
     if (sel.options.length !== $(id).options.length) sel.innerHTML = $(id).innerHTML;
     sel.value = $(id).value;
-    pick.title = `Maia's rating for ${id === 'maia-white' ? 'White' : 'Black'}: what players of this rating play`;
+    pick.title = `Players' rating for ${id === 'maia-white' ? 'White' : 'Black'}: what Maia predicts players of this rating play`;
     // drive the panel's dropdown, which stores the rating and refetches
     sel.onchange = () => { $(id).value = sel.value; $(id).dispatchEvent(new Event('change')); };
   }
-  // live rows: hover shows the move's arrow and lights up the same move in the other list; click plays it
-  // (where you could play it yourself; otherwise playMaiaMove only shows the arrow). Rows of your last move's
-  // position only light up their twin: the board is no longer there.
-  box.querySelectorAll('.sb-sec').forEach((sec) => {
-    const live = sec.classList.contains('live');
-    sec.querySelectorAll('.sb-row:not(.ghost)').forEach((el) => {
-      const twins = () => sec.querySelectorAll(`.sb-row[data-uci="${el.dataset.uci}"]`);
-      el.onmouseenter = () => { twins().forEach((t) => t.classList.add('hot')); if (live) { sbShowMove(el.dataset.uci); sbHovering = true; } };
-      el.onmouseleave = () => { twins().forEach((t) => t.classList.remove('hot')); if (live) sbHideMove(); };
-      if (live) el.onclick = () => { sbClicked = true; sbHideMove(); playMaiaMove(el.dataset.uci); };
+
+  // Moves on the live card (rows, ticks, track segments, the engine's pick): hover draws the move and names it
+  // under the strip; a row or tick click plays it (where you could play it yourself; otherwise playMaiaMove
+  // only shows the arrow). The after card's ticks only name their move: the board has moved on.
+  box.querySelectorAll('.sb-card').forEach((card) => {
+    const live = card.classList.contains('live');
+    const tip = card.querySelector('.sb-tip');
+    const sb = live ? sbGet(fen) : card.classList.contains('after') ? sbGet(L.fens[k - 1]) : null;
+    card.querySelectorAll('[data-uci]').forEach((el) => {
+      const uci = el.dataset.uci;
+      el.onmouseenter = () => {
+        const r = sbRow(sb, uci);
+        if (!tip && r) el.title = `${r.move} · ${r.rank === 1 ? 'best' : `#${r.rank}`}`;
+        if (tip && r) tip.textContent = `${r.move} · ${r.rank === 1 ? 'best' : `#${r.rank}`}${r.pct ? ` · ${sbFmt(r.pct)}% play it` : ''}`;
+        else if (tip && !r && !el.dataset.tip) tip.textContent = el.querySelector('.sb-mv')?.textContent || '';
+        else if (tip && el.dataset.tip) tip.textContent = el.dataset.tip;
+        card.querySelectorAll(`[data-uci="${uci}"]`).forEach((t) => t.classList.add('hot'));
+        if (live) { sbShowMove(uci); sbHovering = true; }
+      };
+      el.onmouseleave = () => {
+        if (tip) tip.textContent = tip.dataset.idle;
+        card.querySelectorAll('.hot').forEach((t) => t.classList.remove('hot'));
+        if (live) sbHideMove();
+      };
+      if (live) el.onclick = () => { sbClicked = true; sbHideMove(); playMaiaMove(uci); };
     });
   });
   box.onpointermove = () => { sbClicked = false; };
-  // a re-render under the pointer (the deep numbers landing) replaces the hovered row without a mouseleave;
-  // not after a click, where the row now under the pointer is the next position's (read as the bot's move)
-  const hovered = sbClicked ? null : box.querySelector('.sb-row:not(.ghost):hover');
+  // a re-render under the pointer (the deep numbers landing) replaces the hovered move without a mouseleave;
+  // not after a click, where the move now under the pointer is the next position's (read as the bot's move)
+  const hovered = sbClicked ? null : box.querySelector('.live [data-uci]:hover');
   if (hovered) hovered.onmouseenter();
-  if (!hovered?.closest('.live') && sbHovering) sbHideMove();
+  else if (sbHovering) sbHideMove();
 }
 
 function setupMaia(cfg) {
@@ -2391,7 +2311,6 @@ function setReview(review, note, play = null, { keepChat = false } = {}) {
   state.play = play;
   opponentCommentCount = 0;
   openingNote = { family: null, key: null, count: 0 };
-  openingBannerShown = false;
   $('opening-tag').classList.add('hidden');  // a new game names its own opening
   notedPlies.clear();
   bigMomentAsked.clear();
@@ -3911,7 +3830,6 @@ function studyWalkthrough() {
 // are recognised. Generic names ("King's Pawn Game") show in the tag but don't spend the banner.
 
 const openingLines = new Map();  // start fen + moves → [{ply, eco, name, family}] from /api/opening_line
-let openingBannerShown = false;  // reset per game in setReview()
 
 async function requestOpening() {
   if (state.demo || state.editor || !state.review) return;  // a demo board keeps the game's tag
@@ -3931,11 +3849,6 @@ async function requestOpening() {
   if (!hit) return;
   tag.innerHTML = `<span class="ot-eco">${esc(hit.eco)}</span><span class="ot-name">${esc(hit.name)}</span>`;
   tag.title = `${hit.eco} · ${hit.name}`;
-  if (!openingBannerShown && !isBlandOpening(hit.family)) {
-    openingBannerShown = true;
-    addMsg('coach sb-msg', `<div class="sb-alert opening fresh"><span class="sb-al">Opening</span> 📖 ${esc(hit.name)}`
-      + ` <span class="ot-eco">${esc(hit.eco)}</span></div>`);
-  }
 }
 
 // ---- opening reactions ("Caro-Kann player, I see…"): free and instant, no Claude call. The name
@@ -5020,37 +4933,43 @@ function setPanelHidden(which, hidden) {
 document.querySelectorAll('[data-hide]').forEach((b) => { b.onclick = () => setPanelHidden(b.dataset.hide, true); });
 document.querySelectorAll('[data-show]').forEach((b) => { b.onclick = () => setPanelHidden(b.dataset.show, false); });
 for (const w of ['score', 'chat']) if (recall(`hide-${w}`) === '1') document.body.classList.add(`hide-${w}`);
-// Side nav groups: open/closed remembered per browser. ≤ 1000 px the nav is a top bar where the groups can't
-// be toggled, so they're all opened there (a closed <details> can't be shown by CSS alone).
-const navNarrow = matchMedia('(max-width: 1000px)');
-document.querySelectorAll('.nav-group').forEach((g) => {
-  if (recall(`nav-${g.dataset.group}`) === '0' && !navNarrow.matches) g.open = false;
-  g.addEventListener('toggle', () => { if (!navNarrow.matches) store(`nav-${g.dataset.group}`, g.open ? '1' : '0'); });
-});
-navNarrow.addEventListener('change', () => document.querySelectorAll('.nav-group').forEach((g) => {
-  g.open = navNarrow.matches || recall(`nav-${g.dataset.group}`) !== '0';
-}));
+// Stacked panels (below 1680 px): drag the handle between them to share the column; the scoreboard's share
+// (0.25-0.85 of the height) is remembered per browser.
+function setSplit(share) {
+  const v = Math.max(0.25, Math.min(0.85, share));
+  $('side').style.setProperty('--share', v.toFixed(3));
+  return v;
+}
+setSplit(+(recall('sideSplit') || 0.66));
+$('side-split').onpointerdown = (e) => {
+  e.preventDefault();
+  const handle = e.currentTarget;
+  handle.setPointerCapture(e.pointerId);
+  const box = $('side').getBoundingClientRect();
+  let share = null;
+  handle.onpointermove = (m) => { share = setSplit((m.clientY - box.top) / box.height); };
+  handle.onpointerup = () => {
+    handle.onpointermove = handle.onpointerup = null;
+    if (share != null) store('sideSplit', share.toFixed(3));
+  };
+};
+$('side-split').ondblclick = () => store('sideSplit', setSplit(0.66).toFixed(3));
+// Side nav: ‹ folds it to an icon rail (remembered per browser). ≤ 1360 px it's a rail anyway (CSS), and ≤ 760 px
+// a top bar, so the button only shows where the choice exists.
 function setNavCollapsed(on) {
   document.body.classList.toggle('nav-collapsed', on);
-  $('nav-collapse').textContent = on ? '›' : '‹';
-  $('nav-collapse').title = on ? 'Show the menu' : 'Hide the menu';
+  $('nav-collapse').dataset.tip = on ? 'Expand the menu' : 'Collapse the menu';
   store('navCollapsed', on ? '1' : '0');
   requestAnimationFrame(() => { document.body.dispatchEvent(new Event('chessground.resize')); cg.redrawAll(); });
 }
 $('nav-collapse').onclick = () => setNavCollapsed(!document.body.classList.contains('nav-collapsed'));
 if (recall('navCollapsed') === '1') setNavCollapsed(true);
-// as a top bar the nav wraps to 1-3 rows; the board's height budget reads its real height (0 as a side nav)
+// as a top bar (≤ 760 px) the nav takes height from the board's budget: CSS reads it as --head-h
+const navTop = matchMedia('(max-width: 760px)');
 new ResizeObserver(() => {
-  const h = navNarrow.matches ? Math.ceil($('side-nav').getBoundingClientRect().height) : 0;
+  const h = navTop.matches ? Math.ceil($('side-nav').getBoundingClientRect().height) : 0;
   document.documentElement.style.setProperty('--head-h', `${h}px`);
 }).observe($('side-nav'));
-// the rows above the board (game info, names, buttons) wrap too: the scoreboard lines up with the board's top
-// edge (user's call), so it reads their real height (CSS --board-top)
-const boardTop = () => document.documentElement.style.setProperty('--board-top',
-  `${Math.round($('board-wrap').getBoundingClientRect().top - document.querySelector('.board-col').getBoundingClientRect().top)}px`);
-const boardTopObs = new ResizeObserver(boardTop);
-boardTopObs.observe(document.querySelector('.board-head'));
-boardTopObs.observe(document.querySelector('.top-row'));
 $('btn-setup').onclick = openEditor;  // starts from the position on the board; Cancel returns to it
 $('study-go').onclick = startStudyFromDialog;
 $('study-q').oninput = (e) => { studyPick = null; $('study-go').disabled = true; searchStudies(e.target.value); };
