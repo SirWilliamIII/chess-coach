@@ -143,9 +143,6 @@ body.hide-score .tab-score, body.hide-chat .tab-chat { display: block; }
 /* explicit rows too: auto-placed panels next to explicitly placed ones can drop into an implicit row */
 .board-col { grid-column: 1; grid-row: 1; }
 .score-col { grid-column: 2; grid-row: 1; min-width: 0; }
-/* only as tall as its content now that the lists are compact; visible overflow so the Moves & engine
-   dropdown isn't clipped by the shorter panel */
-.panel.score-panel { height: auto; overflow: visible; }
 .chat-panel { grid-column: 3; grid-row: 1; }
 
 /* ---------- board ---------- */
@@ -358,7 +355,6 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .sb-rating { display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: #7aa7ff;
   text-transform: uppercase; letter-spacing: .05em; }
 .sb-rating select { background: transparent; color: #e8e6e1; border: 1px solid var(--line); border-radius: 4px; font-size: 12px; padding: 2px 1px; }
-.score-body { flex: 1; overflow-y: auto; padding-bottom: 12px; container-type: inline-size; }
 .feed-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px;
   font-weight: 700; border-bottom: 1px solid var(--line); flex: none; }
 .chat-log { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
@@ -772,49 +768,13 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 
 /* ---------- key numbers card above the chat (renderKeyCard) ---------- */
 .key-card { flex: none; margin: 10px 14px 0; padding: 9px 12px; border-radius: 10px; background: #363431; border-left: 3px solid var(--accent); }
-/* in the scoreboard column the column is the frame: no card chrome, tighter spacing */
-.score-body .key-card { margin: 22px 14px 12px; padding: 0; background: none; border: 0; border-radius: 0; }
-.score-body .sb-lists { margin-top: 6px; gap: 10px; }
 .key-card.collapsed .card-caret { transform: rotate(-90deg); }
 .key-card.collapsed .card-body { display: none; }
 .key-card .card-k { min-width: 74px; }
 .kc-moves { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
 .kc-pct { color: var(--muted); font-size: 12px; }
 .key-card .card-head .card-sub { flex: 0 1 auto; margin-left: auto; font-size: 12px; }
-/* scoreboard lists: white text, bars one neutral colour; red/green only on the extremes (.bad / .great). Alerts keep the tiers */
-.sb-lists { display: grid; grid-template-columns: 1fr; gap: 12px; margin: 10px 0 6px; }
-.sb-lists.two { grid-template-columns: 1fr 1fr; gap: 8px; }
-.sb-list { background: #2a2826; border-radius: 8px; padding: 6px 8px 4px; border-top: 3px solid var(--sb-c); min-width: 0; }
-.sb-list.sf { --sb-c: #e8e6e1; }
-.sb-list.maia { --sb-c: #7aa7ff; }
-.sb-lh { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; padding-bottom: 4px; border-bottom: 1px solid var(--line); min-height: 22px; }
-.sb-who { font-size: 12px; font-weight: 800; color: var(--sb-c); text-transform: uppercase; letter-spacing: .05em; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
-.sb-row { display: grid; grid-template-columns: 42px 1fr 40px; align-items: center; gap: 6px; width: 100%;
-  background: none; border: 0; border-radius: 4px; padding: 2px 3px; color: #fff; font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; }
-.sb-row:hover { background: rgba(255,255,255,.06); }
-.sb-mv { font-weight: 700; }
-.sb-row.hot { background: rgba(255,255,255,.08); }
-.sb-rbar { height: 6px; background: #1e1d1b; border-radius: 4px; overflow: hidden; }
-.sb-rbar span { display: block; height: 100%; background: #b9b7b2; border-radius: 4px; transition: width .3s ease; }
-.sb-row .ev { font-weight: 700; font-size: 12px; text-align: right; }
-.sb-row .ev.w, .sb-row .ev.b { color: #fff; }
-.sb-row.bad .sb-mv, .sb-row.bad .ev { color: #ff5c5c; }
-.sb-row.great .sb-mv, .sb-row.great .ev { color: #7fd36a; }
 /* two sections: your last move's position, then now (your turn) */
-.sb-sec + .sb-sec { margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--line); }
-.sb-sec-h { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
-.sb-sec-h .card-sub { margin-left: auto; font-size: 11.5px; }
-.sb-sec-t { font-size: 17px; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; color: #fff; white-space: nowrap; }
-.sb-sec-mv { font-size: 13.5px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sb-after { font-size: 12px; color: var(--muted); white-space: nowrap; }
-.sb-cost { font-size: 12.5px; font-weight: 700; color: #fff; }
-.sb-cost.bad { color: #ff5c5c; }
-.sb-cost.great { color: #7fd36a; }
-.score-body .sb-sec .sb-lists { margin-top: 10px; margin-bottom: 0; }
-.sb-row.played { background: rgba(255,255,255,.1); box-shadow: inset 2px 0 0 #fff; }
-.sb-sep { border-top: 1px dashed var(--line); margin: 3px 0; }
-.sb-rt { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 0; }
-.sb-sec:not(.live) .sb-row { cursor: default; }
 
 .opening-tag { flex: none; margin: 10px 16px -4px; display: flex; gap: 8px; align-items: baseline; min-width: 0;
   font-size: 13px; color: #e8e6e1; font-weight: 600; }
@@ -823,12 +783,6 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .sb-alert.opening { background: linear-gradient(90deg, #5a4712, #3a3214); color: #fff3cf; font-weight: 700; border-left: 3px solid #c9a227; }
 .sb-alert.opening.fresh { animation: sb-in .35s ease-out, sb-gold 1.2s ease-in-out .35s 2; }
 @keyframes sb-gold { 50% { box-shadow: 0 0 0 4px rgba(201,162,39,.35); } }
-.win-strip { flex: none; margin: 10px 14px 0; padding: 0 2px; }
-.sb-win { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 0 0 2px; }
-.sb-w { color: #fff; font-weight: 700; white-space: nowrap; }
-.sb-b { color: var(--muted); font-weight: 700; white-space: nowrap; }
-.sb-bar { flex: 1; height: 8px; background: #1e1d1b; border-radius: 4px; overflow: hidden; }
-.sb-bar span { display: block; height: 100%; background: #e8e6e1; transition: width .4s ease; }
 .key-card .t1, .sb-msg .t1 { color: #e0a040; }
 .key-card .t2, .sb-msg .t2 { color: #ff7a5c; }
 .key-card .t3, .sb-msg .t3 { color: #ff4d4d; }
@@ -922,18 +876,6 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .eg-card .card-sub { display: block; margin-top: 4px; }
 .eg-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 
-/* scoreboard type (user's call): lighter than the heavy 700-900 weights, which read big and round;
-   fixed-width digits so the eval column lines up */
-.score-body { font-variant-numeric: tabular-nums; }
-.score-body .sb-sec-t { font-size: 13px; font-weight: 600; letter-spacing: .12em; color: #e8e6e1; }
-.score-body .sb-sec-mv { font-size: 13px; font-weight: 500; color: #d5d4d0; }
-.score-body .sb-cost { font-weight: 600; }
-.score-body .sb-who { font-size: 11px; font-weight: 600; letter-spacing: .1em; }
-.score-body .sb-rt { font-weight: 500; }
-.score-body .sb-row { font-size: 12.5px; }
-.score-body .sb-mv { font-weight: 500; }
-.score-body .sb-row .ev { font-weight: 500; }
-.score-body .sb-w, .score-body .sb-b { font-weight: 500; }
 .opening-tag { font-weight: 500; }
 .sb-rating { font-weight: 600; }
 
@@ -953,44 +895,76 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .score-top { display: flex; align-items: center; gap: 8px; margin: 12px 14px 0 16px; min-height: 18px; }
 .score-top { justify-content: flex-end; }
 
-/* scoreboard type, lighter again (user's call: still too thick) */
-.score-body .sb-row, .score-body .sb-mv, .score-body .sb-row .ev, .score-body .sb-w, .score-body .sb-b,
-.score-body .sb-sec-mv, .score-body .sb-rt, .opening-tag { font-weight: 400; }
-.score-body .sb-sec-t, .score-body .sb-who, .score-body .sb-cost { font-weight: 500; }
-.score-body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 @media (max-width: 760px) { #gp-details { left: auto; right: 0; top: 100%; margin-top: 2px; } }  /* one column: no room beside */
-.sb-row.ghost { cursor: default; opacity: .35; }
-.sb-row.ghost .sb-mv { color: var(--muted); }
-.sb-sec-h .card-sub.sb-wait { margin-left: 0; }
 .auto-coach { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; color: var(--muted); cursor: pointer; }
 .auto-coach input { margin: 0; }
 
-/* Stockfish over Maia in each section (user's call: side by side, two sections read as four scoreboards),
-   full-width rows, and a big gap between Best move and Previous move */
-.score-body .sb-lists.two { grid-template-columns: 1fr; gap: 8px; }
-.score-body .sb-row { grid-template-columns: 56px 1fr 52px; padding: 2px 6px; }
-.score-body .sb-sec + .sb-sec { margin-top: 40px; padding-top: 22px; }
-/* never taller than the board column: the lists scroll inside instead of pushing the page */
-.panel.score-panel { max-height: calc(var(--board-w) + 160px); overflow: hidden; }
-.score-panel .score-body { overflow-y: auto; min-height: 0; }
-.score-body .sb-row { padding: 1px 6px; line-height: 1.3; }
-.score-body .sb-list { padding: 4px 8px 3px; }
-.score-body .sb-lh { min-height: 18px; margin-bottom: 2px; padding-bottom: 3px; }
-.score-body .sb-sec + .sb-sec { margin-top: 32px; padding-top: 18px; }
 
-/* scoreboard head outside the panel: no side margins of its own beyond the panel's inner edge */
-.score-head .score-top { margin: 0 2px 0 4px; }
-.score-head .win-strip { margin: 0; padding: 0 4px; }
-/* same text rendering as inside the panel (it lived in .score-body before; heavier without it) */
-.score-head { font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-/* spacing (user's calls, 2026-10-05): 20 px under each section title, lists padded 5 px more, 13 px between
-   Stockfish and Maia; Best move and Previous move alike */
-.score-body .sb-sec .sb-lists { margin-top: 20px; }
-.score-body .sb-lists.two { gap: 13px; }
-.score-body .sb-list { padding: 9px 13px 8px; }
 /* the opening as the title, first in the row above the names (user's call, 2026-10-05) */
 .board-head .opening-tag { margin: 0; flex: 0 1 auto; font-size: 16px; font-weight: 500; color: var(--text);
   -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 .board-head .opening-tag .ot-eco { align-self: center; }
 /* in a loaded game the names line (☆ White vs Black · result) gives way first: the opening is the title */
 .board-head .game-info { flex: 0 4 auto; min-width: 90px; }
+
+/* ---------- scoreboard (renderKeyCard): one block, 2026-10-05 redesign after the panels.html mock-up ----------
+   Each section is its own card with room around the header, title and lists (user's call: the old panel had
+   no margins and read cluttered). Kept from earlier calls: Stockfish over Maia, weights 400/500, plain text
+   with red/green only on the extremes, one neutral bar colour, evals from the side to move's view. */
+.score-col { --sb-inset: #1f1e1c; --sb-track: #3a3834; }
+.panel.score-panel { background: none; height: auto; min-height: 0; max-height: calc(var(--board-w) + 160px); overflow: hidden; }
+.score-body { flex: 1; min-height: 0; overflow-y: auto; container-type: inline-size; font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+#key-card.key-card { margin: 0; padding: 0; background: none; border: 0; border-radius: 0; display: flex; flex-direction: column; gap: 10px; }
+.sb-sec { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 12px 8px; }
+/* eyebrow line: section name, whose view, depth pill */
+.sb-sec-h { display: flex; align-items: center; gap: 8px; min-height: 20px; min-width: 0; }
+.sb-sec-t { font-size: 11px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.sb-sec-h > :nth-child(2) { margin-left: auto; }
+.sb-pov { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.sb-depth { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 1px 8px; white-space: nowrap; }
+/* title line: the move, then its cost / Maia rank / the reply in between */
+.sb-sec-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin: 4px 0 8px; min-width: 0; }
+.sb-sec-mv { font-size: 16px; font-weight: 500; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-after, .sb-wait, .sb-mrank { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.sb-cost { font-size: 13px; font-weight: 500; color: var(--text); }
+.sb-cost.bad { color: #ff5c5c; }
+.sb-cost.great { color: #7fd36a; }
+/* the two lists: inset boxes, a coloured dot instead of the old top border */
+.sb-lists { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.sb-list { background: var(--sb-inset); border-radius: 10px; padding: 8px 6px 6px; min-width: 0; }
+.sb-list.sf { --sb-c: #d9d6cf; }
+.sb-list.maia { --sb-c: #7aa7ff; }
+.sb-lh { display: flex; align-items: center; margin: 0 4px 4px; min-height: 16px; }
+.sb-who { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 500; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--muted); }
+.sb-who::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--sb-c); }
+.sb-rt { margin-left: auto; font-size: 11px; font-weight: 400; letter-spacing: 0; color: #7aa7ff; }
+.sb-row { display: grid; grid-template-columns: 48px 1fr 44px; align-items: center; gap: 8px; width: 100%; padding: 2px 4px;
+  background: none; border: 0; border-radius: 6px; color: var(--text); font: inherit; font-size: 12.5px; line-height: 1.3;
+  text-align: left; cursor: pointer; }
+.sb-row:hover { background: rgba(255,255,255,.06); }
+.sb-row.hot { background: rgba(255,255,255,.08); }
+.sb-mv { font-weight: 400; }
+.sb-rbar { height: 6px; background: var(--sb-track); border-radius: 99px; overflow: hidden; }
+.sb-rbar span { display: block; height: 100%; background: #b9b7b2; border-radius: 99px; transition: width .3s ease; }
+.sb-row .ev { font-size: 12px; font-weight: 400; text-align: right; }
+.sb-row .ev.w, .sb-row .ev.b { color: var(--text); }
+.sb-row.bad .sb-mv, .sb-row.bad .ev { color: #ff5c5c; }
+.sb-row.great .sb-mv, .sb-row.great .ev { color: #7fd36a; }
+/* your move: a whole-row outline (≈3:1 against the inset, unlike the old 2 px bar) */
+.sb-row.played { background: rgba(255,255,255,.05); box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); }
+.sb-sep { border-top: 1px dashed var(--line); margin: 4px; }
+.sb-sec:not(.live) .sb-row { cursor: default; }
+.sb-row.ghost { cursor: default; opacity: .35; }
+.sb-row.ghost .sb-mv { color: var(--muted); }
+/* the head above the panel: win strip inset to the cards' inner edge, labels with room around the bar */
+.score-head { font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+.score-head .score-top { margin: 0 2px 0 4px; }
+.win-strip { flex: none; margin: 0; padding: 0 13px; }
+.sb-win { display: flex; align-items: center; gap: 12px; font-size: 12.5px; }
+.sb-w { color: var(--text); font-weight: 400; white-space: nowrap; }
+.sb-b { color: var(--muted); font-weight: 400; white-space: nowrap; }
+.sb-bar { flex: 1; height: 6px; background: #1a1917; border-radius: 99px; overflow: hidden; }
+.sb-bar span { display: block; height: 100%; background: #e8e6e1; border-radius: 99px; transition: width .4s ease; }
+@media (max-width: 760px) { .score-head { margin-bottom: 10px; } }  /* one column: the head isn't sized to the board's top */

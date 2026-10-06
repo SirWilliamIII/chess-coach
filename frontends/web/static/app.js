@@ -919,6 +919,7 @@ function sbShowMove(uci) {
 }
 
 let sbHovering = false;  // the arrow on the board came from hovering a row (not an alert's click)
+let sbClicked = false;  // a row was clicked and the pointer hasn't moved since
 
 function sbHideMove() {
   sbHovering = false;
@@ -1061,12 +1062,18 @@ function sbLists(fen, { live, played }) {
   return lists.length ? `<div class="sb-lists${lists.length > 1 ? ' two' : ''}">${lists.join('')}</div>` : '';
 }
 
+// The lists' evals are the side to move's view, and the two sections can have different sides to move, so
+// each says whose view it is (otherwise 7.18 above and -7.32 below reads as a swing)
+function sbPov(turn) {
+  return state.engineOn ? `<span class="sb-pov" title="Evals are from this side's point of view: positive is good for them">${turn === 'w' ? 'White' : 'Black'}'s view</span>` : '';
+}
+
 function sbStatus(fen) {
   if (!state.engineOn) return '';
   const sb = sbGet(fen);
   if (sb?.over) return '';
-  if (sb) return `<span class="card-sub" title="Stockfish search depth">d${sb.depth}</span>`;
-  return sbError ? `<span class="card-sub" title="${esc(sbError)}">search failed</span>` : '<span class="card-sub">analysing…</span>';
+  if (sb) return `<span class="sb-depth" title="Stockfish search depth">d${sb.depth}</span>`;
+  return sbError ? `<span class="sb-depth" title="${esc(sbError)}">search failed</span>` : '<span class="sb-depth">analysing…</span>';
 }
 
 // A banner for the k-th move (1-based) when the moment calls for one: a big loss, Stockfish's top move that
@@ -1137,23 +1144,29 @@ function renderKeyCard() {
     const side = turn === 'w' ? 'White' : 'Black';
     const who = !u ? `${side} to move` : turn === u ? 'your move' : `${side} (opponent) to move`;
     const reply = u && turn === u && n && n !== k ? `<span class="sb-after">after ${esc(L.plays[n - 1].label)}</span>` : '';  // their move between
-    secs.push(`<div class="sb-sec live"><div class="sb-sec-h"><span class="sb-sec-t">Best move</span><b class="sb-sec-mv">${num}${turn === 'w' ? '.' : '...'} ${who}</b>`
-      + `${reply}${sbStatus(fen)}</div>${sbLists(fen, { live: true })}</div>`);
+    secs.push(`<div class="sb-sec live"><div class="sb-sec-h"><span class="sb-sec-t">Best move</span>${sbPov(turn)}${sbStatus(fen)}</div>`
+      + `<div class="sb-sec-title"><b class="sb-sec-mv">${num}${turn === 'w' ? '.' : '...'} ${who}</b>${reply}</div>${sbLists(fen, { live: true })}</div>`);
   } else if (!currentGame().isGameOver()) {
     // the bot (or the replayed game) is about to answer: same-size placeholder instead of a gap
     const ghost = '<div class="sb-row ghost"><b class="sb-mv">·</b><span class="sb-rbar"></span><span></span></div>'.repeat(5);
     const lists = ['sf', maiaOn() ? 'maia' : null].filter(Boolean).map((c) => `<div class="sb-list ${c}"><div class="sb-lh"><span class="sb-who">${c === 'sf' ? 'Stockfish' : 'Maia'}</span></div>${ghost}</div>`);
-    secs.push(`<div class="sb-sec"><div class="sb-sec-h"><span class="sb-sec-t">Best move</span><span class="card-sub sb-wait">${state.play ? 'Bot is thinking…' : 'Opponent to move…'}</span></div>`
-      + `<div class="sb-lists${lists.length > 1 ? ' two' : ''}">${lists.join('')}</div></div>`);
+    secs.push(`<div class="sb-sec"><div class="sb-sec-h"><span class="sb-sec-t">Best move</span></div>`
+      + `<div class="sb-sec-title"><span class="sb-wait">${state.play ? 'Bot is thinking…' : 'Opponent to move…'}</span></div><div class="sb-lists${lists.length > 1 ? ' two' : ''}">${lists.join('')}</div></div>`);
   }
   if (k) {
     const p = L.plays[k - 1];
     const d = sbDrop(L, k);
-    const best = sbGet(L.fens[k - 1])?.sf?.[0]?.uci === p.uci;
+    const before = sbGet(L.fens[k - 1]);
+    const best = before?.sf?.[0]?.uci === p.uci;
+    // where your move sat among Maia's picks at your rating (the useful fact from the mock-up's result block)
+    const mr = maiaOn() && before?.humans ? before.humans.findIndex((m) => m.uci === p.uci) + 1 : 0;
     const cost = d == null ? '' : best ? '<span class="sb-cost great" title="Stockfish\'s top move">best</span>'
       : `<span class="sb-cost${d >= 30 ? ' bad' : ''}" title="Win chance this move cost">${d < 1 ? '<1' : `−${Math.round(d)}`}%</span>`;
     secs.push(`<div class="sb-sec"><div class="sb-sec-h"><span class="sb-sec-t" title="${u ? 'Your last move, in the position you played it' : 'The last move, in the position it was played'}">Previous move</span>`
-      + `<b class="sb-sec-mv">${esc(p.label)}</b>${cost}${sbStatus(L.fens[k - 1])}</div>${sbLists(L.fens[k - 1], { live: false, played: p.uci })}</div>`);
+      + `${sbPov(L.fens[k - 1].split(' ')[1])}${sbStatus(L.fens[k - 1])}</div>`
+      + `<div class="sb-sec-title"><b class="sb-sec-mv">${esc(p.label)}</b>${cost}`
+      + `${mr ? `<span class="sb-mrank" title="Maia's rank for this move at this rating">Maia #${mr}</span>` : ''}</div>`
+      + `${sbLists(L.fens[k - 1], { live: false, played: p.uci })}</div>`);
   }
 
   // banners: your move, then the opponent's reply, then the next-move alert for your turn
@@ -1202,11 +1215,13 @@ function renderKeyCard() {
       const twins = () => sec.querySelectorAll(`.sb-row[data-uci="${el.dataset.uci}"]`);
       el.onmouseenter = () => { twins().forEach((t) => t.classList.add('hot')); if (live) { sbShowMove(el.dataset.uci); sbHovering = true; } };
       el.onmouseleave = () => { twins().forEach((t) => t.classList.remove('hot')); if (live) sbHideMove(); };
-      if (live) el.onclick = () => playMaiaMove(el.dataset.uci);
+      if (live) el.onclick = () => { sbClicked = true; sbHideMove(); playMaiaMove(el.dataset.uci); };
     });
   });
-  // a re-render under the pointer (the deep numbers landing) replaces the hovered row without a mouseleave
-  const hovered = box.querySelector('.sb-row:not(.ghost):hover');
+  box.onpointermove = () => { sbClicked = false; };
+  // a re-render under the pointer (the deep numbers landing) replaces the hovered row without a mouseleave;
+  // not after a click, where the row now under the pointer is the next position's (read as the bot's move)
+  const hovered = sbClicked ? null : box.querySelector('.sb-row:not(.ghost):hover');
   if (hovered) hovered.onmouseenter();
   if (!hovered?.closest('.live') && sbHovering) sbHideMove();
 }

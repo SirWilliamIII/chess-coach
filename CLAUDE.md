@@ -346,9 +346,16 @@ file says what is true now. Last full cleanup: 2026-10-03.
   searches one after the other (the server's latest-wins would drop the first). An opponent's move's cost
   comes from your move's row before it and your position after (`sbDrop()`).
 - Each section: two competing ranked lists (`sbLists()`; Stockfish white accent, Maia blue), **stacked** Stockfish over
-  Maia with full-width rows and a 32 px gap between the sections (user's call: side by side read as four
-  scoreboards); 20 px under each section title, 13 px between the two lists. The panel is capped at the board
-  column's height and scrolls inside. Text is weight 400/500 with antialiased smoothing, `.score-head` included
+  Maia with full-width rows (user's call: side by side read as four scoreboards). **Card layout (2026-10-05,
+  from the user's `/Users/will/panels.html` mock-up; user's call: the old panel had no margins and read
+  cluttered):** each section is its own card (`.sb-sec`, 10 px apart) with an eyebrow line (name, "White's
+  view"/"Black's view" via `sbPov()`, since the two sections' evals can be from different sides, and a depth
+  pill), then a title line (the move, its cost, "Maia #N" for your move); each list is an inset box with a
+  coloured dot. The mock-up's eval-scaled/red diverging bars and its "Move result" block were deliberately
+  not taken. All scoreboard CSS is one block at the end of `style.css`. Fits without scrolling at 1300×900;
+  at 1440×900 the board is width-bound (510 px) and the panel scrolls (~125 px). The panel is capped at the
+  board column's height and scrolls inside. A row click suppresses the re-hover arrow until the pointer moves
+  (`sbClicked`), so the next position's top move isn't drawn under a still cursor. Text is weight 400/500 with antialiased smoothing, `.score-head` included
   (user's call: heavier weights read thick and round). Stockfish's top 5:
   bar = mover's win chance. Maia's top 5 at your rating: bar = play % scaled to the favourite (exact % on hover).
   **Plain white text, one bar colour** (user's call): red only for a move losing ≥ 30 % (`.bad`), green only
@@ -514,7 +521,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 ### Scoreboard redesign (next focus, user's call 2026-10-05)
 
-- Scope not set yet: start by asking what the redesign should change. Open items that belong to it: the alert
+- Done: the card layout (2026-10-05, see "Scoreboard"). Rest of the scope not set yet: ask what else should change. Open items that belong to it: the alert
   thresholds (all first guesses; `POPULAR_PCT` 5 is the first knob, alerts fired on 6 of 14 positions in one
   test), the "Last play" alert repeating `noteMove()`'s card on loaded games, the opening quip repeating the
   opening banner in bot games, and whether the win strip should show Stockfish's WDL instead of the Lichess
