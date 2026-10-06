@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 import chess
 
 from core.engine import MATE_CP, win_percent
+from core.maia import RATINGS
 
 SF_LINES = 5        # Stockfish moves shown
 HUMAN_SHOWN = 5     # Maia moves shown
@@ -26,10 +27,11 @@ MAX_SECONDS = 3.0
 # depth 10 took 0.4-1.2 s, depth 12 1.1-9.8 s (the mating position blew up). The cap keeps a bad case short.
 FULL_DEPTH = 10
 FULL_SECONDS = 1.5
-# The rating track: Maia's picks from beginner to GM, opponent at the same rating. 0.25 s for all 11 once
-# Maia is warm (measured 2026-10-06).
-LADDER = range(600, 2700, 200)
-LADDER_SHOWN = 5  # moves kept per rating (enough to read how typical any likely move is at each level)
+# Maia's picks at every rating the picker offers (opponent at the same rating), so the frontend can switch
+# rating with no new search: the players' list, the popularity bars and the rating track all read this.
+# 11 ratings took 0.25 s once Maia was warm (measured 2026-10-06); these 21 run beside the engine searches.
+LADDER = RATINGS
+LADDER_SHOWN = 10  # moves kept per rating: the players' list shows 5, the bars need a few more
 
 # Win-chance swings in percentage points, the mover's view. HUGE is the review's "blunder" line.
 NOTABLE, BIG, HUGE = 5, 15, 30
@@ -77,8 +79,6 @@ def build(sf_engine, human_engine, maia, board: chess.Board, rating: int, opp_ra
     if board.is_game_over():
         return {"over": True}
     humans = maia.moves(board, rating, opp_rating, top=max(HUMAN_SCORED, HUMAN_SHOWN)) if maia else []
-    ladder = [{"rating": r, "moves": [{k: m[k] for k in ("move", "uci", "pct")} for m in maia.moves(board, r, r, top=LADDER_SHOWN)]}
-              for r in LADDER] if maia else []
     pick = [m for i, m in enumerate(humans) if i < HUMAN_SHOWN or m["pct"] >= MIN_SCORED_PCT][:HUMAN_SCORED]
     roots = [chess.Move.from_uci(m["uci"]) for m in pick]
     for u in include:
@@ -95,14 +95,19 @@ def build(sf_engine, human_engine, maia, board: chess.Board, rating: int, opp_ra
         full = human_engine.lines(board, multipv=board.legal_moves.count(), seconds=FULL_SECONDS, depth=FULL_DEPTH)
         return scored, full
 
-    with ThreadPoolExecutor(1) as pool:
+    def ladder():
+        return [{"rating": r, "moves": [{k: m[k] for k in ("move", "uci", "pct")} for m in maia.moves(board, r, r, top=LADDER_SHOWN)]}
+                for r in LADDER] if maia else []
+
+    with ThreadPoolExecutor(2) as pool:
         job = pool.submit(second)
+        lad = pool.submit(ladder)
         sf = sf_engine.lines(board, multipv=SF_LINES, seconds=MAX_SECONDS, depth=DEPTH)
         scored, full = job.result()
     if not sf:
         raise RuntimeError("Stockfish returned no lines")
     out = summarize(board.turn, sf, humans, scored, rating, include, full)
-    out["ladder"] = ladder
+    out["ladder"] = lad.result()
     return out
 
 

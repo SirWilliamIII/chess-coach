@@ -950,6 +950,10 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .sb-cols { height: 22px; font-size: 10.5px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
 .sb-cols span:nth-child(3) { text-align: right; }
 .sb-cols span:nth-child(4) { letter-spacing: .06em; text-transform: none; font-size: 11px; }
+/* the list's name sits in the move column's header; the players' list gets Maia's blue there */
+.sb-cols span:nth-child(2) { white-space: nowrap; overflow: visible; }
+.sb-table + .sb-table { margin-top: 14px; }
+.sb-table.maia .sb-cols span:nth-child(2) { color: var(--maia); }
 .sb-row { height: 27px; width: 100%; background: none; border: 0; border-radius: 8px; color: var(--text); font: inherit;
   font-size: 13px; text-align: left; cursor: pointer; transition: background .12s; }
 .sb-row:hover, .sb-row.hot { background: var(--hover-2); }

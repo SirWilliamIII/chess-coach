@@ -775,7 +775,7 @@ function renderMaia() {
 // candidates at once; the deeper /api/scoreboard search (a few seconds) brings the full ranking and the track.
 
 const SB_GOOD = 5;  // win % lost: still a good move, a move that "holds" (core/scoreboard.py GOOD)
-const sbCache = new Map();  // fen|ratings → scoreboard, so stepping back is instant and your last move can read its parent
+const sbCache = new Map();  // fen → scoreboard, so stepping back is instant and your last move can read its parent
 let sbToken = 0;
 let sbTimer = null;
 let sbError = null;
@@ -795,8 +795,17 @@ function sbRatings(fen) {
   return white ? [r('maia-white'), r('maia-black')] : [r('maia-black'), r('maia-white')];
 }
 
+// A search for this position at any rating will do: it carries Maia's picks at every rating (`ladder`), so
+// changing the players' rating redraws at once with no new search (sbPcts() reads the chosen one).
 function sbGet(fen) {
-  return sbCache.get(`${fen}|${sbRatings(fen).join('|')}`);
+  return sbCache.get(fen);
+}
+
+// uci → % of players at `rating` who pick it (Maia, from the search's ladder; moves past its top 10 → 0)
+function sbPcts(sb, rating) {
+  const lad = sb?.ladder || [];
+  const l = lad.reduce((a, b) => (Math.abs(b.rating - rating) < Math.abs(a.rating - rating) ? b : a), lad[0]);
+  return new Map((l?.moves || []).map((m) => [m.uci, m.pct]));
 }
 
 // Whose moves the scoreboard is about: yours in a bot game or a replay, the player's in a loaded game; null
@@ -855,7 +864,7 @@ function requestScoreboard(c) {
         });
         if (data.stale) return;  // a newer position's request superseded this one on the server
         data.included = j.include;
-        sbCache.set(`${fen}|${rating}|${opp}`, data);
+        sbCache.set(fen, data);
         if (sbCache.size > 500) sbCache.delete(sbCache.keys().next().value);
       } catch (e) {
         if (token === sbToken) sbError = e.message;
@@ -953,18 +962,19 @@ function sbQuick(fen, turn) {
 
 // Every legal move on one strip, best to worst. Colour: what it costs (the tiers); height: how often players
 // at the chosen rating pick it, so a tall red tick is the trap people fall into. `played` gets a marker.
-function sbSpectrum(sb, played) {
-  const top = Math.max(1, ...sb.all.map((r) => r.pct || 0));
-  const ticks = sb.all.map((r) => `<i class="t${r.tier}${r.uci === played ? ' me' : ''}" data-uci="${esc(r.uci)}" `
-    + `style="--h:${(0.2 + 0.8 * Math.sqrt((r.pct || 0) / top)).toFixed(3)}"></i>`).join('');
+function sbSpectrum(sb, pcts) {
+  const top = Math.max(1, ...pcts.values());
+  const ticks = sb.all.map((r) => `<i class="t${r.tier}" data-uci="${esc(r.uci)}" `
+    + `style="--h:${(0.2 + 0.8 * Math.sqrt((pcts.get(r.uci) || 0) / top)).toFixed(3)}"></i>`).join('');
   return `<div class="sb-ticks" title="Every legal move, best (left) to worst (right). Colour: what it costs; height: how often players at this rating pick it">${ticks}</div>`;
 }
 
-// Stockfish's top 5 plus the moves players at your rating actually choose (≥ 5%), in Stockfish's order
-function sbCandidates(rows, turn, bestEval, rating, played) {
+// One list of moves, the same columns for both lists so they compare row for row: Stockfish's rank, the move,
+// what it costs against the best, and how often players at the chosen rating play it. `title` heads the list.
+function sbCandidates(rows, turn, bestEval, rating, title = 'Best moves', cls = 'sf') {
   const top = Math.max(1, ...rows.map((r) => r.pct || 0));
-  return `<div class="sb-table"><div class="sb-cols"><span>#</span><span>Move</span><span>vs best</span><span>~${rating} play it</span></div>${
-    rows.map((r) => `<button class="sb-row t${r.tier}${r.rank === 1 ? ' best' : ''}${r.uci === played ? ' me' : ''}" data-uci="${esc(r.uci)}">`
+  return `<div class="sb-table ${cls}"><div class="sb-cols"><span>#</span><span>${title}</span><span>vs best</span><span>~${rating} play it</span></div>${
+    rows.map((r) => `<button class="sb-row t${r.tier}${r.rank === 1 ? ' best' : ''}" data-uci="${esc(r.uci)}">`
       + `<span class="sb-rank">${r.rank ?? '·'}</span><b class="sb-mv">${esc(r.move)}</b><span class="sb-cost">${sbCost(r, turn, bestEval)}</span>`
       + `<span class="sb-pop"><span class="sb-pbar"><span style="width:${r.pct ? Math.max(3, 100 * r.pct / top) : 0}%"></span></span>`
       + `<span class="sb-pct">${r.pct != null ? `${sbFmt(r.pct)}%` : '–'}</span></span></button>`).join('')}</div>`;
@@ -1017,21 +1027,28 @@ function sbBefore(L, now, u) {
     const q = sbQuick(fen, turn);
     return `<section class="sb-card live">${eyebrow(busy)}<div class="sb-head"><b class="skel-text">Ranking every move…</b><span class="sb-tip" data-idle=""></span></div>`
       + `<div class="sb-ticks skel"></div>`
-      + (q ? sbCandidates(q.rows.slice(0, 6), turn, q.best, rating) : `<div class="sb-table">${'<div class="sb-row skel"><span></span></div>'.repeat(5)}</div>`)
+      + (q ? sbCandidates(q.rows.filter((r) => r.rank).slice(0, 5), turn, q.best, rating) : `<div class="sb-table">${'<div class="sb-row skel"><span></span></div>'.repeat(5)}</div>`)
       + `</section>`;
   }
+  // "safe" = costs under SB_GOOD % win chance against the best move (the tiers' first step)
   const n = sb.all.length;
-  const hold = sb.all.filter((r) => r.drop < SB_GOOD).length;
-  const head = hold <= 1 ? '<b class="g3">Only one move holds</b>'
-    : hold === n ? `<b>Any move holds</b>` : `<b>${hold} of ${n} moves hold</b>`;
-  const rows = sb.all.filter((r) => r.rank <= 5 || (r.pct ?? 0) >= SB_GOOD).slice(0, 6);
+  const safe = sb.all.filter((r) => r.drop < SB_GOOD).length;
+  const head = safe <= 1 ? '<b class="g3">Only one safe move</b>'
+    : safe === n ? '<b>Every move is safe</b>' : `<b>${safe} of ${n} moves are safe</b>`;
+  const pcts = sbPcts(sb, rating);
+  const withPct = (r) => ({ ...r, pct: pcts.get(r.uci) ?? null });
   const engine = sb.all[0];
-  // what each rating plays first (the user's first question), then how good the candidates are
+  // two lists (user's call): the absolute one (Stockfish's top 5, the same at any rating), then what players
+  // at the chosen rating actually play, ranked by popularity and scored on the same columns
+  const best = sb.all.slice(0, 5).map(withPct);
+  const players = [...pcts.keys()].map((u) => sb.all.find((r) => r.uci === u)).filter(Boolean).map(withPct)
+    .sort((a, b) => b.pct - a.pct).slice(0, 5);
   return `<section class="sb-card live">${eyebrow(busy)}<div class="sb-head">${head}`
-    + `<span class="sb-tip" data-idle="within ${SB_GOOD}% of the best" title="A move holds when it costs under ${SB_GOOD}% win chance against the best">within ${SB_GOOD}% of the best</span></div>`
-    + sbSpectrum(sb)
-    + (sb.ladder?.length ? `<div class="sb-sub-h"><span>Who plays what</span><span class="sb-engine" data-uci="${esc(engine.uci)}">Engine <b>${esc(engine.move)}</b></span></div>${sbTrack(sb, rating)}` : '')
-    + sbCandidates(rows, turn, engine.eval_white, rating)
+    + `<span class="sb-tip" data-idle="lose &lt; ${SB_GOOD}%" title="A safe move costs under ${SB_GOOD}% win chance compared with the best move">lose &lt; ${SB_GOOD}%</span></div>`
+    + sbSpectrum(sb, pcts)
+    + sbCandidates(best, turn, engine.eval_white, rating, 'Stockfish', 'sf')
+    + (players.length ? sbCandidates(players, turn, engine.eval_white, rating, `~${rating} players`, 'maia') : '')
+    + (sb.ladder?.length ? `<div class="sb-sub-h"><span>Top pick by rating</span><span class="sb-engine" data-uci="${esc(engine.uci)}">Engine <b>${esc(engine.move)}</b></span></div>${sbTrack(sb, rating)}` : '')
     + `</section>`;
 }
 
@@ -1059,21 +1076,25 @@ function sbAfter(L, k, u) {
   const d = sbDrop(L, k) ?? row?.drop ?? 0;
   const [grade, g] = sbGrade(d, row?.rank);
   const best = sb.all[0];
-  const rank = !row ? '' : row.rank === 1 ? `top choice of ${n}` : `${ordinal(row.rank)} best of ${n}`;
+  const rank = !row || row.rank === 1 ? '' : `${ordinal(row.rank)} best of ${n} legal moves`;
   const cost = row && row.rank > 1 ? sbCost(row, turn, best.eval_white) : '';
   const costTxt = cost.startsWith('−') ? `${cost} pawns` : cost;
   // the rating whose players pick this move most often (Maia, 600-2600): a rough "level" of the move
   const peak = (sb.ladder || []).map((l) => ({ r: l.rating, pct: l.moves.find((m) => m.uci === p.uci)?.pct || 0 }))
     .reduce((a, b) => (b.pct > a.pct ? b : a), { pct: 0 });
-  const pop = (sb.humans || [])[0];
+  const rating = sbRatings(fen)[0];
+  const pcts = sbPcts(sb, rating);
+  const popUci = [...pcts.keys()][0];
+  const pop = popUci && sb.all.find((r) => r.uci === popUci);
   const facts = [
-    row?.rank !== 1 ? `<span data-uci="${esc(best.uci)}">Best <b>${esc(best.move)}</b></span>` : '',
-    pop && pop.uci !== p.uci ? `<span data-uci="${esc(pop.uci)}">~${sbRatings(fen)[0]}s play <b>${esc(pop.move)}</b></span>` : '',
-    peak.pct >= 3 ? `<span title="The rating at which Maia most often picks this move (600-2600)">Typical at <b>~${peak.r}</b></span>` : '',
+    row?.rank !== 1 ? `<span data-uci="${esc(best.uci)}">Best was <b>${esc(best.move)}</b></span>` : '',
+    pop && pop.uci !== p.uci ? `<span data-uci="${esc(pop.uci)}">Most ~${rating} players play <b>${esc(pop.move)}</b></span>` : '',
+    peak.pct >= 3 ? `<span title="Of all ratings from 600 to 2600, players at this one pick your move most often (Maia)">Most popular with <b>~${peak.r}</b> players</span>` : '',
   ].filter(Boolean).join('');
   const ticks = sb.all.map((r) => `<i class="t${r.tier}${r.uci === p.uci ? ' me' : ''}" data-uci="${esc(r.uci)}"></i>`).join('');
+  // the best move needs no rank ("best move" says it); the others get their place among every legal move
   return `<section class="sb-card after ${g}"><div class="sb-eyebrow"><span>${label}</span><span class="sb-grade">${grade}</span></div>`
-    + `<div class="sb-v-line"><b class="sb-v-mv">${esc(p.san)}</b><span class="sb-v-rank">${rank}</span>`
+    + `<div class="sb-v-line"><b class="sb-v-mv">${esc(p.san)}</b>${rank ? `<span class="sb-v-rank">${rank}</span>` : ''}`
     + `${costTxt ? `<span class="sb-v-cost" title="${d >= 1 ? `${Math.round(d)}% win chance` : ''}">${costTxt}</span>` : ''}</div>`
     + `<div class="sb-rankbar">${ticks}</div>${facts ? `<div class="sb-facts">${facts}</div>` : ''}</section>`;
 }
@@ -1119,12 +1140,13 @@ function renderKeyCard() {
     const live = card.classList.contains('live');
     const tip = card.querySelector('.sb-tip');
     const sb = live ? sbGet(fen) : card.classList.contains('after') ? sbGet(L.fens[k - 1]) : null;
+    const pcts = sb && !sb.over ? sbPcts(sb, sbRatings(live ? fen : L.fens[k - 1])[0]) : new Map();
     card.querySelectorAll('[data-uci]').forEach((el) => {
       const uci = el.dataset.uci;
       el.onmouseenter = () => {
         const r = sbRow(sb, uci);
         if (!tip && r) el.title = `${r.move} · ${r.rank === 1 ? 'best' : `#${r.rank}`}`;
-        if (tip && r) tip.textContent = `${r.move} · ${r.rank === 1 ? 'best' : `#${r.rank}`}${r.pct ? ` · ${sbFmt(r.pct)}% play it` : ''}`;
+        if (tip && r) tip.textContent = `${r.move} · ${r.rank === 1 ? 'best' : `#${r.rank}`}${pcts.get(uci) ? ` · ${sbFmt(pcts.get(uci))}% play it` : ''}`;
         else if (tip && !r && !el.dataset.tip) tip.textContent = el.querySelector('.sb-mv')?.textContent || '';
         else if (tip && el.dataset.tip) tip.textContent = el.dataset.tip;
         card.querySelectorAll(`[data-uci="${uci}"]`).forEach((t) => t.classList.add('hot'));
@@ -1154,6 +1176,7 @@ function setupMaia(cfg) {
   const refresh = () => {
     requestMaia(state.editor ? null : currentGame());
     requestScoreboard(state.editor ? null : currentGame());
+    renderKeyCard();
   };
   for (const [id, key] of [['maia-white', 'maiaWhite'], ['maia-black', 'maiaBlack']]) {
     const saved = +(recall(key) || old);

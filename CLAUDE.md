@@ -338,15 +338,21 @@ file says what is true now. Last full cleanup: 2026-10-03.
   or "misses/allows mate"), graded by win % lost. The eval bar is the only absolute number on the page.
 - **After your move** (`sbAfter()`, on top): eyebrow "You played 9." + grade pill (Best move / Excellent < 2 /
   Good < 5 / Inaccuracy < 15 / Mistake < 30 / Blunder, `sbGrade()`; loaded games use the review's
-  `win_pct_lost`), the move, "16th best of 39" in the grade's colour, the cost in pawns, a flat strip of every
-  legal move with yours raised (`.sb-rankbar`), and facts: Best X, "~1500s play Y", "Typical at ~N" (the rating
-  whose Maia picks your move most often). Tinted with the grade's colour.
-- **Before your move** (`sbBefore()`): "N of M moves hold" (within `SB_GOOD` 5 % win chance; "Only one move
-  holds" in red), **the strip** (`sbSpectrum()`: every legal move best → worst, colour = tier, height = how
-  often players at the chosen rating pick it, so a tall red tick is a trap people fall into), **Who plays what**
-  (`sbTrack()`: Maia's favourite at 600, 800 … 2600 as runs along one track coloured by cost, your rating
-  marked, "Engine X" beside it), then **the candidates** (`sbCandidates()`: Stockfish's top 5 plus moves ≥ 5 %
-  popular, max 6, with rank, cost and a Maia-blue popularity bar). Hovering any move (row, tick, segment, the
+  `win_pct_lost`), the move, "9th best of 39 legal moves" in the grade's colour (nothing for the best move: the
+  pill says it), the cost in pawns, a flat strip of every legal move with yours raised (`.sb-rankbar`), and
+  facts: "Best was X", "Most ~1500 players play Y", "Most popular with ~N players" (the rating, of 600-2600,
+  whose Maia picks your move most often). Tinted with the grade's colour. Wording per the user (2026-10-06:
+  "top choice of 41", "Typical at ~2600" and "hold within 5%" were confusing).
+- **Before your move** (`sbBefore()`): "N of M moves are safe" (cost under `SB_GOOD` 5 % win chance; "Only one
+  safe move" in red), **the strip** (`sbSpectrum()`: every legal move best → worst, colour = tier, height = how
+  often players at the chosen rating pick it, so a tall red tick is a trap people fall into), then **two lists
+  on the same columns** (user's call: one absolute, one "the one you look at", adjustable on the fly):
+  **Stockfish** (its top 5, the same at any rating) and **~N players** (Maia's top 5 at the chosen rating,
+  by popularity), each row with Stockfish's rank, the cost vs the best and a Maia-blue popularity bar
+  (`sbCandidates()`). Then **Top pick by rating** (`sbTrack()`: Maia's favourite at 600 … 2600 as runs along
+  one track coloured by cost, your rating marked, "Engine X" beside it). **The rating switches instantly**
+  (measured 0.18 s, no request): the search carries Maia's top 10 at every picker rating (`ladder`),
+  `sbPcts()` reads the chosen one, and `sbCache` is keyed by FEN only. Hovering any move (row, tick, segment, the
   engine pill) draws its arrow and names it in the header (`.sb-tip`); clicking a row or tick plays it
   (`playMaiaMove()`). Quick numbers (`lastEval`/`lastMaia`, `sbQuick()`) fill the candidates at once; the strip
   and track wait for the deep search (skeletons). Eval off (bot game without it): only "What ~N play" (Maia).
@@ -358,11 +364,13 @@ file says what is true now. Last full cleanup: 2026-10-03.
   other, Maia's moves (`root_moves`) and then **every legal move** at `FULL_DEPTH` 10 / `FULL_SECONDS` 1.5
   (measured 2026-10-06, 33-41 legal moves: 0.4-1.2 s; depth 12 was 1.1-9.8 s). `ranking()` → `all`: the deep
   top 5 first, the rest by their deepest number, never better than #5, drops kept non-decreasing. `ladder`:
-  `maia.moves()` at `LADDER` 600-2600 step 200 (top 5 each, opponent at the same rating; 0.25 s warm). A
+  `maia.moves()` at every `maia.RATINGS` value (600-2600 step 100, top 10 each, opponent at the same rating),
+  in a thread beside the searches. A
   cold request was ~6 s once (Maia loading), ~4 s warm with a mate on the board. `sf`, `humans`, `extra`,
   `alerts`, `odds` are still returned; the frontend no longer shows `alerts`.
 - **Latest wins:** `SB_LOCK` + `SB_LATEST` return `{"stale": true}` for a request a newer one overtook. Cached
-  client-side (`sbCache`, fen + ratings) so stepping back is instant.
+  client-side (`sbCache`, by FEN) so stepping back is instant. The ladder's opponent is at the same rating,
+  unlike the old `humans` list (`opp_rating`); the frontend no longer reads `humans`.
 - **Opening name** (`requestOpening()`, `POST /api/opening_line`: every ECO-named position along the line):
   `#opening-tag`, the page's title (the chat banner was removed 2026-10-06) (first in `.board-head`, just above the name row; user's call,
   2026-10-05; `#board-sub` no longer repeats the review's opening, so a game the ECO table can't name shows
@@ -497,8 +505,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 ### Scoreboard (after the 2026-10-06 redesign)
 
-- Get the user's verdict from live use. Open: whether "Typical at ~N" (Maia's peak rating for a move) reads
-  as meant; whether the candidates should cap lower when the stacked panel is short; ranking quality of the
+- Get the user's verdict from live use. Open: whether the candidates should cap lower when the stacked panel is short; ranking quality of the
   depth-10 tail (moves past #5) not checked against a deep search. Not built: points/material, momentum graph,
   king danger, Stockfish's WDL.
 
