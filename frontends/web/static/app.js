@@ -535,11 +535,8 @@ function renderInfo() {
   if (state.study) return renderStudyInfo();
   if (!r.moves.length) {
     $('board-sub').textContent = '';
-    // visible toggle: the dashed-underline name labels alone don't read as clickable
-    $('summary').innerHTML = `<div class="me-pick"><span class="label">I'm playing</span><div class="seg">`
-      + ['white', 'black'].map((c) => `<button data-me="${c}" class="${r.player_color === c ? 'on' : ''}">${c === 'white' ? 'White' : 'Black'}</button>`).join('')
-      + '</div></div>';
-    $('summary').querySelectorAll('[data-me]').forEach((b) => { b.onclick = () => setYou(b.dataset.me); });
+    // no "I'm playing" toggle (removed 2026-10-07, user's call): the name labels (.you-pick) still pick your side
+    $('summary').innerHTML = '';
     return;
   }
   $('game-info').innerHTML = `<button class="fav-btn${r.favorite ? ' on' : ''}" id="fav-btn"
@@ -672,13 +669,23 @@ function requestEval(c) {
   }, 200);
 }
 
+// The bar shows the scoreboard's #1 eval for this position once that deep search (depth 16) is in, else the
+// quick one (0.6 s), so the bar and the scoreboard's top row agree (user's call, 2026-10-07). Called with the
+// quick result, or with nothing when the scoreboard lands (then it only acts if there's a deep number).
+function setEvalBar(quick) {
+  const sb = sbGet(currentGame()?.fen());
+  const deep = sb && !sb.over && sb.all?.[0]?.eval_white;
+  if (!deep && !quick) return;
+  const ev = deep || quick.eval;
+  const cp = deep ? (deep.startsWith('#') ? (deep.includes('-') ? -10000 : 10000) : Math.round(parseFloat(deep) * 100)) : quick.cp;
+  $('evalfill').style.height = `${winPct(Math.max(-1500, Math.min(1500, cp)))}%`;
+  $('evalbar').classList.toggle('flipped', state.orientation === 'black');
+  $('evalbar').classList.toggle('black-better', cp < 0);
+  $('evaltext').textContent = ev.replace('+', '');
+}
+
 function showEval(data) {
-  const bar = $('evalbar');
-  const pct = winPct(Math.max(-1500, Math.min(1500, data.cp)));
-  $('evalfill').style.height = `${pct}%`;
-  bar.classList.toggle('flipped', state.orientation === 'black');
-  bar.classList.toggle('black-better', data.cp < 0);
-  $('evaltext').textContent = data.eval.replace('+', '');
+  setEvalBar(data);
   if (!data.lines.length) {
     $('engine-lines').innerHTML = `<div class="eline">Game over</div>`;
     return;
@@ -715,13 +722,11 @@ function requestMaia(c) {
   $('maia-lines').innerHTML = '<div class="eline" style="color:var(--muted)">Thinking…</div>';
   const fen = c.fen();
   const line = currentLine();
-  // the side to move plays at its own rating, facing the other side's
-  const [mover, opp] = c.turn() === 'w' ? ['maia-white', 'maia-black'] : ['maia-black', 'maia-white'];
   maiaTimer = setTimeout(async () => {
     try {
       // the moves that led here matter: Maia reads the last few positions, not just this one
       const data = await api('/api/maia', {
-        fen, rating: +$(mover).value, opp_rating: +$(opp).value, start_fen: line.startFen, moves: line.sans.slice(0, line.at),
+        fen, rating: maiaRating(), opp_rating: maiaRating(), start_fen: line.startFen, moves: line.sans.slice(0, line.at),
       });
       if (token !== maiaToken) return;
       lastMaia = { fen, ...data };
@@ -788,11 +793,10 @@ function moverEval(e, turn) {
   return `${m[1]}${neg && !/^0(\.0+)?$/.test(m[3]) ? '-' : ''}${m[3]}`;
 }
 
-function sbRatings(fen) {
-  // the side to move plays at its own rating, facing the other side's (as in requestMaia)
-  const white = fen.split(' ')[1] === 'w';
-  const r = (id) => +$(id).value || 1500;
-  return white ? [r('maia-white'), r('maia-black')] : [r('maia-black'), r('maia-white')];
+// One rating for Maia, whichever side moves, facing the same rating (user's call, 2026-10-07): Stockfish's
+// list is the absolute one, Maia's is "the typical player" at this level
+function maiaRating() {
+  return +$('maia-rating').value || 800;
 }
 
 // A search for this position at any rating will do: it carries Maia's picks at every rating (`ladder`), so
@@ -858,10 +862,10 @@ function requestScoreboard(c) {
     for (const j of jobs) {
       if (token !== sbToken) return;
       const fen = L.fens[j.at];
-      const [rating, opp] = sbRatings(fen);
+      const rating = maiaRating();
       try {
         const data = await api('/api/scoreboard', {
-          fen, rating, opp_rating: opp, start_fen: line.startFen, moves: line.sans.slice(0, j.at), include: j.include,
+          fen, rating, opp_rating: rating, start_fen: line.startFen, moves: line.sans.slice(0, j.at), include: j.include,
         });
         if (data.stale) return;  // a newer position's request superseded this one on the server
         data.included = j.include;
@@ -870,7 +874,7 @@ function requestScoreboard(c) {
       } catch (e) {
         if (token === sbToken) sbError = e.message;
       }
-      if (token === sbToken) renderKeyCard();
+      if (token === sbToken) { renderKeyCard(); setEvalBar(); }
     }
   }, 250);
 }
@@ -886,7 +890,7 @@ function sbLine() {
     plays.push({ uci: m.from + m.to + (m.promotion || ''), san: m.san, num: `${c.moveNumber() - (m.color === 'b' ? 1 : 0)}${m.color === 'w' ? '.' : '...'}` });
     fens.push(c.fen());
   }
-  return { fens, plays, kind: line.kind };
+  return { fens, plays, kind: line.kind, sans: line.sans };
 }
 
 // Win % the k-th move (1-based) cost its player: the saved review for a loaded game's own moves, else the
@@ -929,14 +933,16 @@ function sbGrade(d, rank) {
   return d < SB_GOOD ? ['Good', 'g0'] : d < 15 ? ['Inaccuracy', 'g1'] : d < 30 ? ['Mistake', 'g2'] : ['Blunder', 'g3'];
 }
 
-// What a move costs, as text: pawns behind the best ("best", "−0.31"), or what it does to a mate
-function sbCost(r, turn, bestEval) {
-  if (r.rank === 1) return 'best';
-  if (r.cost != null) return r.cost < 0.005 ? '0.00' : `−${r.cost.toFixed(2)}`;
-  const ev = moverEval(r.eval_white, turn) || '';
-  if (ev.startsWith('#-')) return 'allows mate';
-  if (ev.startsWith('#')) return 'slower mate';
-  return (moverEval(bestEval, turn) || '').startsWith('#') ? 'misses mate' : '';
+// The eval after a move, from White's side like the eval bar ("+1.50", "−0.31", "#3", "#−2"; user's calls
+// 2026-10-07: evals after the move, not costs, and White's view, not the mover's, so consecutive cards read as
+// one game eval). Taken as the best move's eval minus the row's `cost` (in the mover's terms), not the row's own
+// eval: ranking() clamps costs so a shallow-searched move past #5 never reads better than #5, and its raw eval can.
+function sbEvalAfter(r, turn, bestEval) {
+  const fmt = (ev) => (/^[0-9]/.test(ev) && !/^0(\.0+)?$/.test(ev) ? `+${ev}` : ev.replace('-', '−'));
+  const own = (r.eval_white ?? bestEval ?? '').replace(/^\+/, '');
+  if (r.rank === 1 || r.cost == null || !bestEval || bestEval.startsWith('#')) return fmt(own);
+  const v = parseFloat(bestEval) - (turn === 'w' ? r.cost : -r.cost);
+  return fmt(Math.abs(v) < 0.005 ? '0.00' : v.toFixed(2));
 }
 
 // The quick candidates before the deep search lands: the eval's few lines and Maia's list, scored against the
@@ -961,13 +967,14 @@ function sbQuick(fen, turn) {
 }
 
 // One list of moves, the same columns for both lists so they compare row for row: Stockfish's rank, the move,
-// what it costs against the best, and how often players at the chosen rating play it. The header is only the
+// the eval after it, and how often players at the chosen rating play it. The header is only the
 // list's name (user's call, 2026-10-06: no column labels).
-function sbCandidates(rows, turn, bestEval, title = 'Bot moves', cls = 'sf') {
+function sbCandidates(rows, turn, bestEval, title = 'Top bot moves', cls = 'sf', busy = '') {
   const top = Math.max(1, ...rows.map((r) => r.pct || 0));
-  return `<div class="sb-table ${cls}"><div class="sb-cols"><span>${title}</span></div>${
+  return `<div class="sb-table ${cls}"><div class="sb-cols"><span>${title}${busy}</span></div>${
     rows.map((r) => `<button class="sb-row t${r.tier}${r.rank === 1 ? ' best' : ''}" data-uci="${esc(r.uci)}">`
-      + `<span class="sb-rank">${r.rank ?? '·'}</span><b class="sb-mv">${esc(r.move)}</b><span class="sb-cost">${sbCost(r, turn, bestEval)}</span>`
+      + `<span class="sb-rank">${r.rank ?? '·'}</span><b class="sb-mv">${esc(r.move)}</b>`
+      + `<span class="sb-cost">${sbEvalAfter(r, turn, bestEval)}</span>`
       + `<span class="sb-pop"><span class="sb-pbar"><span style="width:${r.pct ? Math.max(3, 100 * r.pct / top) : 0}%"></span></span></span></button>`).join('')}</div>`;
 }
 
@@ -987,7 +994,7 @@ function sbTrack(sb, rating) {
   const at = (r) => slot * (0.5 + (Math.max(lo, Math.min(hi, r)) - lo) / (hi - lo) * (lad.length - 1));
   const mid = lad[Math.floor(lad.length / 2)].rating;
   return `<div class="sb-track"><div class="sb-you" style="left:${at(rating)}%" title="Your rating (~${rating})"></div><div class="sb-segs">${runs.map((r) =>
-    `<span class="sb-seg t${tier(r.uci)}" style="flex:${r.n}" data-uci="${esc(r.uci)}" data-tip="${r.from === r.to ? `~${r.from}` : `~${r.from}–${r.to}`}: ${esc(r.move)}">${esc(r.move)}</span>`).join('')}</div>`
+    `<span class="sb-seg t${tier(r.uci)}" style="flex:${r.n}" data-uci="${esc(r.uci)}"">${esc(r.move)}</span>`).join('')}</div>`
     + `<div class="sb-ticks-axis">${[lo, mid, hi].map((r) => `<span style="left:${at(r)}%">${r}</span>`).join('')}</div></div>`;
 }
 
@@ -996,29 +1003,25 @@ const sbSkeleton = (rows) => `<div class="sb-table">${'<div class="sb-row skel">
 // Card 1: before the move (the board now)
 function sbBefore(L, now, u) {
   const fen = L.fens[now];
-  const [, turn, , , , num] = fen.split(' ');
-  const side = turn === 'w' ? 'White' : 'Black';
-  const rating = sbRatings(fen)[0];
-  const who = !u ? `${side} to move` : turn === u ? 'Your move' : 'Their move';
+  const turn = fen.split(' ')[1];
+  const rating = maiaRating();
   const sb = state.engineOn ? sbGet(fen) : null;
-  const eyebrow = (extra) => `<div class="sb-eyebrow"><span>${who} <span class="sb-num">${num}${turn === 'w' ? '.' : '...'}</span></span>${extra}</div>`;
-  if (sb?.over) return `<section class="sb-card">${eyebrow('')}<div class="sb-head"><b>Game over</b></div></section>`;
+  // no label and no hovered-move text (user's call, 2026-10-07): the strip above says whose move it is
+  if (sb?.over) return `<section class="sb-card"><div class="sb-head"><b>Game over</b></div></section>`;
   if (!state.engineOn) {
     // the eval is off (a bot game without it): no costs, only what players at this rating pick
     const mm = lastMaia?.fen === fen ? lastMaia.moves : null;
     const top = Math.max(1, ...(mm || []).map((m) => m.pct));
-    return `<section class="sb-card live">${eyebrow(mm ? '' : '<span class="sb-busy"></span>')}<div class="sb-head"><b>What ~${rating}s play</b>`
-      + `<span class="sb-tip" data-idle="engine off"></span></div><div class="sb-table">${(mm || []).map((m) => `<button class="sb-row maia-only" data-uci="${esc(m.uci)}">`
+    return `<section class="sb-card live"><div class="sb-head"><b>What ~${rating}s play</b>${mm ? '' : '<span class="sb-busy"></span>'}`
+      + `</div><div class="sb-table">${(mm || []).map((m) => `<button class="sb-row maia-only" data-uci="${esc(m.uci)}">`
       + `<b class="sb-mv">${esc(m.move)}</b><span class="sb-pop"><span class="sb-pbar"><span style="width:${Math.max(3, 100 * m.pct / top)}%"></span></span></span></button>`).join('') || '<div class="sb-row skel"><span></span></div>'.repeat(5)}</div></section>`;
   }
-  // no headline (user's call, 2026-10-06: "N of M moves are safe" removed): hovering a move names it in the eyebrow
-  const tip = '<span class="sb-tip" data-idle=""></span>';
   const busy = !sb && state.engineOn ? `<span class="sb-busy" title="${esc(sbError || 'Searching every move')}">${sbError ? 'search failed' : ''}</span>` : '';
   if (!sb) {
     // quick numbers only: the candidates now, the strip and the track when the deep search lands
     const q = sbQuick(fen, turn);
-    return `<section class="sb-card live">${eyebrow(tip + busy)}`
-      + (q ? sbCandidates(q.rows.filter((r) => r.rank).slice(0, 5), turn, q.best) : `<div class="sb-table">${'<div class="sb-row skel"><span></span></div>'.repeat(5)}</div>`)
+    return `<section class="sb-card live">`
+      + (q ? sbCandidates(q.rows.filter((r) => r.rank).slice(0, 5), turn, q.best, 'Top bot moves', 'sf', busy) : `<div class="sb-table">${'<div class="sb-row skel"><span></span></div>'.repeat(5)}</div>`)
       + `</section>`;
   }
   const pcts = sbPcts(sb, rating);
@@ -1029,11 +1032,11 @@ function sbBefore(L, now, u) {
   const best = sb.all.slice(0, 5).map(withPct);
   const players = [...pcts.keys()].map((u) => sb.all.find((r) => r.uci === u)).filter(Boolean).map(withPct)
     .sort((a, b) => b.pct - a.pct).slice(0, 5);
-  return `<section class="sb-card live">${eyebrow(tip + busy)}`
-    + sbCandidates(best, turn, engine.eval_white, 'Bot moves', 'sf')
-    + (players.length ? sbCandidates(players, turn, engine.eval_white, 'Player moves', 'maia') : '')
-    + (sb.ladder?.length ? `<div class="sb-sub-h"><span>Top pick by rating</span><span class="sb-engine" data-uci="${esc(engine.uci)}">Engine <b>${esc(engine.move)}</b></span></div>${sbTrack(sb, rating)}` : '')
-    + `</section>`;
+  return `<section class="sb-card live"><div class="sb-body"><div>`
+    + sbCandidates(best, turn, engine.eval_white, 'Top bot moves', 'sf')
+    + (players.length ? sbCandidates(players, turn, engine.eval_white, 'Top player moves', 'maia') : '')
+    + `</div>${sb.ladder?.length ? `<div><div class="sb-sub-h"><span>Top pick by rating</span><span class="sb-engine" data-uci="${esc(engine.uci)}">Engine <b>${esc(engine.move)}</b></span></div>${sbTrack(sb, rating)}</div>` : ''}`
+    + `</div></section>`;
 }
 
 // The bot (or the replayed game) is about to answer: same shape as card 1, waiting
@@ -1048,7 +1051,7 @@ function sbAfter(L, k, u) {
   const p = L.plays[k - 1];
   const fen = L.fens[k - 1];
   const sb = sbGet(fen);
-  const label = `${u ? 'You played' : 'Last move'} <span class="sb-num">${p.num}</span>`;
+  const label = `${u ? 'You played' : 'Last move'} <span class="sb-num">${p.num} ${esc(p.san)}</span>`;
   if (!sb || sb.over || !sb.all) {
     return `<section class="sb-card after"><div class="sb-eyebrow"><span>${label}</span><span class="sb-busy"></span></div>`
       + `<div class="sb-rankbar skel"></div></section>`;
@@ -1084,40 +1087,33 @@ function renderKeyCard() {
   else if (!currentGame().isGameOver()) cards.push(sbWaiting());
   box.innerHTML = cards.join('');
 
-  // the rating picker sits in the panel's header: yours, or the side to move's on the analysis board
+  // the rating picker sits in the panel's header, a mirror of the Human moves panel's one rating
   const pick = $('sb-rating');
   pick.classList.toggle('hidden', !humansOn);
   if (humansOn) {
-    const id = (u || fen.split(' ')[1]) === 'w' ? 'maia-white' : 'maia-black';
     const sel = $('kc-rating');
-    if (sel.options.length !== $(id).options.length) sel.innerHTML = $(id).innerHTML;
-    sel.value = $(id).value;
-    pick.title = `Players' rating for ${id === 'maia-white' ? 'White' : 'Black'}: what Maia predicts players of this rating play`;
+    if (sel.options.length !== $('maia-rating').options.length) sel.innerHTML = $('maia-rating').innerHTML;
+    sel.value = $('maia-rating').value;
+    pick.title = "Players' rating, for both sides: what Maia predicts players of this rating play";
     // drive the panel's dropdown, which stores the rating and refetches
-    sel.onchange = () => { $(id).value = sel.value; $(id).dispatchEvent(new Event('change')); };
+    sel.onchange = () => { $('maia-rating').value = sel.value; $('maia-rating').dispatchEvent(new Event('change')); };
   }
 
-  // Moves on the live card (rows, ticks, track segments, the engine's pick): hover draws the move and names it
-  // under the strip; a row or tick click plays it (where you could play it yourself; otherwise playMaiaMove
-  // only shows the arrow). The after card's ticks only name their move: the board has moved on.
+  // Moves on the live card (rows, track segments, the engine's pick): hover draws the move, with no text (user's
+  // call, 2026-10-07); a row click plays it (where you could play it yourself; otherwise playMaiaMove only shows
+  // the arrow). The after card's ticks only name their move in a tooltip: the board has moved on.
   box.querySelectorAll('.sb-card').forEach((card) => {
     const live = card.classList.contains('live');
-    const tip = card.querySelector('.sb-tip');
     const sb = live ? sbGet(fen) : card.classList.contains('after') ? sbGet(L.fens[k - 1]) : null;
-    const pcts = sb && !sb.over ? sbPcts(sb, sbRatings(live ? fen : L.fens[k - 1])[0]) : new Map();
     card.querySelectorAll('[data-uci]').forEach((el) => {
       const uci = el.dataset.uci;
       el.onmouseenter = () => {
         const r = sbRow(sb, uci);
-        if (!tip && r) el.title = `${r.move} · ${r.rank === 1 ? 'best' : `#${r.rank}`}`;
-        if (tip && r) tip.textContent = `${r.move} · ${r.rank === 1 ? 'best' : `#${r.rank}`}${pcts.get(uci) ? ` · ${sbFmt(pcts.get(uci))}% play it` : ''}`;
-        else if (tip && !r && !el.dataset.tip) tip.textContent = el.querySelector('.sb-mv')?.textContent || '';
-        else if (tip && el.dataset.tip) tip.textContent = el.dataset.tip;
+        if (r && !live) el.title = `${r.move} · ${r.rank === 1 ? 'best' : `#${r.rank}`}`;
         card.querySelectorAll(`[data-uci="${uci}"]`).forEach((t) => t.classList.add('hot'));
         if (live) { sbShowMove(uci); sbHovering = true; }
       };
       el.onmouseleave = () => {
-        if (tip) tip.textContent = tip.dataset.idle;
         card.querySelectorAll('.hot').forEach((t) => t.classList.remove('hot'));
         if (live) sbHideMove();
       };
@@ -1136,22 +1132,19 @@ function setupMaia(cfg) {
   state.maiaReady = !!cfg.maia_ready;
   $('maia-pane').classList.toggle('hidden', !state.maiaReady);
   if (!state.maiaReady) return;
-  const old = recall('maiaRating') || 1500;  // the single rating from before White/Black were split
   const refresh = () => {
     requestMaia(state.editor ? null : currentGame());
     requestScoreboard(state.editor ? null : currentGame());
     renderKeyCard();
   };
-  for (const [id, key] of [['maia-white', 'maiaWhite'], ['maia-black', 'maiaBlack']]) {
-    const saved = +(recall(key) || old);
-    $(id).innerHTML = cfg.maia_ratings.map((r) =>
-      `<option value="${r}"${r === saved ? ' selected' : ''}>~${r}</option>`).join('');
-    $(id).onchange = (e) => { store(key, e.target.value); refresh(); };
-  }
-  const syncDisabled = () => {
-    const on = $('maia-toggle').checked;
-    $('maia-white').disabled = $('maia-black').disabled = !on;
-  };
+  // one rating for both sides, chess.com rapid (2026-10-07). The older keys (maiaWhite/maiaBlack/maiaRating) held
+  // Lichess numbers, so they're ignored: the first pick is your PLAYER_RATING, rounded to the nearest level
+  const near = (x) => cfg.maia_ratings.reduce((a, b) => (Math.abs(b - x) < Math.abs(a - x) ? b : a));
+  const saved = near(+(recall('maiaElo') || cfg.player_rating || 800));
+  $('maia-rating').innerHTML = cfg.maia_ratings.map((r) =>
+    `<option value="${r}"${r === saved ? ' selected' : ''}>~${r}</option>`).join('');
+  $('maia-rating').onchange = (e) => { store('maiaElo', e.target.value); refresh(); };
+  const syncDisabled = () => { $('maia-rating').disabled = !$('maia-toggle').checked; };
   $('maia-toggle').checked = recall('maiaOn') !== '0';
   syncDisabled();
   $('maia-toggle').onchange = (e) => {
@@ -2808,19 +2801,22 @@ async function levelForRating(elo) {
 
 // Which bot level takes over the opponent: the closest to the rating of the player it replaces. If
 // that side is unrated, falls back to the rating of your side, then to the level last used in
-// "Play a game", then ~1500 as a last resort.
+// "Play a game", then ~1100 as a last resort (chess.com scale; Lichess ~1500, the old default).
 async function botLevelFor(color) {
   const r = state.review;
   const oppColor = color === 'white' ? 'black' : 'white';
   for (const [side, whose] of [[oppColor, `${r[oppColor]}'s`], [color, `${r[color]}'s (your side)`]]) {
-    const elo = parseInt(r[`${side}_elo`], 10);
+    // the chess.com-scale rating (a Lichess game's converted, see core/ratings.py): bot levels are chess.com
+    const elo = r[`${side}_elo_cc`];
     if (!(elo > 0)) continue;
-    try { return { level: await levelForRating(elo), why: `matched to ${whose} ${elo} rating` }; } catch { /* try the next source */ }
+    const shown = parseInt(r[`${side}_elo`], 10);
+    const note = elo !== shown ? ` (≈${elo} chess.com)` : '';
+    try { return { level: await levelForRating(elo), why: `matched to ${whose} ${shown} rating${note}` }; } catch { /* try the next source */ }
   }
   botLevels ??= await api('/api/play/levels').catch(() => []);
   const last = botLevels.find((l) => String(l.id) === recall('botLevel'));
   if (last) return { level: last, why: "the level you last used, since the game has no ratings" };
-  return { level: await levelForRating(1500), why: 'default, since the game has no ratings' };
+  return { level: await levelForRating(1100), why: 'default, since the game has no ratings' };
 }
 
 // leave the replay for a live bot game from the current position, playing `first` (your move) at once.
@@ -2843,7 +2839,7 @@ async function branchToBot(first) {
   }
   const play = { color, level: level.id, levelName: level.name, startFen: review.start_fen,
     moves: prefix, prefix: prefix.length, view: prefix.length, over: null, thinking: false, back,
-    myElo: parseInt(r[`${color}_elo`], 10) || undefined };  // the side you took over, if rated
+    myElo: r[`${color}_elo_cc`] || undefined };  // the side you took over, if rated (chess.com scale)
   setEngineVisible(recall('engineOn') !== '0');
   setReview(review, `Playing on from ${origin} against a ${level.name} bot (${why}). You have ${color}.`, play);
   onPlayMove(first.orig, first.dest);
@@ -3403,7 +3399,7 @@ function studyGo(id, { quiet = false } = {}) {
 
 // ---- playing on after the theory: a bot game from the lesson position, chat kept, with a way back
 const PLAY_ON_DELAY_MS = 1500;
-const PLAY_ON_ELO = [1500, 2000];  // the bot is picked at random from the levels in this range
+const PLAY_ON_ELO = [1100, 1800];  // the bot is picked at random from the levels in this range (chess.com; Lichess ~1500-2000)
 
 async function studyPlayOn(id) {
   const st = state.study;
@@ -3412,7 +3408,7 @@ async function studyPlayOn(id) {
   botLevels ??= await api('/api/play/levels').catch(() => []);
   const pool = botLevels.map((l) => ({ ...l, elo: +(l.name.match(/~(\d+)/)?.[1]) }))
     .filter((l) => l.elo >= PLAY_ON_ELO[0] && l.elo <= PLAY_ON_ELO[1]);
-  const level = pool.length ? pool[Math.floor(Math.random() * pool.length)] : await levelForRating(1500);
+  const level = pool.length ? pool[Math.floor(Math.random() * pool.length)] : await levelForRating(1100);
   if (state.study !== st) return;
   playToken++;
   let review;
@@ -4429,7 +4425,7 @@ async function openPlayDialog() {
     const levels = await api('/api/play/levels');
     sel.innerHTML = levels.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
     sel.value = recall('botLevel') || '';
-    if (!sel.value) sel.value = String((await levelForRating(1500)).id);  // first time, or a retired level
+    if (!sel.value) sel.value = String((await levelForRating(1100)).id);  // first time, or a retired level
   }
   $('play-engine').checked = recall('playEngine') !== '0';
   $('play-clock-on').checked = recall('clockOn') === '1';

@@ -22,10 +22,11 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import eco, endgames, favorites, gm_moments, library, maia, openings, opening_quips, opponent_card, positions, repertoire, scoreboard, study, tablebase, usage
+from core import eco, endgames, favorites, gm_moments, library, maia, openings, opening_quips, opponent_card, positions, ratings, repertoire, scoreboard, study, tablebase, usage
 from core import org_spend as org_spend_mod
 from core.coach import Coach, prompt_hash
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
+from core import review as review_mod
 from core.review import CACHE_DIR, load_pgn, review_game
 from frontends.chesscom import client as chesscom
 from frontends.lichess import client as lichess
@@ -103,6 +104,16 @@ def new_analysis(fen: str, note: str | None = None, player_color: str | None = N
     S.coach = make_coach(S.review, player_color=player_color)
 
 
+def _elo_cc(r: dict, color: str) -> int | None:
+    """A player's rating on the app's scale (chess.com rapid, core/ratings.py), for matching the bot and Maia.
+    The game's own numbers stay as they are on screen: they're that site's ratings."""
+    try:
+        elo = int(r[f"{color}_elo"])
+    except (TypeError, ValueError, KeyError):
+        return None
+    return ratings.to_chesscom(elo) if review_mod.from_lichess(r["game_id"]) else elo
+
+
 def public_review() -> dict:
     r = S.review
     traps = repertoire.annotate_game(r["start_fen"], r["moves"])
@@ -111,6 +122,7 @@ def public_review() -> dict:
         "favorite": bool(fav), "title": fav["title"] if fav else None, "date": r.get("date"),
         "game_id": r["game_id"], "white": r["white"], "black": r["black"],
         "white_elo": r["white_elo"], "black_elo": r["black_elo"], "result": r["result"],
+        "white_elo_cc": _elo_cc(r, "white"), "black_elo_cc": _elo_cc(r, "black"),
         "opening": r["opening"], "start_fen": r["start_fen"],
         "player_color": S.coach.player_color if S.coach else None,
         "moves": [{k: m[k] for k in ("ply", "label", "color", "san", "uci", "fen_after",
@@ -134,7 +146,8 @@ def favicon():
 def config():
     return {"me": os.environ.get("CHESS_USER", ""),
             "coach_ready": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
-            "explorer_ready": explorer.available(), "maia_ready": maia.available(), "maia_ratings": maia.RATINGS}
+            "explorer_ready": explorer.available(), "maia_ready": maia.available(), "maia_ratings": maia.RATINGS,
+            "player_rating": maia.player_rating()}
 
 
 def _lichess_player(p: dict) -> tuple[str, int | None]:

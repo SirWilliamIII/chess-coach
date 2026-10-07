@@ -51,7 +51,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   default 127.0.0.1:8000, flags override; the primary clone's `.env` binds the Tailscale IP) or
   `.venv/bin/python -m frontends.web.server [--host H] [--port P]`. Default host `127.0.0.1`.
 - **`.env` is gitignored** and must exist per clone: `ANTHROPIC_API_KEY`, `LICHESS_TOKEN`, optional
-  `CHESS_USER`, `PLAYER_RATING` (Lichess scale, default 1300), `ANTHROPIC_ADMIN_KEY` + `MONTHLY_SPEND_LIMIT`
+  `CHESS_USER`, `PLAYER_RATING` (chess.com rapid since 2026-10-07, default 800; the primary clone has 790), `ANTHROPIC_ADMIN_KEY` + `MONTHLY_SPEND_LIMIT`
   (org-spend card), `COACH_MODEL`, `STUDY_MODEL`, `COACH_EFFORT`, `COACH_THINKING`, `COACH_ENGINE_DEPTH`.
   Two clones on this machine: `/Users/will/chess-coach` (primary) and `~/Projects/chess-coach` (kept in sync
   with `git pull`), each with its own `.env`.
@@ -209,7 +209,9 @@ file says what is true now. Last full cleanup: 2026-10-03.
   game starts from the game's start position with its moves up to the branch as `play.prefix` (Takeback and
   ◀ floor there) and keeps `play.back` for "Back to the game". Branching and coming back reset the chat.
   Bot level for a branch: `botLevelFor(color)` (rating of the side the bot replaces → your side's → last
-  used level → ~1500), `levelForRating()` picks the closest `(~N)` level.
+  used level → ~1100), `levelForRating()` picks the closest `(~N)` level. Game ratings go through
+  `white_elo_cc`/`black_elo_cc` (`public_review()`): a Lichess game's (`review.from_lichess()`) converted to
+  chess.com, a chess.com game's as they are. The ratings shown on screen stay the site's own.
 - **Per-move cards when stepping through a game** (`noteMove()`): verdict, played/best with eval pills, ▶
   best line, Why?, Back to my game; built from the saved review (`best_line` etc. in `public_review()`), no
   engine call. Paid: a move losing ≥ 10% win chance (`BIG_MOMENT_PCT`) gets an automatic "⚠ Big moment"
@@ -222,7 +224,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 ### Bot games
 
-- **Bot levels:** Maia (~600) … Maia (~2500) every 100 (`maia.BOT_LEVELS`, `server.bot_levels()`), then
+- **Bot levels:** Maia (~400) … Maia (~2400) (chess.com rapid) every 100 (`maia.BOT_LEVELS`, `server.bot_levels()`), then
   "Stockfish" (full strength). Without Maia installed: the old Stockfish levels (`BOT_LEVELS` in
   `core/engine.py`, uncalibrated). `Maia.play()` samples Maia's top 10 by probability, never one under
   `MIN_PLAY_PCT` 2%. `/api/play/move` passes the game's moves and `opp_elo` (your rating: a branched replay's
@@ -290,7 +292,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   - **Above the board:** `.board-head` = `#opening-tag` (the page title, see "Opening name"), `#game-title`
     (favourites, hidden when empty), `#game-info` (☆ names · result, shrinks first), `#board-sub`, and Moves &
     engine in `.board-head-right`; then `.top-row` = the top name (`#player-top`) with `.head-row` (`#summary`:
-    I'm playing / Replay as / game status and buttons / the editor's buttons, `#pb-takeback`).
+    Replay as / game status and buttons / the editor's buttons, `#pb-takeback`).
   - **Sizes:** `--board-w` = min(`--board-max` 880, `100vh - --head-h - 196px`, the width left beside the nav and
     `--side-w`); `--strip` (eval bar + rank labels, 46 px). 1440×900: 704 px (height-bound); 1920×1080: 880.
   - **Colour tokens** (`:root`): `--inset`, `--hover`/`--hover-2`, `--faint`, `--maia`, and one severity scale
@@ -321,9 +323,20 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 ### Maia
 
-- **Maia-3** (`core/maia.py`, CSSLab 2026): what a player of a given rating (600-2600) plays, with
-  probabilities. Panel: "Human moves" under Stockfish's lines with separate W/B ratings (side to move =
-  `rating`, other = `opp_rating`); a row click plays the move where `canMove` allows it. `pct` is "how likely a
+- **Maia-3** (`core/maia.py`, CSSLab 2026): what a player of a given rating (400-2400) plays, with
+  probabilities.
+- **Every rating in the app is chess.com rapid** (user's call, 2026-10-07: they play 10+5, ~all rapid). Maia
+  was trained on Lichess, so `Maia.moves()` converts with `core/ratings.py` (`to_lichess()`) right at the model,
+  and nothing else sees a Lichess number. The table is Chessiro's rapid converter (survey, ~20k players,
+  ±100 expected), interpolated, end slopes extended outside it (below chess.com 815 is a guess). Checked on one
+  real pair: the user's 790 chess.com / 1246 Lichess (table: 1271). Old localStorage keys (`maiaWhite`,
+  `maiaBlack`, `maiaRating`) held Lichess numbers and are ignored; the picker starts at `PLAYER_RATING`.
+  Lessons built before then stored `human_rating` 1300 (Lichess); `study.load()` shows it converted (~830)
+  unless `human_scale` is `chesscom`. Still on Lichess's scale: the explorer's rating bands (Lichess DB filters,
+  e.g. `CURVE_RATINGS`, the coach's `db='lichess'` bands). Not converted: a chess.com blitz/bullet game's
+  ratings (taken as rapid). Panel: "Human moves" under Stockfish's lines with **one rating for both sides** (`maiaRating()`, `#maia-rating`,
+  localStorage `maiaElo`; the opponent at the same rating; user's call 2026-10-07: Stockfish's list is the
+  absolute one, Maia's "the typical player"; the scoreboard's picker mirrors it); a row click plays the move where `canMove` allows it. `pct` is "how likely a
   human plays it", never quality.
 - Setup per clone: `pip install git+https://github.com/CSSLab/maia3.git` (not in `requirements.txt`, torch is
   ~600 MB); the checkpoint downloads from Hugging Face on first use. Missing package = section hidden
@@ -338,28 +351,37 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 - **Built around the two moments a move's numbers matter** (user's call, 2026-10-06): before your move ("what
   does a ~600 / a GM play here, is it any good, what are the 5 best") and after it ("was it good or bad, how
-  much": "You played b8, the 28th best move"). The user found absolute evals confusing (is +1.00 per move
-  cumulative?), so **the card shows costs, never evals**: pawns behind the best move (`cost`, "best", "−0.31",
-  or "misses/allows mate"), graded by win % lost. The eval bar is the only absolute number on the page.
-- **After your move** (`sbAfter()`, on top): eyebrow "You played 9." + grade pill (Best move / Excellent < 2 /
+  much": "You played b8, the 28th best move"). **Each row shows the eval after that move**, from
+  White's side like the eval bar (`sbEvalAfter()`: "+1.50", "−0.31", "#3", "#−2"; so on Black's turn the best
+  row has the lowest number), coloured by win % lost for the mover. White's view since 2026-10-07 (user's
+  call): from the mover's side the sign flipped every card and "−0.59 then +0.65" didn't read as one eval. History: costs
+  ("pawns behind the best") from 2026-10-06, because "is +1.00 per move cumulative?" was confusing; then a mixed
+  column (best row an eval, the rest costs) misread as "the best move is the worst"; evals after the move since
+  2026-10-07 (user's call). The number is the best move's eval minus `cost`, not the row's own `eval_white`:
+  `ranking()` clamps costs so a depth-10 move past #5 never reads better than #5, and its raw eval can. **The eval
+  bar takes the #1 row's number** once the scoreboard's deep search for that position is in (`setEvalBar()`,
+  called by `showEval()` and when a scoreboard result lands), else its own 0.6 s search, so the two agree.
+- **After your move** (`sbAfter()`, on top): eyebrow "You played 9. Nxe5" (the move at 24 px, weight 300) + grade pill (Best move / Excellent < 2 /
   Good < 5 / Inaccuracy < 15 / Mistake < 30 / Blunder, `sbGrade()`; loaded games use the review's
   `win_pct_lost`), a flat strip of every legal move with yours raised (`.sb-rankbar`), and one fact: "Best was
   X" (not for the best move). Tinted with the grade's colour. User's calls (2026-10-06): no move/cost line ("f3
   −1.20 pawns" removed), no rank text ("9th best of 39 legal moves"), no other facts ("Most ~N players play Y",
   "Most popular with ~N players").
-- **Before your move** (`sbBefore()`): no headline (user's call, 2026-10-06: "N of M moves are safe" removed; the
-  eyebrow's right side names a hovered move: "exf6 · #2 · 11% play it"; the every-move strip `sbSpectrum()`
-  was removed too), then **two lists
+- **Before your move** (`sbBefore()`): no headline, no label and no hover text (user's calls: "N of M moves are
+  safe" and the every-move strip `sbSpectrum()` removed 2026-10-06; the "Black to move 6..." eyebrow and its
+  hovered-move text "exf6 · #2 · 11% play it" removed 2026-10-07, the strip above says whose move it is; the
+  searching dot sits in the first list's header), then **two lists
   on the same columns** (user's call: one absolute, one "the one you look at", adjustable on the fly):
-  **Bot moves** (Stockfish's top 5, the same at any rating) and **Player moves** (Maia's top 5 at the chosen
-  rating, by popularity; headers are only these names, no column labels, user's call 2026-10-06), each row with Stockfish's rank, the cost vs the best and a Maia-blue popularity bar
-  (`sbCandidates()`; no % number on the row, user's call: the % shows on hover). Then **Top pick by rating** (`sbTrack()`: Maia's favourite at 600 … 2600 as runs along
+  **Top bot moves** (Stockfish's top 5, the same at any rating) and **Top player moves** (Maia's top 5 at the chosen
+  rating, by popularity; headers are only these names, no column labels, user's call 2026-10-06), each row with Stockfish's rank, the eval after the move and a Maia-blue popularity bar
+  (`sbCandidates()`; no % number on the row, user's call; with the hover text gone the % shows nowhere). Then **Top pick by rating** (`sbTrack()`: Maia's favourite at 400 … 2400 as runs along
   one track coloured by cost, your rating marked, "Engine X" beside it). **The rating switches instantly**
   (measured 0.18 s, no request): the search carries Maia's top 10 at every picker rating (`ladder`),
   `sbPcts()` reads the chosen one, and `sbCache` is keyed by FEN only. Hovering any move (row, segment, the
-  engine pill) draws its arrow and names it in the eyebrow (`.sb-tip`); clicking a row plays it
+  engine pill) draws its arrow; clicking a row plays it
   (`playMaiaMove()`). Quick numbers (`lastEval`/`lastMaia`, `sbQuick()`) fill the candidates at once; the track
-  waits for the deep search (skeletons). Eval off (bot game without it): only "What ~N play" (Maia).
+  waits for the deep search (skeletons). Eval off (bot game without it): only "What ~N play" (Maia). The card fills the
+  panel and spaces the lists and the track with `space-around` (`.sb-body`, user's call 2026-10-07).
 - **Whose moves:** `sbTargets()`/`sbUser()` unchanged: the bot game's or replay's colour, else the review's
   `player_color`; null on the analysis board ("Last move", "White to move"). In a bot game or replay the
   opponent's turn isn't searched ("Bot is thinking" skeleton). `requestScoreboard()` runs the board's position
@@ -368,9 +390,9 @@ file says what is true now. Last full cleanup: 2026-10-03.
   sb engine and **every legal move** at `FULL_DEPTH` 10 / `FULL_SECONDS` 1.5 on the other (it also scores Maia's
   moves and `include`), so the wait is the top 5. Until 2026-10-06 a depth-16 search of Maia's moves ran before
   the full one; dropped for speed (user's call): 40 positions of a saved game went from 2.7 s to 1.44 s average,
-  the browser card from 2.8-6.8 s to 2.1-2.4 s per step. Costs past #5 (Player moves rows outside the top 5)
+  the browser card from 2.8-6.8 s to 2.1-2.4 s per step. Costs past #5 (Top player moves rows outside the top 5)
   are depth 10. `ranking()` → `all`: the deep top 5 first, the rest by the shallow number, never better than #5,
-  drops kept non-decreasing. `ladder`: `maia.moves()` at every `maia.RATINGS` value (600-2600 step 100, top 10
+  drops kept non-decreasing. `ladder`: `maia.moves()` at every `maia.RATINGS` value (400-2400 step 100, top 10
   each, opponent at the same rating), in a thread beside the searches (≈0 s warm). `sf`, `humans`, `extra`,
   `alerts`, `odds` are still returned; the frontend no longer shows `alerts`.
 - **Latest wins:** `SB_LOCK` + `SB_LATEST` return `{"stale": true}` for a request a newer one overtook. Cached
@@ -465,7 +487,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   circle, then arrow + note. Mastered after 2 clean runs (`localStorage` `study-m:<slug>`). `studyLeaves()`
   follows only your main move.
 - **Play on:** at a Learn leaf a bot game starts after `PLAY_ON_DELAY_MS` 1.5 s (`studyPlayOn()`, Maia
-  1500-2000, the line as `play.prefix`), with "Back to the lesson". Drill's line-complete card has a button.
+  1100-1800 chess.com, the line as `play.prefix`), with "Back to the lesson". Drill's line-complete card has a button.
 - **Lesson text** (`lessonText()`/`lessonInline()`): its own tokenizer so moves resolve to lesson nodes
   (`studyFindMove()`), rendered as `.lm` buttons that play from where your board and that line split
   (`LESSON_STEP_MS` 650 ms).

@@ -31,6 +31,11 @@ def game_id(game: chess.pgn.Game) -> str:
     return hashlib.sha1(str(game).encode()).hexdigest()[:10]
 
 
+def from_lichess(gid: str) -> bool:
+    """Whether a game_id (from game_id() above) is a Lichess game, whose ratings are on Lichess's scale."""
+    return len(gid) == 8 and not gid.startswith("cc")
+
+
 def ply_label(ply: int) -> str:
     """ply 1 -> '1.', ply 2 -> '1...'"""
     n = (ply + 1) // 2

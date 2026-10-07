@@ -18,8 +18,13 @@ from collections import OrderedDict
 
 import chess
 
+from core.ratings import to_lichess
+
 MODEL = "maia3-5m"
-RATINGS = list(range(600, 2700, 100))  # the model accepts 0-5000; the ends of this range are a guess
+# Every rating in and out of this module is chess.com rapid (the app's scale, see core/ratings.py); moves()
+# converts to Lichess's scale, which the model was trained on, right before asking it. 400-2400 is Lichess
+# ~980-2570, inside the model's comfortable range (it accepts 0-5000; the ends are a guess).
+RATINGS = list(range(400, 2500, 100))
 CACHE_SIZE = 2048
 # Playing: sample by Maia's probabilities (always taking its top move plays above the rating, since the
 # most common move is usually sound), but never a move under MIN_PLAY_PCT, so a freak 0.5% move never
@@ -30,17 +35,17 @@ TOP_MOVES = 10  # candidates kept per position: the panel shows 5, play samples 
 
 # Bot levels when Maia is installed: Maia every 100 points, then full Stockfish (id 9, as in
 # engine.BOT_LEVELS, so `Bot.play` handles it). Names keep the "(~N)" the frontend parses.
-BOT_LEVELS = [{"id": r, "name": f"Maia (~{r})", "maia": r} for r in range(600, 2600, 100)] + [
+BOT_LEVELS = [{"id": r, "name": f"Maia (~{r})", "maia": r} for r in RATINGS] + [
     {"id": 9, "name": "Stockfish", "full": True}]
 
 
 def player_rating() -> int:
-    """Your rating on Lichess's scale (Maia was trained on Lichess games), from PLAYER_RATING in .env.
+    """Your chess.com rapid rating, from PLAYER_RATING in .env (it was Lichess's scale before 2026-10-07).
     Used where the app needs "a player at your level": human moves in lessons, the bot's opponent rating."""
     try:
-        return int(os.environ.get("PLAYER_RATING", "1300"))
+        return int(os.environ.get("PLAYER_RATING", "800"))
     except ValueError:
-        return 1300
+        return 800
 
 
 def available() -> bool:
@@ -88,7 +93,7 @@ class Maia:
             self._ensure()
             e = self._engine
             e.cmd_position(f"position fen {board.root().fen()}" + (f" moves {' '.join(history)}" if history else ""))
-            e.self_elo, e.oppo_elo = rating, opp_rating
+            e.self_elo, e.oppo_elo = to_lichess(rating), to_lichess(opp_rating)
             _, scored = e.score_moves()
             out = [{"move": board.san(t["move"]), "uci": t["move"].uci(), "pct": round(100 * t["policy"], 2),
                     "wdl": [x / 10 for x in t["wdl"]]} for t in scored]

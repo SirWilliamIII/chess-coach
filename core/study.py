@@ -254,6 +254,10 @@ def load(name: str, color: str) -> dict | None:
         hit = eco.lookup(chess.Board(n["fen"]))
         if hit:
             n["opening"] = hit["name"]
+    # lessons built before 2026-10-07 stored a Lichess rating; the app shows chess.com rapid ("% of ~830 players")
+    if study.get("human_rating") and study.get("human_scale") != "chesscom":
+        from core.ratings import to_chesscom
+        study["human_rating"] = round(to_chesscom(study["human_rating"]), -1)
     return study
 
 
@@ -835,6 +839,7 @@ def add_human(study: dict, engine: Engine, maia, explore, rating: int, progress=
             else:
                 report["dropped"] += 1
     study["human_rating"] = rating
+    study["human_scale"] = "chesscom"  # see load()
     study["human_built"] = time.strftime("%Y-%m-%d")
     return report
 

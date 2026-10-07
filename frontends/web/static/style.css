@@ -914,7 +914,11 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
    what a move costs, Maia blue for how often people play it. Everything else is text and muted text. */
 .score-body { flex: 1; min-height: 0; overflow-y: auto; font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-#key-card { display: flex; flex-direction: column; }
+/* the card fills the panel; the live card takes what the verdict strip leaves and spaces its lists and the
+   rating track evenly in it (user's call, 2026-10-07). When the panel is short, it just scrolls. */
+#key-card { display: flex; flex-direction: column; min-height: 100%; }
+#key-card .sb-card.live { flex: 1; display: flex; flex-direction: column; }
+.sb-body { flex: 1; display: flex; flex-direction: column; justify-content: space-around; }
 .sb-card { padding: 14px 16px 16px; }
 .sb-card + .sb-card { border-top: 1px solid var(--line); }
 .t0 { --c: var(--t0); } .t1 { --c: var(--t1); } .t2 { --c: var(--t2); } .t3 { --c: var(--t3); }
@@ -923,7 +927,7 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .sb-eyebrow { display: flex; align-items: center; justify-content: space-between; height: 18px;
   font-size: 11px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 /* the move's number reads as part of the label, brighter than it so it doesn't look like a stray mark */
-.sb-num { margin-left: 4px; letter-spacing: .02em; color: var(--text); font-weight: 600; }
+.sb-num { margin-left: 4px; letter-spacing: .02em; text-transform: none; color: var(--text); font-weight: 600; }
 .sb-busy { font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--faint); }
 .sb-busy:empty { width: 7px; height: 7px; border-radius: 50%; background: var(--maia); animation: sb-blink 1.2s ease-in-out infinite; }
 @keyframes sb-blink { 50% { opacity: .25; } }
@@ -932,10 +936,6 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .sb-head b.g3 { color: var(--gc); }
 .skel-text { color: var(--faint); font-weight: 500 !important; }
 
-.sb-tip { font-size: 12px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-/* in the eyebrow (the live card): plain case, pushed right */
-.sb-eyebrow .sb-tip { margin-left: auto; padding-left: 12px; letter-spacing: 0; text-transform: none; color: var(--muted); }
-.sb-eyebrow .sb-tip + .sb-busy { margin-left: 10px; }
 
 /* the candidates: Stockfish's order, the cost against the best, the popularity at this rating */
 .sb-table { display: flex; flex-direction: column; gap: 1px; margin-top: 12px; }
@@ -946,6 +946,7 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .sb-cols span { grid-column: 1 / -1; white-space: nowrap; }
 .sb-table + .sb-table { margin-top: 14px; }
 .sb-table.maia .sb-cols span { color: var(--maia); }
+.sb-table.sf .sb-cols span { color: var(--t3-text); }
 .sb-row { height: 27px; width: 100%; background: none; border: 0; border-radius: 8px; color: var(--text); font: inherit;
   font-size: 13px; text-align: left; cursor: pointer; transition: background .12s; }
 .sb-row:hover, .sb-row.hot { background: var(--hover-2); }
@@ -953,6 +954,7 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .sb-mv { font-weight: 500; }
 .sb-cost { text-align: right; font-size: 12.5px; color: var(--muted); }
 .sb-row.best .sb-cost { color: var(--t0); }
+.sb-cols .sb-busy { display: inline-block; margin-left: 8px; vertical-align: middle; }
 .sb-row.t1 .sb-cost { color: var(--t1); }
 .sb-row.t2 .sb-cost { color: var(--t2); }
 .sb-row.t3 .sb-cost, .sb-row.t3 .sb-mv { color: var(--t3-text); }
@@ -988,6 +990,9 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
   color: var(--gc); background: color-mix(in srgb, var(--gc) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gc) 35%, transparent); }
 /* the strip follows the eyebrow directly (no move line) */
 .sb-eyebrow + .sb-rankbar { margin-top: 12px; }
+/* the move just played is the strip's headline, large and light (user's call, 2026-10-07) */
+.sb-card.after .sb-eyebrow { height: auto; min-height: 18px; }
+.sb-card.after .sb-num { font-size: 24px; font-weight: 300; letter-spacing: 0; }
 /* every move as a flat segment, best → worst; yours raised and outlined */
 .sb-rankbar { display: flex; align-items: center; gap: 2px; height: 14px; }
 .sb-rankbar i { flex: 1; min-width: 2px; height: 6px; border-radius: 2px; background: var(--c); opacity: .55; transition: opacity .12s; }
