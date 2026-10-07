@@ -937,8 +937,14 @@ function sbGrade(d, rank) {
 // 2026-10-07: evals after the move, not costs, and White's view, not the mover's, so consecutive cards read as
 // one game eval). Taken as the best move's eval minus the row's `cost` (in the mover's terms), not the row's own
 // eval: ranking() clamps costs so a shallow-searched move past #5 never reads better than #5, and its raw eval can.
+// "+1.50" / "−0.31" / "0.00" / "#3" / "#−2" from an engine eval string (with or without its "+")
+const fmtEval = (ev) => {
+  const s = (ev ?? '').replace(/^\+/, '');
+  return /^[0-9]/.test(s) && !/^0(\.0+)?$/.test(s) ? `+${s}` : s.replace('-', '−');
+};
+
 function sbEvalAfter(r, turn, bestEval) {
-  const fmt = (ev) => (/^[0-9]/.test(ev) && !/^0(\.0+)?$/.test(ev) ? `+${ev}` : ev.replace('-', '−'));
+  const fmt = fmtEval;
   const own = (r.eval_white ?? bestEval ?? '').replace(/^\+/, '');
   if (r.rank === 1 || r.cost == null || !bestEval || bestEval.startsWith('#')) return fmt(own);
   const v = parseFloat(bestEval) - (turn === 'w' ? r.cost : -r.cost);
@@ -969,13 +975,54 @@ function sbQuick(fen, turn) {
 // One list of moves, the same columns for both lists so they compare row for row: Stockfish's rank, the move,
 // the eval after it, and how often players at the chosen rating play it. The header is only the
 // list's name (user's call, 2026-10-06: no column labels).
-function sbCandidates(rows, turn, bestEval, title = 'Top bot moves', cls = 'sf', busy = '') {
+function sbCandidates(rows, turn, bestEval, title = 'Top bot moves', cls = 'sf', busy = '', after = null) {
   const top = Math.max(1, ...rows.map((r) => r.pct || 0));
   return `<div class="sb-table ${cls}"><div class="sb-cols"><span>${title}${busy}</span></div>${
     rows.map((r) => `<button class="sb-row t${r.tier}${r.rank === 1 ? ' best' : ''}" data-uci="${esc(r.uci)}">`
       + `<span class="sb-rank">${r.rank ?? '·'}</span><b class="sb-mv">${esc(r.move)}</b>`
       + `<span class="sb-cost">${sbEvalAfter(r, turn, bestEval)}</span>`
-      + `<span class="sb-pop"><span class="sb-pbar"><span style="width:${r.pct ? Math.max(3, 100 * r.pct / top) : 0}%"></span></span></span></button>`).join('')}</div>`;
+      + `<span class="sb-pop"><span class="sb-pbar"><span style="width:${r.pct ? Math.max(3, 100 * r.pct / top) : 0}%"></span></span></span></button>`
+      + (after ? after(r) : '')).join('')}</div>`;
+}
+
+// ---- Maia's lines ("Full lines" under Top player moves, 2026-10-07): how ~N players typically go on after
+// each of those moves (Maia's top move for both sides, 8 more moves, each scored by Stockfish; see
+// scoreboard.maia_line). Only while the toggle is open; one request at a time, each render asks for the next.
+const mlCache = new Map();  // `${fen}|${rating}|${uci}` → the line, { error }, or null while fetching
+let mlShown = null;          // { fen, ucis }: the Top player moves rows the live card shows (set by sbBefore)
+let mlBusy = false;
+const mlOpen = () => recall('maiaLines') === '1';
+const mlKey = (fen, uci) => `${fen}|${maiaRating()}|${uci}`;
+
+function mlHtml(fen, uci) {
+  const line = mlCache.get(mlKey(fen, uci));
+  if (!line) return '<div class="ml-line skel"></div>';
+  if (line.error) return `<div class="ml-line">${esc(line.error)}</div>`;
+  // from the reply on: the first move is the row above, with the scoreboard's deeper number (repeating it here
+  // showed two evals for one move). A move's number on White's moves and on the first shown; coloured where the
+  // line goes wrong for its mover
+  return `<div class="ml-line">${line.slice(1).map((m, i) => `<span class="ml-mv t${m.tier}"${m.drop >= 1 ? ` title="Costs ${m.num.endsWith('...') ? 'Black' : 'White'} ${Math.round(m.drop)}% win chance"` : ''}>`
+    + `${i === 0 || !m.num.endsWith('...') ? `<i>${m.num}</i>` : ''}<b class="ml-san">${esc(m.san)}</b><small>${fmtEval(m.eval_white)}</small></span>`).join('')}</div>`;
+}
+
+async function requestMaiaLines() {
+  if (!mlOpen() || !mlShown || mlBusy) return;
+  const { fen, ucis } = mlShown;
+  const uci = ucis.find((u) => !mlCache.has(mlKey(fen, u)));
+  if (!uci) return;
+  const key = mlKey(fen, uci);
+  const line = currentLine();
+  mlCache.set(key, null);
+  mlBusy = true;
+  try {
+    const d = await api('/api/maia_line', { fen, uci, rating: maiaRating(), start_fen: line.startFen, moves: line.sans.slice(0, line.at) });
+    mlCache.set(key, d.line);
+  } catch (e) {
+    mlCache.set(key, { error: e.message });
+  }
+  mlBusy = false;
+  if (mlCache.size > 300) mlCache.delete(mlCache.keys().next().value);
+  renderKeyCard();  // shows it, and asks for the next missing one (here or wherever the board is now)
 }
 
 // Which move each rating picks (Maia's favourite, 600 → 2600), as runs along one track; your rating marked
@@ -1032,9 +1079,12 @@ function sbBefore(L, now, u) {
   const best = sb.all.slice(0, 5).map(withPct);
   const players = [...pcts.keys()].map((u) => sb.all.find((r) => r.uci === u)).filter(Boolean).map(withPct)
     .sort((a, b) => b.pct - a.pct).slice(0, 5);
+  const open = mlOpen();
+  mlShown = open && players.length ? { fen, ucis: players.map((r) => r.uci) } : null;
+  const toggle = `<button class="ml-toggle" title="How ~${rating} players typically go on after each move (Maia, scored by Stockfish)">${open ? '▾' : '▸'} Full lines</button>`;
   return `<section class="sb-card live"><div class="sb-body"><div>`
     + sbCandidates(best, turn, engine.eval_white, 'Top bot moves', 'sf')
-    + (players.length ? sbCandidates(players, turn, engine.eval_white, 'Top player moves', 'maia') : '')
+    + (players.length ? sbCandidates(players, turn, engine.eval_white, `Top player moves${toggle}`, 'maia', '', open ? (r) => mlHtml(fen, r.uci) : null) : '')
     + `</div>${sb.ladder?.length ? `<div><div class="sb-sub-h"><span>Top pick by rating</span><span class="sb-engine" data-uci="${esc(engine.uci)}">Engine <b>${esc(engine.move)}</b></span></div>${sbTrack(sb, rating)}</div>` : ''}`
     + `</div></section>`;
 }
@@ -1086,6 +1136,10 @@ function renderKeyCard() {
   if (now != null) cards.push(sbBefore(L, now, u));
   else if (!currentGame().isGameOver()) cards.push(sbWaiting());
   box.innerHTML = cards.join('');
+  const mlBtn = box.querySelector('.ml-toggle');
+  if (mlBtn) mlBtn.onclick = () => { store('maiaLines', mlOpen() ? '0' : '1'); renderKeyCard(); };
+  if (!mlBtn) mlShown = null;  // no live card with player moves: nothing to fetch for
+  requestMaiaLines();
 
   // the rating picker sits in the panel's header, a mirror of the Human moves panel's one rating
   const pick = $('sb-rating');

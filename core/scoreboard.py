@@ -52,6 +52,43 @@ def _win(cp_white: int, mover: chess.Color) -> float:
     return w if mover == chess.WHITE else 100 - w
 
 
+# Maia's lines ("Full lines" under Top player moves): how players of a rating typically go on after a move.
+# Maia has no search, so a line is its top move for each side in turn; Stockfish scores each move with a short
+# search (measured per line at 8 plies: see CLAUDE.md, "Scoreboard"). Top move every time plays a bit above the
+# rating (the most common move is usually sound), so it's "the typical continuation", not a likely game.
+LINE_PLIES = 8      # moves after the first one
+LINE_DEPTH = 12
+LINE_SECONDS = 0.5
+
+
+def maia_line(engine, maia, board: chess.Board, first_uci: str, rating: int, plies: int = LINE_PLIES) -> list[dict]:
+    """`first_uci`, then Maia's top move at `rating` (both sides) for `plies` moves. Each move: SAN, its number
+    ("5." / "5..."), the eval after it (White's view) and the win % it cost its mover (`drop`, `tier`)."""
+    b = board.copy()
+    move = chess.Move.from_uci(first_uci)
+    if move not in b.legal_moves:
+        raise ValueError(f"{first_uci} isn't legal here")
+    before = engine.evaluate(b, seconds=LINE_SECONDS, depth=LINE_DEPTH)["cp_white"]
+    out = []
+    for i in range(plies + 1):
+        mover = b.turn
+        num = f"{b.fullmove_number}." if mover == chess.WHITE else f"{b.fullmove_number}..."
+        san = b.san(move)
+        b.push(move)
+        ev = engine.evaluate(b, seconds=LINE_SECONDS, depth=LINE_DEPTH)
+        drop = max(0.0, _win(before, mover) - _win(ev["cp_white"], mover))
+        out.append({"san": san, "uci": move.uci(), "num": num, "eval_white": ev["eval_white"],
+                    "drop": round(drop, 1), "tier": tier(drop)})
+        before = ev["cp_white"]
+        if i == plies or b.is_game_over():
+            break
+        top = maia.moves(b, rating, rating, top=1)
+        if not top:
+            break
+        move = chess.Move.from_uci(top[0]["uci"])
+    return out
+
+
 def mover_eval(eval_white: str, mover: chess.Color) -> str:
     """An eval string from the mover's point of view: positive good for them, no "+" (the card says whose move)."""
     mate, sign, num = eval_white.startswith("#"), eval_white.lstrip("#")[:1], eval_white.lstrip("#+-")

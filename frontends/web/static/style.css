@@ -947,6 +947,19 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .sb-table + .sb-table { margin-top: 14px; }
 .sb-table.maia .sb-cols span { color: var(--maia); }
 .sb-table.sf .sb-cols span { color: var(--t3-text); }
+
+/* Maia's lines under the player moves: the toggle in the header, a wrapped line under each row, aligned with
+   the move column (rank column 20 + gap 10 + row padding 8) */
+.ml-toggle { margin-left: 10px; padding: 0; border: 0; background: none; font: inherit; font-size: 11px; letter-spacing: 0;
+  text-transform: none; color: var(--muted); cursor: pointer; }
+.ml-toggle:hover { color: var(--text); }
+.ml-line { display: flex; flex-wrap: wrap; gap: 2px 9px; padding: 1px 8px 9px 38px; font-size: 12px; color: var(--muted); }
+.ml-line.skel { height: 10px; width: 70%; margin: 3px 8px 9px 38px; padding: 0; border-radius: 5px; background: #2f2e2b; }
+.ml-mv { white-space: nowrap; }
+.ml-mv i { margin-right: 2px; font-style: normal; color: var(--faint); }
+.ml-san { font-weight: 500; color: var(--text); }
+.ml-mv:is(.t1, .t2, .t3) .ml-san { color: var(--c); font-weight: 600; }
+.ml-mv small { margin-left: 3px; font-size: 10.5px; color: var(--faint); }
 .sb-row { height: 27px; width: 100%; background: none; border: 0; border-radius: 8px; color: var(--text); font: inherit;
   font-size: 13px; text-align: left; cursor: pointer; transition: background .12s; }
 .sb-row:hover, .sb-row.hot { background: var(--hover-2); }

@@ -828,6 +828,28 @@ def maia_moves(req: MaiaReq):
     return {"rating": rating, "opp_rating": opp, "moves": moves}
 
 
+class MaiaLineReq(BaseModel):
+    fen: str
+    uci: str                      # the first move; Maia plays on from there
+    rating: int = 800
+    start_fen: str | None = None
+    moves: list[str] = []         # SAN, the line that led here (Maia and the engine both read it)
+
+
+@app.post("/api/maia_line")
+def maia_line_endpoint(req: MaiaLineReq):
+    """One "Full lines" row: how ~rating players typically go on after `uci` (scoreboard.maia_line). On
+    S.full_card_engine: idle outside bot games, and the scoreboard's two engines stay free for the next step."""
+    if not maia.available():
+        raise HTTPException(503, "Maia isn't installed")
+    board = with_history(parse_fen(req.fen), req.start_fen, req.moves)
+    try:
+        line = scoreboard.maia_line(S.full_card_engine, S.maia, board, req.uci, max(0, min(5000, req.rating)))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"line": line}
+
+
 SB_LOCK = threading.Lock()  # one scoreboard search at a time...
 SB_LATEST = [0]             # ...and only for the newest request: stepping through a game shouldn't queue them
 

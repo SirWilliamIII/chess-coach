@@ -382,6 +382,16 @@ file says what is true now. Last full cleanup: 2026-10-03.
   (`playMaiaMove()`). Quick numbers (`lastEval`/`lastMaia`, `sbQuick()`) fill the candidates at once; the track
   waits for the deep search (skeletons). Eval off (bot game without it): only "What ~N play" (Maia). The card fills the
   panel and spaces the lists and the track with `space-around` (`.sb-body`, user's call 2026-10-07).
+- **Maia's lines** ("▸ Full lines" in the Top player moves header, localStorage `maiaLines`, 2026-10-07): under
+  each player move, how ~N players typically go on: Maia's top move for both sides at the picker's rating, 8
+  more moves (`scoreboard.maia_line()`, `POST /api/maia_line`, one line per request on `S.full_card_engine`),
+  each with Stockfish's eval after it (depth 12 / 0.5 s, White's view) and coloured by the win % it cost its
+  mover. The first move isn't repeated (it's the row, with the deeper number). Measured: 1.5 s for the first
+  line (Maia cold), 0.25-0.4 s each after, 5 lines in ~3 s; `requestMaiaLines()` fetches one at a time, each
+  render asks for the next (`mlCache` by FEN + rating + move). Top move every time plays a bit above the rating,
+  so it's "the typical continuation", not a likely game. Depth 12 still swings a little at big evals (a +6.8 →
+  +4.4 step can flag a move); not checked against deep searches. Not built: clicking a line to play it, the
+  "practical move" ranking built on these lines.
 - **Whose moves:** `sbTargets()`/`sbUser()` unchanged: the bot game's or replay's colour, else the review's
   `player_color`; null on the analysis board ("Last move", "White to move"). In a bot game or replay the
   opponent's turn isn't searched ("Bot is thinking" skeleton). `requestScoreboard()` runs the board's position
