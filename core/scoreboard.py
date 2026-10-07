@@ -14,8 +14,7 @@ from core.maia import RATINGS
 
 SF_LINES = 5        # Stockfish moves shown
 HUMAN_SHOWN = 5     # Maia moves shown
-HUMAN_SCORED = 8    # Maia moves Stockfish scores, for the odds; more makes the second search slower
-MIN_SCORED_PCT = 1  # below this a Maia move is ignored for the odds (noise, and search time)
+HUMAN_SCORED = 8    # Maia moves kept for the odds (scored from the full search)
 
 # Search budget: stop at DEPTH or after MAX_SECONDS, whichever comes first (see Engine.lines). Measured
 # 2026-10-04, 38 positions from saved games vs depth 22: depth 15 was within 5 win % on all of them (depth 12:
@@ -79,42 +78,30 @@ def build(sf_engine, human_engine, maia, board: chess.Board, rating: int, opp_ra
     if board.is_game_over():
         return {"over": True}
     humans = maia.moves(board, rating, opp_rating, top=max(HUMAN_SCORED, HUMAN_SHOWN)) if maia else []
-    pick = [m for i, m in enumerate(humans) if i < HUMAN_SHOWN or m["pct"] >= MIN_SCORED_PCT][:HUMAN_SCORED]
-    roots = [chess.Move.from_uci(m["uci"]) for m in pick]
-    for u in include:
-        mv = chess.Move.from_uci(u)
-        if mv in board.legal_moves and mv not in roots:
-            roots.append(mv)
-    # The two searches run at once on the two Stockfish processes, so the wait is the slower one, not the
-    # sum (depth 18 with 5 lines alone measured 3.7 s median, 7.3 s p90 on this machine, 2026-10-04).
-    # The full ranking runs after the human moves on the same process: together still about as long as the
-    # deep top 5 on the other.
-    def second():
-        scored = human_engine.lines(board, multipv=len(roots), seconds=MAX_SECONDS, depth=DEPTH,
-                                    root_moves=roots) if roots else []
-        full = human_engine.lines(board, multipv=board.legal_moves.count(), seconds=FULL_SECONDS, depth=FULL_DEPTH)
-        return scored, full
-
+    # Two searches at once on the two Stockfish processes: the deep top 5, and every legal move shallow (which
+    # also scores Maia's moves and `include`). The wait is the deep one. A third, depth-16 search of Maia's
+    # moves ran after the full one until 2026-10-06; dropped for speed (measured over 40 positions of a saved
+    # game: 2.7 s average per scoreboard with it, the top 5 alone 1.6 s). Costs past #5 are now depth 10 only.
     def ladder():
         return [{"rating": r, "moves": [{k: m[k] for k in ("move", "uci", "pct")} for m in maia.moves(board, r, r, top=LADDER_SHOWN)]}
                 for r in LADDER] if maia else []
 
     with ThreadPoolExecutor(2) as pool:
-        job = pool.submit(second)
+        job = pool.submit(human_engine.lines, board, multipv=board.legal_moves.count(), seconds=FULL_SECONDS, depth=FULL_DEPTH)
         lad = pool.submit(ladder)
         sf = sf_engine.lines(board, multipv=SF_LINES, seconds=MAX_SECONDS, depth=DEPTH)
-        scored, full = job.result()
+        full = job.result()
     if not sf:
         raise RuntimeError("Stockfish returned no lines")
-    out = summarize(board.turn, sf, humans, scored, rating, include, full)
+    out = summarize(board.turn, sf, humans, full, rating, include, full)
     out["ladder"] = lad.result()
     return out
 
 
 def summarize(mover: chess.Color, sf: list[dict], humans: list[dict], scored: list[dict], rating: int,
               include: list[str] = (), full: list[dict] = ()) -> dict:
-    """Rows, odds and alerts from the searches. `scored` is Stockfish limited to the human moves, `full` a
-    shallow search of every legal move (for "all", the whole ranking)."""
+    """Rows, odds and alerts from the searches. `scored` scores the human moves (now the same shallow search of
+    every legal move as `full`, see build()); `full` gives "all", the whole ranking."""
     side = "White" if mover == chess.WHITE else "Black"
     best = _win(sf[0]["cp_white"], mover)
     pct = {m["uci"]: m["pct"] for m in humans}
@@ -177,7 +164,8 @@ def summarize(mover: chess.Color, sf: list[dict], humans: list[dict], scored: li
 
 def ranking(mover: chess.Color, sf: list[dict], scored: list[dict], full: list[dict], pct: dict) -> list[dict]:
     """Every legal move, best first: the deep top 5 in their order, then the rest by the deepest number we
-    have for them (the human-move search, else the shallow full one), never better than #5. `cost` is pawns
+    have for them (`scored`, else the shallow full one; since 2026-10-06 they're the same search), never better
+    than #5. `cost` is pawns
     behind the best move for the mover (None when a mate is involved: "misses/allows mate" isn't a number)."""
     sign = 1 if mover == chess.WHITE else -1
     best_cp = sign * sf[0]["cp_white"]

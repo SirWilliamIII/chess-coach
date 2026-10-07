@@ -40,6 +40,10 @@ class State:
     # the bot-game card's instant parts (quick card, "If they…" replies): their own process, so they never
     # queue behind the eval bar / GM check / coach on S.engine, which held them up 3+ s per move
     card_engine: Engine | None = None
+    # the full bot-game card (depth 20 + trick and threat checks, ~5 s): its own process too. On S.engine the
+    # eval bar queued behind it (0.6 s -> 1.9 s per bot move, measured 2026-10-06); on S.card_engine the next
+    # bot move's quick card would queue behind it instead
+    full_card_engine: Engine | None = None
     # the scoreboard's two parallel searches (top 5, the human moves): a few seconds each, so they get
     # their own processes rather than holding up the eval bar, the coach or the bot-game card
     sb_engines: tuple[Engine, Engine] | None = None
@@ -59,6 +63,7 @@ S = State()
 async def lifespan(app):
     S.engine = Engine()
     S.card_engine = Engine(threads=2, hash_mb=64)  # 2 of the 4 performance cores; S.engine uses 4
+    S.full_card_engine = Engine(threads=2, hash_mb=64)  # took 4 threads on S.engine before, so no more CPU per bot move
     S.sb_engines = (Engine(threads=3, hash_mb=128), Engine(threads=3, hash_mb=64))  # with the above: 12 threads on 10 cores, rarely all busy
     S.bot = Bot()
     S.maia = maia.Maia()  # the model itself loads on the first request
@@ -67,6 +72,7 @@ async def lifespan(app):
     yield
     S.engine.close()
     S.card_engine.close()
+    S.full_card_engine.close()
     for e in S.sb_engines:
         e.close()
     S.bot.close()
@@ -593,7 +599,7 @@ def opponent_card_endpoint(req: GmReq):
     if board.fullmove_number <= 8:  # still in the opening: have "Show main lines" ready before it's asked
         _warm_explorer(req.fen)
     try:
-        card = opponent_card.build(S.engine, board)
+        card = opponent_card.build(S.full_card_engine, board)
     except ValueError as e:
         raise HTTPException(400, str(e))
     return _with_traps(card, board)

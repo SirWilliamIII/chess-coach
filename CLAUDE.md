@@ -84,10 +84,12 @@ file says what is true now. Last full cleanup: 2026-10-03.
   `S.card_engine`, `S.sb_engines`, `S.bot`, `S.maia`). Not built for concurrent users, by design.
 - **One game load at a time.** `POST /api/load` returns 409 while `S.job` runs; a load doesn't cancel the
   running one.
-- **Four Stockfish processes.** `S.engine` (4 threads; eval bar, GM check, coach tools, full card),
-  `S.card_engine` (2 threads; the bot-game quick card and "If they…" replies, so they never queue behind the
-  main engine), and `S.sb_engines` (3 + 3 threads; the scoreboard's two parallel searches, see
-  "Scoreboard"). `Engine._call` is serialized with a lock: overlapping `analyse` calls returned empty lines
+- **Five Stockfish processes.** `S.engine` (4 threads; eval bar, GM check, coach tools), `S.card_engine` (2
+  threads; the bot-game quick card and "If they…" replies, so they never queue behind the main engine),
+  `S.full_card_engine` (2 threads; the full bot-game card, moved off `S.engine` 2026-10-06: the eval bar queued
+  behind its ~5 s search, 0.6 → 1.9 s per bot move), and `S.sb_engines` (3 + 3 threads; the scoreboard's two
+  parallel searches, see "Scoreboard"). Right after a bot move all of them run at once on 10 cores (4
+  performance): `maia`'s 0.5 s scoring still queues behind `replies` on `S.card_engine` (0.5 → 1.1 s). `Engine._call` is serialized with a lock: overlapping `analyse` calls returned empty lines
   and 500'd. `Bot` has its own process and lock.
 - **Engine search: time vs depth.** `Engine.lines()`/`evaluate()` take an optional `depth` (stop at that
   depth or after `seconds`, whichever first). The coach's tools use `TOOL_DEPTH` 22 / `TOOL_MAX_SECONDS` 4
@@ -164,7 +166,10 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - **Explorer walks are slow and rate-limited:** ~1 s per request, serialized; `BUDGET` 20 (`core/openings.py`)
   ≈ 27 s cold. `explore(..., patient=True)` waits out 429s (the coach's tools are patient; the panel and
   `/api/lines` fail fast). `_warm_explorer()` pre-walks after each bot move in the opening (move ≤ 8). Disk
-  cache `data/explorer/` (a month). The explorer panel has no filter UI: `explorerFilters()` is a constant
+  cache `data/explorer/` (a month). The explorer panel fetches only while Moves & engine is open (`requestExplorer()`; opening it fetches),
+  since fetching behind the closed dropdown was ~340 requests an hour and tripped Lichess's 429 (2026-10-06;
+  after a 429 every non-patient call fails for 61 s, `RATE_LIMIT_WAIT`). The other big consumer is
+  `_warm_explorer()` (~25 masters requests per bot move up to move 8). The explorer panel has no filter UI: `explorerFilters()` is a constant
   (Lichess DB, all ratings, all six speeds listed explicitly, since a missing speeds list means blitz+rapid).
 - **ECO table** (`core/eco.py`, vendored lichess-org/chess-openings TSVs in `core/eco_data/`, CC0): indexed by
   EPD, exact positions only. Used for opening quips, lesson names and trap labels; the explorer panel and
@@ -338,35 +343,35 @@ file says what is true now. Last full cleanup: 2026-10-03.
   or "misses/allows mate"), graded by win % lost. The eval bar is the only absolute number on the page.
 - **After your move** (`sbAfter()`, on top): eyebrow "You played 9." + grade pill (Best move / Excellent < 2 /
   Good < 5 / Inaccuracy < 15 / Mistake < 30 / Blunder, `sbGrade()`; loaded games use the review's
-  `win_pct_lost`), the move, "9th best of 39 legal moves" in the grade's colour (nothing for the best move: the
-  pill says it), the cost in pawns, a flat strip of every legal move with yours raised (`.sb-rankbar`), and
-  facts: "Best was X", "Most ~1500 players play Y", "Most popular with ~N players" (the rating, of 600-2600,
-  whose Maia picks your move most often). Tinted with the grade's colour. Wording per the user (2026-10-06:
-  "top choice of 41", "Typical at ~2600" and "hold within 5%" were confusing).
-- **Before your move** (`sbBefore()`): "N of M moves are safe" (cost under `SB_GOOD` 5 % win chance; "Only one
-  safe move" in red), **the strip** (`sbSpectrum()`: every legal move best → worst, colour = tier, height = how
-  often players at the chosen rating pick it, so a tall red tick is a trap people fall into), then **two lists
+  `win_pct_lost`), a flat strip of every legal move with yours raised (`.sb-rankbar`), and one fact: "Best was
+  X" (not for the best move). Tinted with the grade's colour. User's calls (2026-10-06): no move/cost line ("f3
+  −1.20 pawns" removed), no rank text ("9th best of 39 legal moves"), no other facts ("Most ~N players play Y",
+  "Most popular with ~N players").
+- **Before your move** (`sbBefore()`): no headline (user's call, 2026-10-06: "N of M moves are safe" removed; the
+  eyebrow's right side names a hovered move: "exf6 · #2 · 11% play it"; the every-move strip `sbSpectrum()`
+  was removed too), then **two lists
   on the same columns** (user's call: one absolute, one "the one you look at", adjustable on the fly):
-  **Stockfish** (its top 5, the same at any rating) and **~N players** (Maia's top 5 at the chosen rating,
-  by popularity), each row with Stockfish's rank, the cost vs the best and a Maia-blue popularity bar
-  (`sbCandidates()`). Then **Top pick by rating** (`sbTrack()`: Maia's favourite at 600 … 2600 as runs along
+  **Bot moves** (Stockfish's top 5, the same at any rating) and **Player moves** (Maia's top 5 at the chosen
+  rating, by popularity; headers are only these names, no column labels, user's call 2026-10-06), each row with Stockfish's rank, the cost vs the best and a Maia-blue popularity bar
+  (`sbCandidates()`; no % number on the row, user's call: the % shows on hover). Then **Top pick by rating** (`sbTrack()`: Maia's favourite at 600 … 2600 as runs along
   one track coloured by cost, your rating marked, "Engine X" beside it). **The rating switches instantly**
   (measured 0.18 s, no request): the search carries Maia's top 10 at every picker rating (`ladder`),
-  `sbPcts()` reads the chosen one, and `sbCache` is keyed by FEN only. Hovering any move (row, tick, segment, the
-  engine pill) draws its arrow and names it in the header (`.sb-tip`); clicking a row or tick plays it
-  (`playMaiaMove()`). Quick numbers (`lastEval`/`lastMaia`, `sbQuick()`) fill the candidates at once; the strip
-  and track wait for the deep search (skeletons). Eval off (bot game without it): only "What ~N play" (Maia).
+  `sbPcts()` reads the chosen one, and `sbCache` is keyed by FEN only. Hovering any move (row, segment, the
+  engine pill) draws its arrow and names it in the eyebrow (`.sb-tip`); clicking a row plays it
+  (`playMaiaMove()`). Quick numbers (`lastEval`/`lastMaia`, `sbQuick()`) fill the candidates at once; the track
+  waits for the deep search (skeletons). Eval off (bot game without it): only "What ~N play" (Maia).
 - **Whose moves:** `sbTargets()`/`sbUser()` unchanged: the bot game's or replay's colour, else the review's
   `player_color`; null on the analysis board ("Last move", "White to move"). In a bot game or replay the
-  opponent's turn isn't searched ("Bot is thinking" skeleton). `requestScoreboard()` runs your last move's
-  position (with `include`) and the board's, one after the other.
-- **Server** (`scoreboard.build()`): the deep top 5 (`DEPTH` 16 / `MAX_SECONDS` 3) on one sb engine; on the
-  other, Maia's moves (`root_moves`) and then **every legal move** at `FULL_DEPTH` 10 / `FULL_SECONDS` 1.5
-  (measured 2026-10-06, 33-41 legal moves: 0.4-1.2 s; depth 12 was 1.1-9.8 s). `ranking()` → `all`: the deep
-  top 5 first, the rest by their deepest number, never better than #5, drops kept non-decreasing. `ladder`:
-  `maia.moves()` at every `maia.RATINGS` value (600-2600 step 100, top 10 each, opponent at the same rating),
-  in a thread beside the searches. A
-  cold request was ~6 s once (Maia loading), ~4 s warm with a mate on the board. `sf`, `humans`, `extra`,
+  opponent's turn isn't searched ("Bot is thinking" skeleton). `requestScoreboard()` runs the board's position
+  first, then your last move's (with `include`), one after the other.
+- **Server** (`scoreboard.build()`): two searches at once, the deep top 5 (`DEPTH` 16 / `MAX_SECONDS` 3) on one
+  sb engine and **every legal move** at `FULL_DEPTH` 10 / `FULL_SECONDS` 1.5 on the other (it also scores Maia's
+  moves and `include`), so the wait is the top 5. Until 2026-10-06 a depth-16 search of Maia's moves ran before
+  the full one; dropped for speed (user's call): 40 positions of a saved game went from 2.7 s to 1.44 s average,
+  the browser card from 2.8-6.8 s to 2.1-2.4 s per step. Costs past #5 (Player moves rows outside the top 5)
+  are depth 10. `ranking()` → `all`: the deep top 5 first, the rest by the shallow number, never better than #5,
+  drops kept non-decreasing. `ladder`: `maia.moves()` at every `maia.RATINGS` value (600-2600 step 100, top 10
+  each, opponent at the same rating), in a thread beside the searches (≈0 s warm). `sf`, `humans`, `extra`,
   `alerts`, `odds` are still returned; the frontend no longer shows `alerts`.
 - **Latest wins:** `SB_LOCK` + `SB_LATEST` return `{"stale": true}` for a request a newer one overtook. Cached
   client-side (`sbCache`, by FEN) so stepping back is instant. The ladder's opponent is at the same rating,

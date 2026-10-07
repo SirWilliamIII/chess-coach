@@ -844,13 +844,14 @@ function requestScoreboard(c) {
   const L = sbLine();
   const { now, k } = sbTargets(L);
   const jobs = [];
+  // the board's position first (the card you're reading), then your move's for the "You played" card
+  if (now != null && !sbGet(L.fens[now])) jobs.push({ at: now, include: [] });
   if (k) {
     // your move's position, with your move scored even if neither list has it (asked once per entry)
     const uci = L.plays[k - 1].uci;
     const old = sbGet(L.fens[k - 1]);
     if (!old || !(old.over || sbRow(old, uci) || old.included?.includes(uci))) jobs.push({ at: k - 1, include: [uci] });
   }
-  if (now != null && !sbGet(L.fens[now])) jobs.push({ at: now, include: [] });
   if (!jobs.length) return;
   sbTimer = setTimeout(async () => {
     // one after the other: the server drops a search that a newer request overtakes
@@ -921,7 +922,6 @@ function sbHideMove() {
 
 const sbTier = (d) => (d >= 30 ? 3 : d >= 15 ? 2 : d >= SB_GOOD ? 1 : 0);
 const sbFmt = (p) => (p == null ? '' : p < 1 ? '<1' : `${Math.round(p)}`);
-const ordinal = (n) => `${n}${[11, 12, 13].includes(n % 100) ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
 
 // The grade of a move by the win chance it cost (the tiers of everything else on the card)
 function sbGrade(d, rank) {
@@ -960,24 +960,15 @@ function sbQuick(fen, turn) {
   return { rows, best: sf[0]?.eval_white };
 }
 
-// Every legal move on one strip, best to worst. Colour: what it costs (the tiers); height: how often players
-// at the chosen rating pick it, so a tall red tick is the trap people fall into. `played` gets a marker.
-function sbSpectrum(sb, pcts) {
-  const top = Math.max(1, ...pcts.values());
-  const ticks = sb.all.map((r) => `<i class="t${r.tier}" data-uci="${esc(r.uci)}" `
-    + `style="--h:${(0.2 + 0.8 * Math.sqrt((pcts.get(r.uci) || 0) / top)).toFixed(3)}"></i>`).join('');
-  return `<div class="sb-ticks" title="Every legal move, best (left) to worst (right). Colour: what it costs; height: how often players at this rating pick it">${ticks}</div>`;
-}
-
 // One list of moves, the same columns for both lists so they compare row for row: Stockfish's rank, the move,
-// what it costs against the best, and how often players at the chosen rating play it. `title` heads the list.
-function sbCandidates(rows, turn, bestEval, rating, title = 'Best moves', cls = 'sf') {
+// what it costs against the best, and how often players at the chosen rating play it. The header is only the
+// list's name (user's call, 2026-10-06: no column labels).
+function sbCandidates(rows, turn, bestEval, title = 'Bot moves', cls = 'sf') {
   const top = Math.max(1, ...rows.map((r) => r.pct || 0));
-  return `<div class="sb-table ${cls}"><div class="sb-cols"><span>#</span><span>${title}</span><span>vs best</span><span>~${rating} play it</span></div>${
+  return `<div class="sb-table ${cls}"><div class="sb-cols"><span>${title}</span></div>${
     rows.map((r) => `<button class="sb-row t${r.tier}${r.rank === 1 ? ' best' : ''}" data-uci="${esc(r.uci)}">`
       + `<span class="sb-rank">${r.rank ?? '·'}</span><b class="sb-mv">${esc(r.move)}</b><span class="sb-cost">${sbCost(r, turn, bestEval)}</span>`
-      + `<span class="sb-pop"><span class="sb-pbar"><span style="width:${r.pct ? Math.max(3, 100 * r.pct / top) : 0}%"></span></span>`
-      + `<span class="sb-pct">${r.pct != null ? `${sbFmt(r.pct)}%` : '–'}</span></span></button>`).join('')}</div>`;
+      + `<span class="sb-pop"><span class="sb-pbar"><span style="width:${r.pct ? Math.max(3, 100 * r.pct / top) : 0}%"></span></span></span></button>`).join('')}</div>`;
 }
 
 // Which move each rating picks (Maia's favourite, 600 → 2600), as runs along one track; your rating marked
@@ -1000,7 +991,7 @@ function sbTrack(sb, rating) {
     + `<div class="sb-ticks-axis">${[lo, mid, hi].map((r) => `<span style="left:${at(r)}%">${r}</span>`).join('')}</div></div>`;
 }
 
-const sbSkeleton = (rows) => `<div class="sb-ticks skel"></div><div class="sb-table">${'<div class="sb-row skel"><span></span></div>'.repeat(rows)}</div>`;
+const sbSkeleton = (rows) => `<div class="sb-table">${'<div class="sb-row skel"><span></span></div>'.repeat(rows)}</div>`;
 
 // Card 1: before the move (the board now)
 function sbBefore(L, now, u) {
@@ -1018,23 +1009,18 @@ function sbBefore(L, now, u) {
     const top = Math.max(1, ...(mm || []).map((m) => m.pct));
     return `<section class="sb-card live">${eyebrow(mm ? '' : '<span class="sb-busy"></span>')}<div class="sb-head"><b>What ~${rating}s play</b>`
       + `<span class="sb-tip" data-idle="engine off"></span></div><div class="sb-table">${(mm || []).map((m) => `<button class="sb-row maia-only" data-uci="${esc(m.uci)}">`
-      + `<b class="sb-mv">${esc(m.move)}</b><span class="sb-pop"><span class="sb-pbar"><span style="width:${Math.max(3, 100 * m.pct / top)}%"></span></span>`
-      + `<span class="sb-pct">${sbFmt(m.pct)}%</span></span></button>`).join('') || '<div class="sb-row skel"><span></span></div>'.repeat(5)}</div></section>`;
+      + `<b class="sb-mv">${esc(m.move)}</b><span class="sb-pop"><span class="sb-pbar"><span style="width:${Math.max(3, 100 * m.pct / top)}%"></span></span></span></button>`).join('') || '<div class="sb-row skel"><span></span></div>'.repeat(5)}</div></section>`;
   }
+  // no headline (user's call, 2026-10-06: "N of M moves are safe" removed): hovering a move names it in the eyebrow
+  const tip = '<span class="sb-tip" data-idle=""></span>';
   const busy = !sb && state.engineOn ? `<span class="sb-busy" title="${esc(sbError || 'Searching every move')}">${sbError ? 'search failed' : ''}</span>` : '';
   if (!sb) {
     // quick numbers only: the candidates now, the strip and the track when the deep search lands
     const q = sbQuick(fen, turn);
-    return `<section class="sb-card live">${eyebrow(busy)}<div class="sb-head"><b class="skel-text">Ranking every move…</b><span class="sb-tip" data-idle=""></span></div>`
-      + `<div class="sb-ticks skel"></div>`
-      + (q ? sbCandidates(q.rows.filter((r) => r.rank).slice(0, 5), turn, q.best, rating) : `<div class="sb-table">${'<div class="sb-row skel"><span></span></div>'.repeat(5)}</div>`)
+    return `<section class="sb-card live">${eyebrow(tip + busy)}`
+      + (q ? sbCandidates(q.rows.filter((r) => r.rank).slice(0, 5), turn, q.best) : `<div class="sb-table">${'<div class="sb-row skel"><span></span></div>'.repeat(5)}</div>`)
       + `</section>`;
   }
-  // "safe" = costs under SB_GOOD % win chance against the best move (the tiers' first step)
-  const n = sb.all.length;
-  const safe = sb.all.filter((r) => r.drop < SB_GOOD).length;
-  const head = safe <= 1 ? '<b class="g3">Only one safe move</b>'
-    : safe === n ? '<b>Every move is safe</b>' : `<b>${safe} of ${n} moves are safe</b>`;
   const pcts = sbPcts(sb, rating);
   const withPct = (r) => ({ ...r, pct: pcts.get(r.uci) ?? null });
   const engine = sb.all[0];
@@ -1043,11 +1029,9 @@ function sbBefore(L, now, u) {
   const best = sb.all.slice(0, 5).map(withPct);
   const players = [...pcts.keys()].map((u) => sb.all.find((r) => r.uci === u)).filter(Boolean).map(withPct)
     .sort((a, b) => b.pct - a.pct).slice(0, 5);
-  return `<section class="sb-card live">${eyebrow(busy)}<div class="sb-head">${head}`
-    + `<span class="sb-tip" data-idle="lose &lt; ${SB_GOOD}%" title="A safe move costs under ${SB_GOOD}% win chance compared with the best move">lose &lt; ${SB_GOOD}%</span></div>`
-    + sbSpectrum(sb, pcts)
-    + sbCandidates(best, turn, engine.eval_white, rating, 'Stockfish', 'sf')
-    + (players.length ? sbCandidates(players, turn, engine.eval_white, rating, `~${rating} players`, 'maia') : '')
+  return `<section class="sb-card live">${eyebrow(tip + busy)}`
+    + sbCandidates(best, turn, engine.eval_white, 'Bot moves', 'sf')
+    + (players.length ? sbCandidates(players, turn, engine.eval_white, 'Player moves', 'maia') : '')
     + (sb.ladder?.length ? `<div class="sb-sub-h"><span>Top pick by rating</span><span class="sb-engine" data-uci="${esc(engine.uci)}">Engine <b>${esc(engine.move)}</b></span></div>${sbTrack(sb, rating)}` : '')
     + `</section>`;
 }
@@ -1058,44 +1042,24 @@ function sbWaiting() {
     + `<div class="sb-head"><b class="skel-text">Their move</b></div>${sbSkeleton(5)}</section>`;
 }
 
-// After your move: one strip on top of the card (user's wording: "You played b8. b8 was the 28th best move"):
-// the grade, the rank among every legal move, the cost, and a flat strip of all the moves with yours marked
+// After your move: one strip on top of the card: the grade and a flat strip of every legal move with yours
+// marked (user's calls, 2026-10-06: no move/cost line, no rank text, and the only fact is the best move)
 function sbAfter(L, k, u) {
   const p = L.plays[k - 1];
   const fen = L.fens[k - 1];
-  const turn = fen.split(' ')[1];
   const sb = sbGet(fen);
   const label = `${u ? 'You played' : 'Last move'} <span class="sb-num">${p.num}</span>`;
   if (!sb || sb.over || !sb.all) {
     return `<section class="sb-card after"><div class="sb-eyebrow"><span>${label}</span><span class="sb-busy"></span></div>`
-      + `<div class="sb-v-line"><b class="sb-v-mv">${esc(p.san)}</b><span class="sb-v-rank skel-text">ranking…</span></div>`
       + `<div class="sb-rankbar skel"></div></section>`;
   }
   const row = sb.all.find((r) => r.uci === p.uci);
-  const n = sb.all.length;
   const d = sbDrop(L, k) ?? row?.drop ?? 0;
   const [grade, g] = sbGrade(d, row?.rank);
   const best = sb.all[0];
-  const rank = !row || row.rank === 1 ? '' : `${ordinal(row.rank)} best of ${n} legal moves`;
-  const cost = row && row.rank > 1 ? sbCost(row, turn, best.eval_white) : '';
-  const costTxt = cost.startsWith('−') ? `${cost} pawns` : cost;
-  // the rating whose players pick this move most often (Maia, 600-2600): a rough "level" of the move
-  const peak = (sb.ladder || []).map((l) => ({ r: l.rating, pct: l.moves.find((m) => m.uci === p.uci)?.pct || 0 }))
-    .reduce((a, b) => (b.pct > a.pct ? b : a), { pct: 0 });
-  const rating = sbRatings(fen)[0];
-  const pcts = sbPcts(sb, rating);
-  const popUci = [...pcts.keys()][0];
-  const pop = popUci && sb.all.find((r) => r.uci === popUci);
-  const facts = [
-    row?.rank !== 1 ? `<span data-uci="${esc(best.uci)}">Best was <b>${esc(best.move)}</b></span>` : '',
-    pop && pop.uci !== p.uci ? `<span data-uci="${esc(pop.uci)}">Most ~${rating} players play <b>${esc(pop.move)}</b></span>` : '',
-    peak.pct >= 3 ? `<span title="Of all ratings from 600 to 2600, players at this one pick your move most often (Maia)">Most popular with <b>~${peak.r}</b> players</span>` : '',
-  ].filter(Boolean).join('');
+  const facts = row?.rank !== 1 ? `<span data-uci="${esc(best.uci)}">Best was <b>${esc(best.move)}</b></span>` : '';
   const ticks = sb.all.map((r) => `<i class="t${r.tier}${r.uci === p.uci ? ' me' : ''}" data-uci="${esc(r.uci)}"></i>`).join('');
-  // the best move needs no rank ("best move" says it); the others get their place among every legal move
   return `<section class="sb-card after ${g}"><div class="sb-eyebrow"><span>${label}</span><span class="sb-grade">${grade}</span></div>`
-    + `<div class="sb-v-line"><b class="sb-v-mv">${esc(p.san)}</b>${rank ? `<span class="sb-v-rank">${rank}</span>` : ''}`
-    + `${costTxt ? `<span class="sb-v-cost" title="${d >= 1 ? `${Math.round(d)}% win chance` : ''}">${costTxt}</span>` : ''}</div>`
     + `<div class="sb-rankbar">${ticks}</div>${facts ? `<div class="sb-facts">${facts}</div>` : ''}</section>`;
 }
 
@@ -1244,6 +1208,9 @@ function requestExplorer(c) {
   if (linesFor && !state.demo && c && c.fen() !== linesFor) { $('x-lines-box').classList.add('hidden'); linesFor = null; }
   const token = ++xToken;
   if (!c) return;
+  // only while Moves & engine is open (it starts closed): fetching every position behind a closed dropdown
+  // was ~340 Lichess requests an hour of play and tripped its rate limit (2026-10-06). Opening it fetches.
+  if ($('gp-details').classList.contains('hidden')) return;
   const f = explorerFilters();
   if (!state.explorerReady) {
     $('x-body').innerHTML = '<p class="hint">The explorer needs a Lichess token: add <code>LICHESS_TOKEN=lip_…</code> to <code>.env</code> and restart.</p>';
@@ -5086,8 +5053,10 @@ function closeGpDropdown() {
 })();
 $('gp-toggle').onclick = (e) => {
   e.stopPropagation();
+  const wasHidden = $('gp-details').classList.contains('hidden');
   $('gp-details').classList.remove('hidden');
   $('gp-toggle').classList.remove('collapsed');
+  if (wasHidden) requestExplorer(currentGame());
   // the folded list can't scroll to the current move while the panel is hidden, so do it on open
   $('moves').querySelector('.mv.active')?.scrollIntoView({ block: 'nearest' });
 };
