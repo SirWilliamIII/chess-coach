@@ -947,6 +947,10 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .sb-table + .sb-table { margin-top: 14px; }
 .sb-table.maia .sb-cols span { color: var(--maia); }
 .sb-table.sf .sb-cols span { color: var(--t3-text); }
+.sb-table.sf .sb-cols .sb-turn { float: right; display: inline-flex; align-items: center; gap: 6px; color: var(--faint); letter-spacing: .08em; cursor: help; }
+.sb-sw { width: 9px; height: 9px; border-radius: 2px; box-shadow: inset 0 0 0 1px var(--faint); }
+.sb-sw.w { background: #eee; }
+.sb-sw.b { background: #111; }
 
 /* Tactics finder: the box on top of the live card, and the lists blurred until the move is shown */
 .sb-tactic { margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--t1) 12%, var(--inset));

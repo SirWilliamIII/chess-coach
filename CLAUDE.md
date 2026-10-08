@@ -378,8 +378,10 @@ file says what is true now. Last full cleanup: 2026-10-03.
   searching dot sits in the first list's header), then **two lists
   on the same columns** (user's call: one absolute, one "the one you look at", adjustable on the fly):
   **Top bot moves** (Stockfish's top 5, the same at any rating) and **Top player moves** (Maia's top 5 at the chosen
-  rating, by popularity; headers are only these names, no column labels, user's call 2026-10-06), each row with Stockfish's rank, the eval after the move and a Maia-blue popularity bar
-  (`sbCandidates()`; no % number on the row, user's call; with the hover text gone the % shows nowhere). Then **Top pick by rating** (`sbTrack()`: Maia's favourite at 400 … 2400 as runs along
+  rating, by popularity; headers are only these names, no column labels, user's call 2026-10-06), each row with Stockfish's rank and the eval after the move; Top player moves also has a Maia-blue popularity
+  bar (`sbCandidates()`; no % number on the row, user's call; the bar's tooltip says "N% of ~R players play it"). The bar
+  was dropped from Top bot moves 2026-10-07 (user's call: it read as "the move the bot is likely to play"), and that
+  header carries a "White/Black to move" cue (`.sb-turn`), since on Black's turn the best row has the lowest number. Then **Top pick by rating** (`sbTrack()`: Maia's favourite at 400 … 2400 as runs along
   one track coloured by cost, your rating marked, "Engine X" beside it). **The rating switches instantly**
   (measured 0.18 s, no request): the search carries Maia's top 10 at every picker rating (`ladder`),
   `sbPcts()` reads the chosen one, and `sbCache` is keyed by FEN only. Hovering any move (row, segment, the

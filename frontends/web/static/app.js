@@ -977,11 +977,18 @@ function sbQuick(fen, turn) {
 // list's name (user's call, 2026-10-06: no column labels).
 function sbCandidates(rows, turn, bestEval, title = 'Top bot moves', cls = 'sf', busy = '', after = null) {
   const top = Math.max(1, ...rows.map((r) => r.pct || 0));
-  return `<div class="sb-table ${cls}"><div class="sb-cols"><span>${title}${busy}</span></div>${
+  // evals are White's side, so on Black's turn the best row has the lowest number: say whose move it is (user's
+  // call 2026-10-07, after +18.25 above +22.04 read as backwards)
+  const side = turn === 'w' ? 'White' : 'Black';
+  const cue = cls === 'sf' ? `<span class="sb-turn" title="Evals are from White's side: ${side} wants the ${turn === 'w' ? 'highest' : 'lowest'} number"><i class="sb-sw ${turn}"></i>${side} to move</span>` : '';
+  // the popularity bar only on the players' list: on the bot's it read as "the move the bot is likely to play"
+  const pop = (r) => cls === 'sf' ? '<span></span>'
+    : `<span class="sb-pop" title="${Math.round(r.pct || 0)}% of ~${maiaRating()} players play it"><span class="sb-pbar"><span style="width:${r.pct ? Math.max(3, 100 * r.pct / top) : 0}%"></span></span></span>`;
+  return `<div class="sb-table ${cls}"><div class="sb-cols"><span>${title}${busy}${cue}</span></div>${
     rows.map((r) => `<button class="sb-row t${r.tier}${r.rank === 1 ? ' best' : ''}" data-uci="${esc(r.uci)}">`
       + `<span class="sb-rank">${r.rank ?? '·'}</span><b class="sb-mv">${esc(r.move)}</b>`
       + `<span class="sb-cost">${sbEvalAfter(r, turn, bestEval)}</span>`
-      + `<span class="sb-pop"><span class="sb-pbar"><span style="width:${r.pct ? Math.max(3, 100 * r.pct / top) : 0}%"></span></span></span></button>`
+      + pop(r) + '</button>'
       + (after ? after(r) : '')).join('')}</div>`;
 }
 
