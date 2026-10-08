@@ -20,7 +20,7 @@ VALUES = {chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3, chess.ROOK: 5, chess.
 LETTER = {"K": chess.KING, "Q": chess.QUEEN, "R": chess.ROOK, "B": chess.BISHOP, "N": chess.KNIGHT, "P": chess.PAWN}
 
 # The picker: (group, spec, label). Spec = your pieces "-" theirs; "rand:N" = N random pieces in all,
-# "pawns:N" = kings plus N pawns.
+# "pawns:N" = kings plus N pawns, split as evenly as N allows; "pawns:even" = two pawns down with the active king, and it's even (always a draw drill).
 PRESETS = [
     ("Mates", "KQ-K", "Queen mate"),
     ("Mates", "KR-K", "Rook mate"),
@@ -47,6 +47,7 @@ PRESETS = [
     ("Random", "rand:5", "5 pieces"),
     ("Random", "rand:6", "6 pieces"),
     ("Random", "rand:7", "7 pieces"),
+    ("Pawn structures", "pawns:even", "Dead even"),
     ("Pawn structures", "pawns:6", "6 pawns"),
     ("Pawn structures", "pawns:8", "8 pawns"),
     ("Pawn structures", "pawns:10", "10 pawns"),
@@ -59,6 +60,12 @@ MIN_DTM = 10            # plies: a tablebase win shorter than this is too quick 
 GIVE_UP_AFTER = 80      # candidates with none passing the shallow filter: that result doesn't happen here
 ENGINE_EVEN = 30        # cp: "0.0" for positions too big for the tablebase
 ENGINE_WIN = 250
+EVEN_FEWER = (1, 3)     # "pawns:even": your pawn count; they have two more
+# "pawns:even" kings: yours central, theirs on its own back two ranks, so the compensation is king activity
+CENTRE = {s for s in chess.SQUARES if 2 <= chess.square_file(s) <= 5 and 2 <= chess.square_rank(s) <= 5}
+EVEN_PAWN_RANKS = {chess.WHITE: (1, 4), chess.BLACK: (3, 6)}  # own half + one rank: fewer pawn races
+BACK_RANKS = {chess.WHITE: {s for s in chess.SQUARES if chess.square_rank(s) <= 1},
+              chess.BLACK: {s for s in chess.SQUARES if chess.square_rank(s) >= 6}}
 
 
 class NoPosition(Exception):
@@ -74,14 +81,14 @@ def _parse(spec: str) -> tuple[list[int], list[int]]:
     return [LETTER[c] for c in mine if c != "K"], [LETTER[c] for c in theirs if c != "K"]
 
 
-def _random_material(n: int, rng: random.Random, pawns_only: bool) -> tuple[list[int], list[int]]:
+def _random_material(n: int, rng: random.Random) -> tuple[list[int], list[int]]:
     """n non-king pieces split between the sides, weighted towards pawns; at most one queen a side."""
     kinds = [chess.PAWN] * 10 + [chess.KNIGHT] * 2 + [chess.BISHOP] * 2 + [chess.ROOK] * 3 + [chess.QUEEN]
     sides: tuple[list[int], list[int]] = ([], [])
     for _ in range(n):
         side = sides[rng.randrange(2)]
         while True:
-            k = chess.PAWN if pawns_only else rng.choice(kinds)
+            k = rng.choice(kinds)
             if k == chess.QUEEN and chess.QUEEN in side:
                 continue
             if k != chess.PAWN and side.count(k) >= 2:
@@ -91,7 +98,16 @@ def _random_material(n: int, rng: random.Random, pawns_only: bool) -> tuple[list
     return sides
 
 
-def _place(mine: list[int], theirs: list[int], me: chess.Color, rng: random.Random) -> chess.Board | None:
+def _pawn_split(n: int, rng: random.Random, lies: bool) -> tuple[list[int], list[int]]:
+    """Kings + n pawns, level: equal when n is even, one apart when odd (a random 5 vs 1 isn't a technique
+    drill). "Material lies" needs someone down, so an even n goes two apart there."""
+    gap = n % 2 or (2 if lies else 0)
+    more, fewer = [chess.PAWN] * ((n + gap) // 2), [chess.PAWN] * ((n - gap) // 2)
+    return (more, fewer) if rng.random() < 0.5 else (fewer, more)
+
+
+def _place(mine: list[int], theirs: list[int], me: chess.Color, rng: random.Random,
+           kings: tuple[set, set] | None = None, pawn_ranks: dict | None = None) -> chess.Board | None:
     board = chess.Board(None)
     board.turn = me
     free = set(chess.SQUARES)
@@ -102,12 +118,13 @@ def _place(mine: list[int], theirs: list[int], me: chess.Color, rng: random.Rand
         free.discard(sq)
         return sq
 
-    k1 = put(chess.KING, me, set(chess.SQUARES))
-    put(chess.KING, not me, {s for s in chess.SQUARES if chess.square_distance(s, k1) > 1})
+    my_sq, their_sq = kings or (set(chess.SQUARES), set(chess.SQUARES))
+    k1 = put(chess.KING, me, my_sq)
+    put(chess.KING, not me, {s for s in their_sq if chess.square_distance(s, k1) > 1})
     for color, pieces in ((me, mine), (not me, theirs)):
         # pawns at least two steps from promoting: one on the 7th makes the drill a one-mover
-        pawn_squares = {s for s in chess.SQUARES if (1 <= chess.square_rank(s) <= 5 if color == chess.WHITE
-                                                     else 2 <= chess.square_rank(s) <= 6)}
+        lo, hi = (pawn_ranks or {chess.WHITE: (1, 5), chess.BLACK: (2, 6)})[color]
+        pawn_squares = {s for s in chess.SQUARES if lo <= chess.square_rank(s) <= hi}
         bishop_colours = []
         for p in pieces:
             squares = pawn_squares if p == chess.PAWN else set(chess.SQUARES)
@@ -151,7 +168,10 @@ def generate(engine, spec: str, mode: str, me: chess.Color, seed: int | None = N
         raise ValueError(f"mode must be one of {MODES}")
     rng = random.Random(seed)
     fixed = None
-    if spec.startswith(("rand:", "pawns:")):
+    even = spec == "pawns:even"
+    if even:
+        mode, n = "draw", None
+    elif spec.startswith(("rand:", "pawns:")):
         n = int(spec.split(":")[1])
         n = n - 2 if spec.startswith("rand:") else n  # rand:N counts the kings
         if not 1 <= n <= 14:
@@ -172,26 +192,37 @@ def generate(engine, spec: str, mode: str, me: chess.Color, seed: int | None = N
     while time.monotonic() - started < TIME_BUDGET:
         if fixed:
             mine, theirs = fixed
+        elif even:
+            k = rng.randint(*EVEN_FEWER)
+            mine, theirs = [chess.PAWN] * k, [chess.PAWN] * (k + 2)
+        elif spec.startswith("pawns:"):
+            mine, theirs = _pawn_split(n, rng, mode == "lies")
+            if mode == "lies" and points(mine) > points(theirs):
+                mine, theirs = theirs, mine
         else:
-            mine, theirs = _random_material(n, rng, spec.startswith("pawns:"))
+            mine, theirs = _random_material(n, rng)
             if mode == "lies" and points(mine) >= points(theirs):
                 mine, theirs = theirs, mine
                 if points(mine) == points(theirs):
                     continue
-        board = _place(mine, theirs, me, rng)
+        board = _place(mine, theirs, me, rng, *((CENTRE, BACK_RANKS[not me]), EVEN_PAWN_RANKS) if even else ())
         if board is None:
             continue
         tried += 1
-        if tried >= GIVE_UP_AFTER and not passed:
+        if tried >= GIVE_UP_AFTER and not passed and not even:  # dead even rejects most candidates by design
             break
         lies = points(mine) < points(theirs)
         # shallow filter: skip the obvious misses before asking the tablebase or searching deep
         cp = _mover_cp(engine, board, depth=8, seconds=0.2)
         if mode == "win" and cp < 150:
             continue
-        if mode == "draw" and abs(cp) > 150:
+        if mode == "draw" and abs(cp) > (60 if even else 150):
             continue
         if mode == "lies" and cp < -150:
+            continue
+        # "dead even" means the kings decide it: a quick race to two queens and a perpetual is 0.00 too, but isn't
+        # the drill (same search as the filter above, so it comes from the engine memo)
+        if even and any(len(u) == 5 for u in engine.lines(board, multipv=1, seconds=0.2, depth=8)[0]["pv"][:16]):
             continue
         passed += 1
         source, outcome, dtm, ev = None, None, None, None

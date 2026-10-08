@@ -4667,6 +4667,7 @@ function egGlyphs(material, white) {
 }
 
 function egSpecLabel(spec) {
+  if (spec === 'pawns:even') return 'two pawns down with the active king, and it\'s even: hold the draw (any mode)';
   const m = /^(rand|pawns):(\d+)$/.exec(spec);
   if (m) return m[1] === 'rand' ? `${m[2]} random pieces` : `kings + ${m[2]} pawns`;
   return spec.split('-').map((s) => s.split('').join('+')).join(' vs ');
@@ -4691,10 +4692,10 @@ function renderEndgames() {
   const groups = [...new Set(egPresets.map((p) => p.group))];
   $('eg-grid').innerHTML = groups.map((g) => `<div class="eg-group"><div class="eg-gh">${esc(g)}</div><div class="eg-tiles">${
     egPresets.filter((p) => p.group === g).map((p) => {
-      const st = stats[`${p.spec}|${mode}`];
+      const st = stats[`${p.spec}|${egModeFor(p.spec, mode)}`];
       const [mine, theirs] = p.spec.includes('-') ? p.spec.split('-') : [null, null];
       const art = mine ? `<span class="eg-art"><span class="${white ? 'w' : 'b'}">${egGlyphs(mine, white)}</span><span class="eg-vs">vs</span><span class="${white ? 'b' : 'w'}">${egGlyphs(theirs, !white)}</span></span>`
-        : `<span class="eg-art"><span class="eg-n">${p.spec.split(':')[1]}</span><span class="eg-vs">${p.spec.startsWith('pawns') ? '♙ ♟' : 'pieces'}</span></span>`;
+        : `<span class="eg-art"><span class="eg-n">${p.spec === 'pawns:even' ? '+0.0' : p.spec.split(':')[1]}</span><span class="eg-vs">${p.spec.startsWith('pawns') ? '♙ ♟' : 'pieces'}</span></span>`;
       return `<button class="eg-tile" data-spec="${esc(p.spec)}" title="${esc(egSpecLabel(p.spec))}">${art}<span class="eg-label">${esc(p.label)}</span>`
         + `${st ? `<span class="eg-st" title="Done / tried in this mode">${st.done}/${st.tries}</span>` : ''}</button>`;
     }).join('')}</div></div>`).join('');
@@ -4712,7 +4713,13 @@ async function egBotLevel() {
   return botLevels.find((l) => /^stockfish/i.test(l.name)) || botLevels[botLevels.length - 1] || null;
 }
 
+// "Dead even" is always a draw drill, whatever mode is picked
+function egModeFor(spec, mode) {
+  return spec === 'pawns:even' ? 'draw' : mode;
+}
+
 async function startEndgame(spec, mode = egChoice.mode, pick = egChoice.color) {
+  mode = egModeFor(spec, mode);
   const color = pick === 'random' ? (Math.random() < 0.5 ? 'white' : 'black') : pick;
   const level = await egBotLevel();
   if (!level) return void addMsg('error', "Couldn't load the bot levels.");
@@ -4739,21 +4746,28 @@ async function startEndgame(spec, mode = egChoice.mode, pick = egChoice.color) {
       points: pos.points, slips: 0, held: false, done: false } };
   setEngineVisible(false);  // the eval bar would give the answer away; the toggle still turns it on
   setReview(review, `Endgame drill: ${egSpecLabel(spec)}, you have ${color}.`, play);
-  egGoalCard(play.endgame, color);
+  egGoalCard(play, color);
   egProbe(review.start_fen);
 }
 
-function egGoalCard(eg, color) {
+// "New position" here too, not only on the result card: a Hold-it drill takes 30 moves to finish
+function egGoalCard(p, color) {
+  const eg = p.endgame;
   const goal = eg.outcome === 'win' ? 'Win it: checkmate the bot' : `Hold the draw: reach a drawn ending, or survive ${EG_HOLD_MOVES} moves`;
   const how = eg.source === 'tablebase' ? `Tablebase: ${eg.outcome}${eg.outcome === 'win' && eg.dtm ? `, mate in ${Math.ceil(Math.abs(eg.dtm) / 2)} with best play` : ''}`
     : 'Stockfish (too many pieces for the tablebase): ' + (eg.outcome === 'win' ? 'winning' : 'about 0.0');
   const diff = eg.points[0] - eg.points[1];
   const material = `Material: you ${eg.points[0]}, the bot ${eg.points[1]} (${diff > 0 ? '+' : diff < 0 ? '−' : '±'}${Math.abs(diff)})`;
-  const lies = eg.mode === 'lies' ? `<div class="eg-lie">The count says you're worse. ${eg.outcome === 'win' ? "It's a win for you anyway." : "It's a draw anyway."}</div>` : '';
-  addMsg('coach sb-msg', `<div class="eg-card"><div class="eg-ch"><span class="sb-al">Endgame drill</span>`
+  const lies = eg.spec === 'pawns:even' ? `<div class="eg-lie">You're two pawns down, but your king is the better piece: it's dead even.</div>`
+    : eg.mode === 'lies' ? `<div class="eg-lie">The count says you're worse. ${eg.outcome === 'win' ? "It's a win for you anyway." : "It's a draw anyway."}</div>` : '';
+  const msg = addMsg('coach sb-msg', `<div class="eg-card"><div class="eg-ch"><span class="sb-al">Endgame drill</span>`
     + `<span class="eg-art"><span class="${color === 'white' ? 'w' : 'b'}">${egGlyphs(eg.mine, color === 'white')}</span><span class="eg-vs">vs</span>`
     + `<span class="${color === 'white' ? 'b' : 'w'}">${egGlyphs(eg.theirs, color !== 'white')}</span></span></div>`
-    + `<div class="eg-goal">${esc(goal)}</div>${lies}<div class="card-sub">${esc(material)} · ${esc(how)}</div></div>`);
+    + `<div class="eg-goal">${esc(goal)}</div>${lies}<div class="card-sub">${esc(material)} · ${esc(how)}</div>`
+    + `<div class="eg-actions"><button class="btn ghost small" data-a="again">New position</button>`
+    + `<button class="btn ghost small" data-a="pick">Pick other material</button></div></div>`);
+  msg.querySelector('[data-a=again]').onclick = () => startEndgame(eg.spec, eg.mode, eg.pick);
+  msg.querySelector('[data-a=pick]').onclick = openEndgames;
 }
 
 function egProbe(fen) {
