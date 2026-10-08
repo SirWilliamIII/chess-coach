@@ -12,7 +12,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - `data/` is gitignored (reviews, lessons, library, opening files). `data/openings*.md` is partly course
   material and must never be committed.
 
-## Current state (2026-10-07)
+## Current state (2026-10-08)
 
 - **Opening lessons built** (`data/studies/`, per clone):
 
@@ -47,8 +47,18 @@ file says what is true now. Last full cleanup: 2026-10-03.
   ("Full lines", see "Scoreboard"), every rating on the chess.com rapid scale with one Maia rating for both sides
   (see "Maia"), scoreboard evals from White's side with the eval bar matching the #1 row, and the "I'm playing"
   toggle removed from the analysis board.
-- **Next focus:** the user trying the tactics finder live (false alarms, wrong hint text, the answer flashing in
-  the quick lists); then "watch out" (the opponent's tactics). Opening lessons after that. See TODOs.
+- **Built 2026-10-08, not yet used live by the user:** opening puzzles (see "Opening puzzles"): the Lichess puzzle
+  database's opening-tagged part in `data/puzzles.sqlite`, a picker with each opening's recurring patterns, a puzzle
+  mode with a hint ladder and a puzzle level, and "Tactics in this opening ›" beside the opening name. Pattern names
+  are templates; the one-off Claude naming pass (top ~10 per opening, user reviews) waits for the user's verdict on
+  which patterns are worth it.
+- **Built 2026-10-08, not yet used live:** puzzles from the user's own games ("Your mistakes" in Puzzles; see
+  "Opening puzzles", last bullets). The nav item and dialog are now "Puzzles".
+- **Direction (user, 2026-10-08):** most features now run without the Claude API (engine, Maia, ECO table, Lichess
+  data, tablebase, both puzzle sources); Claude is the explainer you click for. Keep it that way: prefer a lookup or
+  an engine fact over an LLM call. A coach hint button during puzzles was offered and declined for now.
+- **Next focus:** the user trying Puzzles (both sources) and the tactics finder live; then "watch out" (the
+  opponent's tactics: the "allowed" puzzles are the offline half of it). Opening lessons after that. See TODOs.
 
 ## Running and testing
 
@@ -69,7 +79,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - **Testing without touching the running server:** start a second instance on another port
   (`(set -a; . ./.env; set +a; .venv/bin/python -m frontends.web.server --port 8011 &)`). To keep its writes
   out of the real `data/library.sqlite`, run it from a wrapper that sets `core.library.DB_PATH` to a copy
-  before importing the server. Load a game with `POST /api/saved/open {"game_id": "...", "me": "sirwill3rd"}`
+  before importing the server. Load a game with `POST /api/saved/open {"game_id": "...", "me": "O-O-O-F4ce"}`
   (games in `data/reviews/`), or a position with `POST /api/analysis {"fen": ...}`, then reload the page.
   Drive it with Playwright from `.venv` (system `python3` has no project deps); stub `**/api/chat` to avoid API
   spend. To test the coach itself, build `Coach(review, Engine(), player=...)` in a script and call `ask()`
@@ -453,6 +463,59 @@ file says what is true now. Last full cleanup: 2026-10-03.
   can flash first; the eval bar still hints. Not built: "watch out" (their tactic, needs a search as if it were
   their move), better pin/discovered rules, tactics from your games as puzzles.
 
+### Opening puzzles (`core/puzzles.py`, `scripts/puzzles_import.py`, "opening puzzles" in `app.js`, 2026-10-08)
+
+- **Data:** Lichess's puzzle database (CC0). Lichess tags a puzzle with its game's opening only before move 20
+  (checked on the 2026-10 dump: 1.22M of 6.16M tagged, all moves 1-19), always two tags: family
+  (`Sicilian_Defense`) and variation, the ECO name up to its first comma (`Sicilian_Defense_Najdorf_Variation`).
+  The importer keeps only tagged rows (`data/puzzles.sqlite`, ~420 MB, ~1.5 min, streams the `.zst` through
+  `zstd -dc`; writes a temp file and swaps it in, restart the server after to drop its caches). Per clone. Tag →
+  proper name (`label()`) by normalising the vendored ECO names the way Lichess does (`tag_of()`); unmatched tags
+  show with spaces for underscores. 1.d4 f5 2.Bf4 (London vs Dutch) has no ECO name: it's in
+  `Dutch_Defense_Other_variations`, not separable by tag.
+- **Patterns:** a puzzle's first move is the blunder (the "trigger"), the second the solver's answer. Pattern key
+  = solver + answer piece + capture or not + destination square + main motif (`MOTIFS` priority order), e.g.
+  `w:Pxe5|fork`. Listed when ≥ `MIN_PATTERN` 15 and ≥ 0.3% of the selection. **Lift** = share in this opening ÷
+  share in all *other* tagged puzzles (both sides, so a side filter doesn't move it); ≥ `TYPICAL_LIFT` 2 =
+  "Typical of this opening" (sorted by n × log2 lift), the rest "Common here, and everywhere". A trigger ≥
+  `TRIGGER_SHARE` 40% of its pattern shows as "after …Nxe5 (96%)" (the "if they play X" cases: London …Nxe5 →
+  dxe5 fork, Najdorf Nd5 → …Nxd5, Dutch …Nxh5 → Qxh5+); scattered triggers only in the row's tooltip. Most
+  typical patterns are still mates on specific squares; no hand check of the patterns beyond those examples.
+  Template titles ("…Bg5 pin", "Qxh7#"); the Claude naming pass is not built.
+- **Picking:** `pick()` widens the rating band (±100/200/400/any) and drops the quality filter (popularity ≥ 60,
+  plays ≥ 30) last; skips the last 300 ids (localStorage `pzSeen`). `/api/puzzles/next` also starts a fresh
+  analysis board at the puzzle's FEN (before the trigger) with a coach note that says not to give the answer.
+- **Puzzle mode** (`state.puzzle`): trigger plays after 0.7 s, replies after 0.45 s; the solution's exact move
+  or any mate is accepted. A wrong move = missed (circle, then arrow); Hint ladder: theme (free), piece, move
+  (both count as missed); Skip counts as missed. While live: eval bar, scoreboard (a "hidden" note), Maia,
+  explorer, chips and ◀ ▶ are off (`puzzleLive()`); after it's over the board is a normal analysis board with the
+  engine back on. Not restored on refresh (like lessons). Level: Elo vs the puzzle's rating, K 40 for the first
+  20 then 20, start 1000 (`pzRating`/`pzCount`); stats per topic and per topic × pattern in `pzStats`.
+- **Not built:** the Claude naming pass, live "this pattern is coming" alerts during games (the "watch out"
+  TODO), filtering London-vs-Dutch by structure.
+- **Your mistakes** (`core/my_puzzles.py`, Chessiro's "Replay Mistakes" idea): every move of yours in
+  `data/reviews/` that lost ≥ `MIN_LOST` 10 win % gets two checks with the tactics finder (depth 16 / 2 s, board
+  with history): *missed* (on your turn one move clearly won and you played another; trigger = their previous move,
+  you solve) and *allowed* (after your move they had one; trigger = your move, you solve from their side, board
+  flipped). The solution runs on while each next solver move is again the finder's one clear move, up to 3; a mate
+  ≤ 5 runs to the end of the PV. Stored per game with `VERSION` (bump to re-mine) in `data/my_puzzles.json`, with
+  the user's names and accounts. **The user's chess.com account was renamed `sirwill3rd` → `O-O-O-F4ce`** (found
+  2026-10-08: chess.com's live-game endpoint names the same player differently; the old name 404s on the API). Older
+  reviews say sirwill3rd, newer ones O-O-O-F4ce. **Accounts (user, 2026-10-08): chess.com `O-O-O-F4ce` and
+  `PawnSoloOfficial`, Lichess `sirwill3`**; `accounts` is a list per site, `me` adds the old sirwill3rd, and a name a
+  site 404s on goes to `gone` (`drop_account()`, one warning) so a browser's stale Find games name isn't re-added. CLI `python -m core.my_puzzles [--me …]`;
+  **"Update from my games"** in the list (`/api/puzzles/mine/update`, `MINE_JOB`, own Stockfish, 2 threads): the last
+  `UPDATE_GAMES` 30 games per site (Lichess skips already-reviewed ids before fetching PGNs), reviews the new ones,
+  then mines every unmined game; one site failing becomes a warning, not a stop. ~20 s per game to mine with 4
+  threads. Served unrated (the puzzle level doesn't move), grouped by kind × motif ("Forks you
+  missed"); the result card says what you played in the game and has "Open the game here" (the saved review at
+  the trigger). Yield is low by design: most of the user's ≥ 10% losses are positional, not one-clear-move tactics
+  (e.g. a trapped knight at a 16-point gap, under `MIN_GAP` 20). First run (2026-10-08): 134 puzzles from 179
+  games (51 missed, 83 allowed; most common: loose pieces you allowed, 36), 22 min; with the renamed account and the
+  first "Update from my games", 282 from 379 games. Cross-check: Vito's Lichess
+  Tactics Generator (vitogit/pgn-tactics-generator, depth 8) on 20 of the same games, `data/my-lichess-tactics*.md`:
+  53 positions, 20 confirmed by our finder (all in our set), the other 33 small evals or several winning moves.
+
 ### Endgame trainer (`core/endgames.py`, `core/tablebase.py`, "endgame trainer" in `app.js`, 2026-10-04)
 
 - 365chess-style (user's reference: set_endgames_training.php): "♔ Endgames" (side nav, Learn group) → pick a mode, a side and a
@@ -605,7 +668,18 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 - Not built: restoring the chat log on refresh (the conversation itself is server-side and continues).
 
+### Opening puzzles
+
+- Live feedback; then the one-off Claude naming pass for the patterns the user finds real (title + one-line idea
+  from 3 example puzzles, stored in a JSON beside the DB, user reviews them like lesson notes). Then decide on live
+  alerts in games.
+- `data/puzzles/all.csv` (1.1 GB) and the `.zst` (293 MB) are only needed to rebuild; kept on purpose (user's call:
+  disk isn't a concern).
+
 ### Other open items
+
+- **Look at later (user, 2026-10-08):** Chessiro, Chessvia.ai, Aimchess: what they do that this app doesn't, and
+  what's worth borrowing. Chessiro is already the source of the rating table (`core/ratings.py`).
 
 - **Finish `TESTING-2026-09-29.md`.** User's priorities: does each "⚠ Big moment" explanation match its card
   (section 3), and are lesson notes chess-correct (section 5).

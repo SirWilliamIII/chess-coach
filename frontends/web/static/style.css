@@ -1041,3 +1041,59 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
   .sb-busy:empty { animation: none; }
   .sb-pbar span { transition: none; }
 }
+
+/* ---------- opening puzzles (core/puzzles.py, "opening puzzles" in app.js) ---------- */
+.ot-tactics { flex: none; margin: 10px 0 -4px -6px; background: none; border: 0; padding: 0 4px; font-size: 12px; font-weight: 600;
+  color: var(--maia); cursor: pointer; }
+.ot-tactics:hover { color: #a9c6ff; text-decoration: underline; }
+.pz-opts { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.pz-opts input { flex: 1 1 220px; min-width: 0; }
+.pz-opts .seg button { white-space: nowrap; padding: 6px 10px; }
+.pz-body { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 4px; max-height: min(62vh, 600px); overflow-y: auto; padding-right: 2px; }
+.pz-gh { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-top: 6px; }
+.pz-ghs { margin-left: 8px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--faint); }
+.pz-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pz-chip { background: #3c3a37; color: var(--text); border: 1px solid transparent; border-radius: 14px; padding: 5px 11px; font-size: 13px; cursor: pointer; }
+.pz-chip:hover { background: #4b4845; }
+.pz-chip.on, .pz-chip.all { border-color: var(--maia); }
+.pz-n { color: var(--muted); font-size: 11.5px; font-weight: 500; }
+.pz-fam { border-bottom: 1px solid var(--line); padding: 6px 0; }
+.pz-fam-name { background: none; border: 0; color: var(--text); font-weight: 700; font-size: 13.5px; padding: 2px 0; cursor: pointer; }
+.pz-fam-name:hover, .pz-var:hover { color: #fff; text-decoration: underline; }
+.pz-vars { display: flex; flex-wrap: wrap; gap: 2px 14px; padding: 2px 0 0 12px; }
+.pz-var { background: none; border: 0; color: #d9d7d2; font-size: 12.5px; padding: 2px 0; cursor: pointer; text-align: left; }
+.pz-topic-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.pz-topic-head h3 { margin: 0; font-size: 16px; }
+.pz-go { display: flex; align-items: center; gap: 10px; margin: 4px 0 2px; }
+.pz-go .hint { margin: 0; }
+.pz-pats { display: flex; flex-direction: column; gap: 4px; }
+.pz-pat { position: relative; display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; grid-template-areas: "dot title st" "dot after st" "dot meta st";
+  gap: 1px 10px; align-items: center; text-align: left; padding: 8px 12px; border-radius: 8px; cursor: pointer;
+  background: #2c2b28; border: 1px solid var(--line); color: var(--text); }
+.pz-pat:hover { border-color: #7aa7ff; background: #302e2b; }
+.pz-dot { grid-area: dot; align-self: start; margin-top: 4px; width: 10px; height: 10px; border-radius: 50%; border: 1px solid #8a8780; }
+.pz-dot.white { background: #f4f2ed; }
+.pz-dot.black { background: #1c1b19; }
+.pz-pt { grid-area: title; font-weight: 700; font-size: 14px; }
+.pz-pa { grid-area: after; font-size: 12.5px; color: #d9d7d2; }
+.pz-pm { grid-area: meta; font-size: 11.5px; color: var(--muted); }
+.pz-lift { color: #f2d06b; font-weight: 600; }
+.pz-st { grid-area: st; font-size: 11px; font-weight: 700; color: #7fd36a; }
+.pz-err { color: var(--t3-text); }
+.pz-foot { margin-top: 10px; }
+.pz-foot b { color: var(--text); }
+.pz-line { display: flex; gap: 8px; align-items: baseline; margin-top: 4px; font-size: 13px; }
+.pz-k { flex: none; width: 76px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.pz-delta { font-size: 12px; font-weight: 700; margin-left: 6px; }
+.pz-delta.up { color: #7fd36a; }
+.pz-delta.down { color: var(--t3-text); }
+.pz-result .eg-actions a.btn { text-decoration: none; }
+#summary .pz-hint { color: #f2d06b; }
+.sb-off { margin: 16px; }
+.pz-chip.mine { border-color: #7fd36a; }
+.pz-dot.mine { background: #7fd36a; border-color: #7fd36a; }
+.pz-dot.theirs { background: var(--t3); border-color: var(--t3); }
+.pz-pat.head .pz-pt { font-size: 14.5px; }
+.pz-update { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pz-update .hint { margin: 0; flex: 1 1 260px; }
+.pz-job { color: #f2d06b; }

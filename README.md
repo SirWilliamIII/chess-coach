@@ -42,6 +42,19 @@ terminal version.
   opponent's tries, what to wait for), **Drill** has you play your side while the app answers with
   the replies masters play, catches wrong moves (a hint first, then the answer) and tracks which lines
   you've mastered. **Walk me through this** asks the coach about the position with the lesson's line.
+- **Puzzles → Your mistakes**: positions from your own reviewed games where you missed a tactic, or your
+  move handed your opponent one (you then find it from their side). Built by
+  `.venv/bin/python -m core.my_puzzles --me <chess.com name>,<Lichess name>` (names remembered; ~20 s per game),
+  or **Check them** in the list for games reviewed since.
+- **Puzzles** (side nav, Learn): tactics from real Lichess games in an opening you pick (your
+  lessons' openings are listed first, or search: "london", "dutch"). Each opening lists its recurring
+  patterns: the ones **typical** of it ("after …Nxe5, dxe5 forks" in the London) apart from the mates
+  every opening has; drill one pattern or mix them. The opponent's mistake plays first, then you find
+  the tactic (hint ladder: the theme, the piece, the move); your puzzle level follows your results.
+  **Tactics in this opening ›** beside the opening name opens the current opening's list. One-time
+  setup, ~1.5 min and ~420 MB:
+  `curl -L -o data/puzzles/lichess_db_puzzle.csv.zst https://database.lichess.org/lichess_db_puzzle.csv.zst`
+  then `.venv/bin/python -m scripts.puzzles_import` (needs `zstd`: `brew install zstd`).
 - **⚡ GM alerts**: Stockfish checks each position where it's your turn in bot games and replays for
   a sacrifice or forced mate that beats everything else; only then does the coach speak up.
 - **Show me**: when the coach explains a line it attaches a demo; the button plays it on a

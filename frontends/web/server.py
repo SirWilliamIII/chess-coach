@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import eco, endgames, favorites, gm_moments, library, maia, openings, opening_quips, opponent_card, positions, ratings, repertoire, scoreboard, study, tablebase, usage
+from core import eco, endgames, favorites, gm_moments, library, maia, my_puzzles, openings, opening_quips, opponent_card, positions, puzzles, ratings, repertoire, scoreboard, study, tablebase, usage
 from core import org_spend as org_spend_mod
 from core.coach import Coach, prompt_hash
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
@@ -904,6 +904,145 @@ def endgame_probe(req: FenReq):
     position has more than 7 pieces or the service can't be reached."""
     tb = tablebase.probe(parse_fen(req.fen))
     return {"covered": True, **tb} if tb else {"covered": False}
+
+
+# ---------------------------------------------------------------- opening puzzles (core/puzzles.py)
+
+def _need_puzzles():
+    if not puzzles.available() and not my_puzzles.available():
+        raise HTTPException(404, "No puzzle database yet. Build it with: .venv/bin/python -m scripts.puzzles_import")
+
+
+@app.get("/api/puzzles/openings")
+def puzzle_openings(q: str = ""):
+    db = puzzles.available()  # without the Lichess database the picker still offers "Your mistakes"
+    return {"lessons": puzzles.lesson_topics() if db and not q else [], "openings": puzzles.search(q) if db else [],
+            "mine": my_puzzles.summary() if not q else None}
+
+
+# "Update from my games": fetch your latest games from both sites, review the new ones, then mine every reviewed
+# game not mined yet for puzzles. One job at a time, on its own Stockfish (2 threads), so the eval bar and the
+# coach's tools don't queue behind it.
+MINE_JOB = {"status": "idle", "phase": "", "done": 0, "total": 0, "new_games": 0, "new_puzzles": 0, "error": None,
+            "warnings": []}
+UPDATE_GAMES = 30   # most recent games per site; already-reviewed ones cost nothing
+
+
+class MineUpdateReq(BaseModel):
+    chesscom: list[str] = []   # this browser's names (Find games); added to the remembered ones
+    lichess: list[str] = []
+
+
+def _mine_job(accounts: dict):
+    engine = Engine(threads=2, hash_mb=256)
+    try:
+        before = my_puzzles.summary()["n"]
+        for site, user in [(s, u) for s, users in accounts.items() for u in users]:
+            name = "Lichess" if site == "lichess" else "chess.com"
+            MINE_JOB.update(phase=f"Fetching {user}'s {name} games", done=0, total=0)
+            # one site failing (a renamed account, an outage) mustn't stop the other one or the mining
+            try:
+                if site == "lichess":
+                    items = [g for g in lichess.recent_games(user, UPDATE_GAMES) if not (CACHE_DIR / f"{g['id'][:8]}.json").exists()]
+                    fetch_pgn = lambda g: lichess.game_pgn(g["id"])  # one request per game: only the new ones
+                else:
+                    items = chesscom.recent_games(user, UPDATE_GAMES, max_months=6)
+                    fetch_pgn = lambda g: g["pgn"]
+            except RuntimeError as e:
+                if "not found" in str(e) or "no user" in str(e):
+                    my_puzzles.drop_account(site, user)  # renamed or closed: don't ask again; its old games still count
+                    MINE_JOB["warnings"].append(f"{name} has no user {user!r} any more (renamed?), so it's skipped from now on.")
+                else:
+                    MINE_JOB["warnings"].append(f"{name} ({user}): {e}")
+                continue
+            MINE_JOB.update(phase=f"Reviewing {user}'s new {name} games", total=len(items))
+            for i, g in enumerate(items, 1):
+                game = load_pgn(fetch_pgn(g))
+                if not (CACHE_DIR / f"{review_mod.game_id(game)}.json").exists():
+                    review_game(game, engine)
+                    MINE_JOB["new_games"] += 1
+                MINE_JOB.update(done=i)
+
+        def progress(i, n, msg):
+            MINE_JOB.update(phase="Looking for tactics in them", done=i, total=n)
+        my_puzzles.mine_all([], progress, engine=engine)
+        MINE_JOB.update(status="done", new_puzzles=my_puzzles.summary()["n"] - before)
+    except BaseException as e:  # SystemExit from mine_all when it has no names
+        MINE_JOB.update(status="error", error=str(e))
+    finally:
+        engine.close()
+
+
+@app.post("/api/puzzles/mine/update")
+def puzzle_mine_update(req: MineUpdateReq):
+    if MINE_JOB["status"] == "running":
+        return MINE_JOB
+    if PREFETCH["status"] == "running":
+        raise HTTPException(409, "Games are already being saved (Find games); try again when that's done.")
+    accounts = my_puzzles.set_accounts({"chesscom": req.chesscom[:5], "lichess": req.lichess[:5]})
+    if not accounts:
+        raise HTTPException(400, "Enter your chess.com or Lichess name in Find games first.")
+    MINE_JOB.update(status="running", phase="Starting", done=0, total=0, new_games=0, new_puzzles=0, error=None, warnings=[])
+    threading.Thread(target=_mine_job, args=(accounts,), daemon=True).start()
+    return MINE_JOB
+
+
+@app.get("/api/puzzles/mine/status")
+def puzzle_mine_status():
+    return MINE_JOB
+
+
+@app.get("/api/puzzles/tags")
+def puzzle_tags():
+    """Every opening tag with its puzzle count, so the page can offer puzzles for the opening on the board"""
+    return {"available": puzzles.available(), "tags": puzzles.tag_counts() if puzzles.available() else {}}
+
+
+class PuzzleTopicReq(BaseModel):
+    tags: list[str]
+    side: str | None = None     # 'w' / 'b': only puzzles that side solves
+
+
+@app.post("/api/puzzles/patterns")
+def puzzle_patterns(req: PuzzleTopicReq):
+    _need_puzzles()
+    try:
+        return puzzles.patterns(req.tags[:20], req.side)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+class PuzzleNextReq(PuzzleTopicReq):
+    rating: int = 1000
+    pattern: str | None = None
+    exclude: list[str] = []
+    mine: bool = False          # from your own games (core/my_puzzles.py); pattern = a group key ("missed|fork")
+
+
+PUZZLE_NOTE = (
+    "The player is solving a tactics puzzle taken from {source} in the {opening}, playing {color}. "
+    "The board starts one move before the puzzle: the opponent's move that allows the tactic. Don't name the "
+    "solution unless they ask for it or have already found it."
+)
+
+
+@app.post("/api/puzzles/next")
+def puzzle_next(req: PuzzleNextReq):
+    """A puzzle near the rating, and a fresh analysis board at its start (before the trigger move)."""
+    _need_puzzles()
+    try:
+        p = (my_puzzles.pick(req.pattern, req.exclude) if req.mine
+             else puzzles.pick(req.tags[:20], req.side, max(400, min(3200, req.rating)), req.pattern, req.exclude))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if not p:
+        raise HTTPException(404, "No puzzles left for that choice.")
+    with S.lock:
+        source = ("one of their own games, where they missed this tactic" if p.get("kind") == "missed"
+                  else "one of their own games: their move allowed this tactic, and they now play their opponent's side to find it"
+                  if p.get("kind") == "allowed" else "a real Lichess game")
+        new_analysis(p["fen"], PUZZLE_NOTE.format(source=source, opening=p["variation"], color=p["solver"]), player_color=p["solver"])
+    return {"puzzle": p, "review": public_review()}
 
 
 class ChatReq(BaseModel):
