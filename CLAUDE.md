@@ -520,16 +520,16 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 - 365chess-style (user's reference: set_endgames_training.php): "♔ Endgames" (side nav, Learn group) → pick a mode, a side and a
   material tile (`PRESETS`: mates, pawns, rooks, queens, minors, random 4-7 pieces, pawn structures of 6-10
-  pawns); the server makes a fresh random position (`generate()`) and you play it against full-strength
-  Stockfish (`egBotLevel()`), eval bar off (the scoreboard hides with it).
-- **Pawn endings (2026-10-08):** `pawns:N` splits the pawns evenly (one apart when N is odd, two apart in
-  Material lies; was a random split, so "6 pawns" could be 5 vs 1). "Dead even" (`pawns:even`, user's idea) replaced "Any pawn ending": N vs N+2 pawns (`EVEN_FEWER` 1-3),
+  pawns); the server makes a fresh random position (`generate()`) and you play it against the opponent picked in
+  the dialog (`egBotLevel()`): Human = Maia at a rating (`#eg-elo`, default `PLAYER_RATING`; user's call 2026-10-08:
+  Stockfish almost never) or full-strength Stockfish; localStorage `egOpp`/`egElo`. Eval bar off (the scoreboard hides with it).
+- **Pawn endings (2026-10-08):** `pawns:N` splits the pawns evenly (one apart when N is odd; was a random split, so "6 pawns" could be 5 vs 1). "Dead even" (`pawns:even`, user's idea) replaced "Any pawn ending": N vs N+2 pawns (`EVEN_FEWER` 1-3),
   your king in `CENTRE` (c3-f6), theirs on its back two ranks, pawns on their own half + 1 (`EVEN_PAWN_RANKS`), no promotion in the depth-8
   line (else 0.00 is often a queen race into perpetual), kept only if it's a draw (tablebase, or |eval| ≤
   0.30 at depth 22); always a Hold-it drill whatever mode is picked (`egModeFor()`). The goal card has "New position" / "Pick other material", so you can skip
   mid-drill (before, the next position came only from the result card).
-- **Modes:** Win it (you're winning), Hold it (draw), **Material lies** (user's idea: you're down material yet
-  it's a draw or a win; presets with equal material refuse it, presets with you ahead swap sides).
+- **Modes:** Win it (you're winning), Hold it (draw). Material lies (down material yet a draw or a win) was removed
+  2026-10-08 (user's call: Dead even covers its best case); a stored `egMode` "lies" falls back to Win it.
 - **Truth:** ≤ 7 pieces → Lichess tablebase API (`tablebase.probe()`, no token, in-memory cache, one request at
   a time; cursed wins / blessed losses count as draws). Bigger set-ups → Stockfish depth 22 / 2 s (|eval| ≤ 0.3
   = even, ≥ 2.5 = winning), labelled as engine. A depth-8 search filters candidates first; ~0.5 s per drill

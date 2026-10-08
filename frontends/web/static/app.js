@@ -4634,20 +4634,21 @@ async function startGame() {
 // ---------------------------------------------------------------- endgame trainer
 // Pick material and a goal; the server sets up a random position with that material and a known result
 // (core/endgames.py: Lichess' tablebase up to 7 pieces, deep Stockfish above) and you play it out against
-// full-strength Stockfish, eval hidden. With the tablebase, each of your moves is checked: a move that
-// throws away the win (or the draw) gets a card naming the best move. "Material lies": you're down
+// the opponent you pick (Maia at a rating, or full-strength Stockfish), eval hidden. With the tablebase, each of your moves is checked: a move that
+// throws away the win (or the draw) gets a card naming the best move.
 // material but it's a draw or a win (user's idea: learn when the count misleads).
 
 const EG_MODES = {
-  win: ['Win it', 'You have a won position. Convert it against perfect defence.'],
-  draw: ['Hold it', 'The position is a draw. Hold it against an engine trying to win.'],
-  lies: ['Material lies', "You're down material, yet it's a draw or even a win. Find out which, then prove it."],
+  win: ['Win it', 'You have a won position. Convert it.'],
+  draw: ['Hold it', 'The position is a draw. Hold it, and win it if they slip.'],
 };
 const EG_HOLD_MOVES = 30;  // a "hold the draw" drill counts as done after this many of your moves
 const EG_RANK = { loss: 0, draw: 1, win: 2 };
 const egProbes = new Map();  // fen → promise of the tablebase verdict (not in state.play: that's snapshotted)
 let egPresets = null;
-let egChoice = { mode: recall('egMode') || 'win', color: recall('egColor') || 'white' };
+// opponent: Maia by default (user's call, 2026-10-08: full-strength Stockfish only when asked for)
+let egChoice = { mode: EG_MODES[recall('egMode')] ? recall('egMode') : 'win',  // "lies" was removed 2026-10-08
+  color: recall('egColor') || 'white', opp: recall('egOpp') || 'human', elo: +recall('egElo') || null };
 
 function egStats() {
   try { return JSON.parse(recall('egStats') || '{}'); } catch { return {}; }
@@ -4675,7 +4676,10 @@ function egSpecLabel(spec) {
 
 async function openEndgames() {
   if (!egPresets) {
-    try { egPresets = await api('/api/endgame/presets'); } catch (e) { return void addMsg('error', esc(e.message)); }
+    try {
+      egPresets = await api('/api/endgame/presets');
+      botLevels ??= await api('/api/play/levels');
+    } catch (e) { return void addMsg('error', esc(e.message)); }
   }
   renderEndgames();
   $('eg-status').textContent = '';
@@ -4687,6 +4691,7 @@ function renderEndgames() {
   $('eg-modes').innerHTML = Object.entries(EG_MODES).map(([k, [label]]) => `<button data-mode="${k}" class="${k === mode ? 'on' : ''}">${label}</button>`).join('');
   $('eg-mode-hint').textContent = EG_MODES[mode][1];
   $('eg-color').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.color === color));
+  renderEgOpponent();
   const white = color !== 'black';
   const stats = egStats();
   const groups = [...new Set(egPresets.map((p) => p.group))];
@@ -4707,9 +4712,31 @@ $('eg-color').querySelectorAll('button').forEach((b) => {
   b.onclick = () => { egChoice.color = b.dataset.color; store('egColor', b.dataset.color); renderEndgames(); };
 });
 
-// full-strength Stockfish: the strongest defence (the last level when Maia isn't installed)
+// the Maia levels ("Maia (~1400)"); none when Maia isn't installed, and then it's Stockfish only
+function egHumanLevels() {
+  return (botLevels || []).map((l) => ({ ...l, elo: +(l.name.match(/~(\d+)/)?.[1]) })).filter((l) => l.elo);
+}
+
+function renderEgOpponent() {
+  const humans = egHumanLevels();
+  const human = egChoice.opp === 'human' && humans.length > 0;
+  $('eg-opp').classList.toggle('hidden', !humans.length);
+  $('eg-opp').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.opp === (human ? 'human' : 'stockfish')));
+  const elo = egChoice.elo || state.playerRating || 800;
+  const pick = humans.length ? humans.reduce((a, b) => (Math.abs(b.elo - elo) < Math.abs(a.elo - elo) ? b : a)) : null;
+  $('eg-elo').innerHTML = humans.map((l) => `<option value="${l.elo}"${l === pick ? ' selected' : ''}>~${l.elo}</option>`).join('');
+  $('eg-elo').classList.toggle('hidden', !human);
+}
+
+$('eg-opp').querySelectorAll('button').forEach((b) => {
+  b.onclick = () => { egChoice.opp = b.dataset.opp; store('egOpp', b.dataset.opp); renderEgOpponent(); };
+});
+$('eg-elo').onchange = (e) => { egChoice.elo = +e.target.value; store('egElo', e.target.value); };
+
+// Maia at the picked rating, or full-strength Stockfish (the last level when Maia isn't installed)
 async function egBotLevel() {
   botLevels ??= await api('/api/play/levels').catch(() => []);
+  if (egChoice.opp === 'human' && egHumanLevels().length) return levelForRating(egChoice.elo || state.playerRating || 800);
   return botLevels.find((l) => /^stockfish/i.test(l.name)) || botLevels[botLevels.length - 1] || null;
 }
 
@@ -4753,13 +4780,12 @@ async function startEndgame(spec, mode = egChoice.mode, pick = egChoice.color) {
 // "New position" here too, not only on the result card: a Hold-it drill takes 30 moves to finish
 function egGoalCard(p, color) {
   const eg = p.endgame;
-  const goal = eg.outcome === 'win' ? 'Win it: checkmate the bot' : `Hold the draw: reach a drawn ending, or survive ${EG_HOLD_MOVES} moves`;
+  const goal = eg.outcome === 'win' ? `Win it: checkmate ${p.levelName}` : `Hold the draw against ${p.levelName}: reach a drawn ending, or survive ${EG_HOLD_MOVES} moves`;
   const how = eg.source === 'tablebase' ? `Tablebase: ${eg.outcome}${eg.outcome === 'win' && eg.dtm ? `, mate in ${Math.ceil(Math.abs(eg.dtm) / 2)} with best play` : ''}`
     : 'Stockfish (too many pieces for the tablebase): ' + (eg.outcome === 'win' ? 'winning' : 'about 0.0');
   const diff = eg.points[0] - eg.points[1];
   const material = `Material: you ${eg.points[0]}, the bot ${eg.points[1]} (${diff > 0 ? '+' : diff < 0 ? '−' : '±'}${Math.abs(diff)})`;
-  const lies = eg.spec === 'pawns:even' ? `<div class="eg-lie">You're two pawns down, but your king is the better piece: it's dead even.</div>`
-    : eg.mode === 'lies' ? `<div class="eg-lie">The count says you're worse. ${eg.outcome === 'win' ? "It's a win for you anyway." : "It's a draw anyway."}</div>` : '';
+  const lies = eg.spec === 'pawns:even' ? `<div class="eg-lie">You're two pawns down, but your king is the better piece: it's dead even.</div>` : '';
   const msg = addMsg('coach sb-msg', `<div class="eg-card"><div class="eg-ch"><span class="sb-al">Endgame drill</span>`
     + `<span class="eg-art"><span class="${color === 'white' ? 'w' : 'b'}">${egGlyphs(eg.mine, color === 'white')}</span><span class="eg-vs">vs</span>`
     + `<span class="${color === 'white' ? 'b' : 'w'}">${egGlyphs(eg.theirs, color !== 'white')}</span></span></div>`
@@ -5797,6 +5823,7 @@ document.addEventListener('keydown', (e) => {
   state.coachReady = cfg.coach_ready;
   state.explorerReady = cfg.explorer_ready;
   setupMaia(cfg);
+  state.playerRating = cfg.player_rating;
   state.me = recall('me') || cfg.me || '';
   const engineOn = recall('engineOn') !== '0';
   $('engine-toggle').checked = engineOn;

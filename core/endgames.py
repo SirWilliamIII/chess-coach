@@ -1,5 +1,4 @@
-"""Endgame trainer: random positions with the material you pick and a known result (365chess-style, plus a
-"material lies" mode: you're down material, yet it's a draw or a win).
+"""Endgame trainer: random positions with the material you pick and a known result (365chess-style).
 
 Positions with up to 7 pieces are labelled by Lichess' tablebase (exact); bigger pawn set-ups by a deep
 Stockfish search (|eval| ≤ 0.3 counts as even, ≥ 2.5 as winning), and say so. A cheap shallow search
@@ -53,7 +52,7 @@ PRESETS = [
     ("Pawn structures", "pawns:10", "10 pawns"),
 ]
 
-MODES = ("win", "draw", "lies")
+MODES = ("win", "draw")
 TIME_BUDGET = 14.0      # seconds per drill before giving up
 TB_BUDGET = 20          # tablebase requests per drill
 MIN_DTM = 10            # plies: a tablebase win shorter than this is too quick to be a drill
@@ -98,10 +97,10 @@ def _random_material(n: int, rng: random.Random) -> tuple[list[int], list[int]]:
     return sides
 
 
-def _pawn_split(n: int, rng: random.Random, lies: bool) -> tuple[list[int], list[int]]:
+def _pawn_split(n: int, rng: random.Random) -> tuple[list[int], list[int]]:
     """Kings + n pawns, level: equal when n is even, one apart when odd (a random 5 vs 1 isn't a technique
-    drill). "Material lies" needs someone down, so an even n goes two apart there."""
-    gap = n % 2 or (2 if lies else 0)
+    drill)."""
+    gap = n % 2
     more, fewer = [chess.PAWN] * ((n + gap) // 2), [chess.PAWN] * ((n - gap) // 2)
     return (more, fewer) if rng.random() < 0.5 else (fewer, more)
 
@@ -153,14 +152,6 @@ def _mover_cp(engine, board: chess.Board, depth: int, seconds: float) -> int:
     return cp if board.turn == chess.WHITE else -cp
 
 
-def _want(mode: str, outcome: str, lies: bool) -> bool:
-    if mode == "win":
-        return outcome == "win"
-    if mode == "draw":
-        return outcome == "draw"
-    return lies and outcome in ("draw", "win")
-
-
 def generate(engine, spec: str, mode: str, me: chess.Color, seed: int | None = None) -> dict:
     """A position for `spec` (see PRESETS) where the side `me` (to move) has the result `mode` asks for.
     Raises NoPosition when none turns up within the budget, ValueError on a bad spec/mode."""
@@ -178,13 +169,6 @@ def generate(engine, spec: str, mode: str, me: chess.Color, seed: int | None = N
             raise ValueError("piece count out of range")
     else:
         fixed = _parse(spec)
-        if mode == "lies":
-            # you take the side with less material; equal material can't "lie"
-            a, b = fixed
-            if points(a) == points(b):
-                raise NoPosition("Both sides have the same material here, so it can't look lopsided. Pick another set or mode.")
-            if points(a) > points(b):
-                fixed = (b, a)
 
     started = time.monotonic()
     tb_calls = 0
@@ -196,29 +180,20 @@ def generate(engine, spec: str, mode: str, me: chess.Color, seed: int | None = N
             k = rng.randint(*EVEN_FEWER)
             mine, theirs = [chess.PAWN] * k, [chess.PAWN] * (k + 2)
         elif spec.startswith("pawns:"):
-            mine, theirs = _pawn_split(n, rng, mode == "lies")
-            if mode == "lies" and points(mine) > points(theirs):
-                mine, theirs = theirs, mine
+            mine, theirs = _pawn_split(n, rng)
         else:
             mine, theirs = _random_material(n, rng)
-            if mode == "lies" and points(mine) >= points(theirs):
-                mine, theirs = theirs, mine
-                if points(mine) == points(theirs):
-                    continue
         board = _place(mine, theirs, me, rng, *((CENTRE, BACK_RANKS[not me]), EVEN_PAWN_RANKS) if even else ())
         if board is None:
             continue
         tried += 1
         if tried >= GIVE_UP_AFTER and not passed and not even:  # dead even rejects most candidates by design
             break
-        lies = points(mine) < points(theirs)
         # shallow filter: skip the obvious misses before asking the tablebase or searching deep
         cp = _mover_cp(engine, board, depth=8, seconds=0.2)
         if mode == "win" and cp < 150:
             continue
         if mode == "draw" and abs(cp) > (60 if even else 150):
-            continue
-        if mode == "lies" and cp < -150:
             continue
         # "dead even" means the kings decide it: a quick race to two queens and a perpetual is 0.00 too, but isn't
         # the drill (same search as the filter above, so it comes from the engine memo)
@@ -237,12 +212,11 @@ def generate(engine, spec: str, mode: str, me: chess.Color, seed: int | None = N
             ev = _mover_cp(engine, board, depth=22, seconds=2.0)
             outcome = "win" if ev >= ENGINE_WIN else "loss" if ev <= -ENGINE_WIN else "draw" if abs(ev) <= ENGINE_EVEN else None
             source = "engine"
-        if outcome and _want(mode, outcome, lies):
+        if outcome == mode:
             return {"fen": board.fen(), "outcome": outcome, "source": source, "dtm": dtm, "eval": ev,
                     "mine": "K" + "".join(chess.piece_symbol(p).upper() for p in sorted(mine, reverse=True)),
                     "theirs": "K" + "".join(chess.piece_symbol(p).upper() for p in sorted(theirs, reverse=True)),
                     "points": [points(mine), points(theirs)], "tried": tried}
     raise NoPosition({"win": "No winning position turned up for this material.",
-                      "draw": "No drawn position turned up for this material (some sets, like K+Q vs K, always win).",
-                      "lies": "No position where the side down material holds turned up."}[mode]
+                      "draw": "No drawn position turned up for this material (some sets, like K+Q vs K, always win)."}[mode]
                      + " Try again or pick another set.")

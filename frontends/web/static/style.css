@@ -851,6 +851,7 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 @keyframes sb-glow { 50% { box-shadow: 0 0 0 4px rgba(129,182,76,.35); } }
 @media (prefers-reduced-motion: reduce) { .sb-alert.fresh, .sb-alert.t3.fresh, .sb-alert.good.fresh { animation: none; } }
 .eg-opts .seg button { white-space: nowrap; }
+.eg-opp { display: flex; gap: 6px; align-items: center; }
 .eg-opts { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
 .eg-grid { display: flex; flex-direction: column; gap: 14px; margin: 10px 0 4px; max-height: min(60vh, 560px); overflow-y: auto; }
 .eg-grid.busy { opacity: .5; pointer-events: none; }

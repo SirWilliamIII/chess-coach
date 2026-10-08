@@ -877,7 +877,7 @@ def endgame_presets():
 
 class EndgameReq(BaseModel):
     spec: str            # "KRP-KR" (yours - theirs), "rand:N" or "pawns:N"
-    mode: str            # win / draw / lies
+    mode: str            # win / draw
     color: str = "white"
 
 
