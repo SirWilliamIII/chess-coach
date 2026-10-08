@@ -12,7 +12,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - `data/` is gitignored (reviews, lessons, library, opening files). `data/openings*.md` is partly course
   material and must never be committed.
 
-## Current state (2026-10-05)
+## Current state (2026-10-07)
 
 - **Opening lessons built** (`data/studies/`, per clone):
 
@@ -43,7 +43,12 @@ file says what is true now. Last full cleanup: 2026-10-03.
   it" (every legal move ranked, the rating track; see "Scoreboard"), one grid layout with the panels level with
   the board's top and the buttons' bottom, the side nav restyled with one icon set (icon rail ≤ 1360 px). The
   scoreboard's chat cards (move alerts, next-play alerts, big plays) and the opening banner were removed.
-- **Next focus:** the user's verdict on the 2026-10-06 redesign; opening lessons after that. See TODOs.
+- **Built 2026-10-07, not yet used live by the user:** the tactics finder (see "Tactics finder"), Maia's lines
+  ("Full lines", see "Scoreboard"), every rating on the chess.com rapid scale with one Maia rating for both sides
+  (see "Maia"), scoreboard evals from White's side with the eval bar matching the #1 row, and the "I'm playing"
+  toggle removed from the analysis board.
+- **Next focus:** the user trying the tactics finder live (false alarms, wrong hint text, the answer flashing in
+  the quick lists); then "watch out" (the opponent's tactics). Opening lessons after that. See TODOs.
 
 ## Running and testing
 
@@ -564,6 +569,12 @@ file says what is true now. Last full cleanup: 2026-10-03.
   stuck"), treating web results as settled, muddled explanations of sharp middlegames.
 
 ## TODOs / open decisions
+
+### Tactics finder
+
+- Live feedback from the user, then: "watch out" for the opponent's tactics (one extra search as if it were
+  their move), better pin/discovered rules (headline right 59% / 74%), hand-check the untagged puzzles it still
+  names, and whether to hold the quick lists back until the deep search says there's no tactic.
 
 ### Scoreboard (after the 2026-10-06 redesign)
 
