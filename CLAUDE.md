@@ -421,6 +421,31 @@ file says what is true now. Last full cleanup: 2026-10-03.
   unused; the endgame trainer still uses the `.sb-msg`/`.sb-alert` card styles.
 - **Thresholds are first guesses** (tiers 5/15/30 win %, "holds" < 5), not tuned on games.
 
+### Tactics finder (`core/tactics.py`, "Tactics finder" in `app.js`, 2026-10-07)
+
+- **Detector:** a tactic = one clearly best move: win % gap between Stockfish's #1 and #2 ≥ `MIN_GAP` 20 and
+  the mover ≥ `MIN_WIN` 60 after it. Board geometry along the best line names it (`motifs()`: mate, fork,
+  skewer, pin, discovered, hanging = a capture netting ≥ 2); headline = mate, else the motif on the earliest
+  move. A plain trade-back recapture is skipped (needs the board's move history). `find()` searches itself
+  (depth 16 / 2 s, multipv 2); `from_lines()` reuses lines, and `scoreboard.build()` returns `tactic` from its
+  deep top 5, so the live check costs no extra search.
+- **Validation** (`python -m scripts.tactics_eval [--per 40] [--games 200]`): Lichess puzzles from
+  `data/puzzles/sample.csv` (first 60k lines of the CC0 puzzle DB, gitignored; stream it again with `curl -sL
+  https://database.lichess.org/lichess_db_puzzle.csv.zst | zstd -dc | head -n 60001`), theme tags as ground
+  truth, plus random positions from `data/reviews/`. Run 3 (2026-10-07, ratings 600-2000): right first move 100%
+  whenever it fires; fires 92-100% per theme; headline right: mate 100, skewer 98, fork 95, hanging 87,
+  discovered 74, pin 59; on untagged puzzles it still claims a motif 59% of the time (not checked by hand); 3%
+  of game positions flagged (~2-3 per game), all six looked real by hand. ~9 min per run.
+- **UI:** on your turn (any turn on the analysis board), a "Tactic available" box at the top of the live card
+  with a hint ladder (`sbTactic()`, `tacLevel` by FEN, per page load): what to look for → the piece (ringed,
+  `tacticShapes()` in `baseShapes()`) → the move (arrow, line, eval). Only mate/fork/skewer/hanging are named
+  (`TAC_NAME`); pins and discovered attacks get "look for a forcing move". Until the move is shown the lists,
+  the engine pill and the track are blurred (`.tac-hide`; Top bot moves' #1 is the answer). The after-move strip
+  says "Found the fork" / "Missed a fork: Nxe2" in place of "Best was X" (`sbAfter()`).
+- **Known gaps:** the quick numbers (before the deep search lands, ~2 s) show the lists unblurred, so the answer
+  can flash first; the eval bar still hints. Not built: "watch out" (their tactic, needs a search as if it were
+  their move), better pin/discovered rules, tactics from your games as puzzles.
+
 ### Endgame trainer (`core/endgames.py`, `core/tablebase.py`, "endgame trainer" in `app.js`, 2026-10-04)
 
 - 365chess-style (user's reference: set_endgames_training.php): "♔ Endgames" (side nav, Learn group) → pick a mode, a side and a

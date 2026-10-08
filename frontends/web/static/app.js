@@ -1047,6 +1047,63 @@ function sbTrack(sb, rating) {
 
 const sbSkeleton = (rows) => `<div class="sb-table">${'<div class="sb-row skel"><span></span></div>'.repeat(rows)}</div>`;
 
+// ---- Tactics finder (core/tactics.py, on the scoreboard's deep search; 2026-10-07). On your turn (any turn on
+// the analysis board) a "Tactic available" box with a hint ladder: 1 the flag, 2 what to look for, 3 the piece
+// (ringed on the board), 4 the move (arrow). Until 4, the move lists are blurred: Top bot moves' #1 is the answer.
+// Motifs are only named where the detector was reliable on Lichess puzzles (headline right 87-100%: mate, fork,
+// skewer, hanging); pins (59%) and discovered attacks (74%) get the generic hint.
+const TAC_HINT = { fork: 'Look for a fork', skewer: 'Look for a skewer', hanging: 'Something is loose: look for material to win' };
+const TAC_NAME = { mate: 'mate', fork: 'fork', skewer: 'skewer', hanging: 'free material' };
+const PIECE_NAME = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
+const tacLevel = new Map();  // fen → how far up the ladder (1-4); per page load
+
+// The tactic for the board's position, if it's the side the card is about
+function tacticHere() {
+  const c = currentGame();
+  if (!c || !state.engineOn || state.demo || state.editor) return null;
+  const fen = c.fen();
+  const tac = sbGet(fen)?.tactic;
+  const u = sbUser();
+  if (!tac || (u && fen.split(' ')[1] !== u)) return null;
+  return { fen, tac, level: tacLevel.get(fen) || 1 };
+}
+
+const tacMotif = (tac) => (tac.motifs[0] in TAC_NAME ? tac.motifs[0] : null);
+
+function tacHint(tac) {
+  const m = tacMotif(tac);
+  if (m === 'mate') {
+    const n = (tac.eval_white.match(/#[+-]?(\d+)/) || [])[1];
+    return n ? `Look for mate in ${n}` : 'Look for checkmate';
+  }
+  return TAC_HINT[m] || 'Look for a forcing move: a check, a capture or a threat';
+}
+
+function sbTactic(t) {
+  const { tac, level } = t;
+  const from = tac.uci.slice(0, 2);
+  const piece = currentGame().get(from);
+  const rows = [];
+  if (level >= 2) rows.push(`<div class="sb-tac-row">${esc(tacHint(tac))}</div>`);
+  if (level >= 3) rows.push(`<div class="sb-tac-row">Use your <b>${PIECE_NAME[piece?.type] || 'piece'}</b> on ${from}</div>`);
+  if (level >= 4) {
+    const line = tac.line.split(' ').slice(0, 5).join(' ');
+    rows.push(`<div class="sb-tac-row"><b class="sb-tac-move">${esc(tac.move)}</b>${tacMotif(tac) ? ` <span class="sb-tac-tag">${TAC_NAME[tacMotif(tac)]}</span>` : ''}`
+      + `<span class="sb-tac-line">${esc(line)} · ${fmtEval(tac.eval_white)}</span></div>`);
+  }
+  const btns = level < 4
+    ? `<button class="sb-tac-btn" data-tac="next">${['', 'Hint', 'Which piece?', 'Show move'][level]}</button><button class="sb-tac-btn quiet" data-tac="show">Show</button>`
+    : '';
+  return `<div class="sb-tactic"><div class="sb-tac-head"><b>Tactic available</b>${btns}</div>${rows.join('')}</div>`;
+}
+
+function tacticShapes() {
+  const t = tacticHere();
+  if (!t || t.level < 3) return [];
+  const [from, to] = [t.tac.uci.slice(0, 2), t.tac.uci.slice(2, 4)];
+  return t.level >= 4 ? [{ orig: from, dest: to, brush: 'sbMove' }] : [{ orig: from, brush: 'sbMove' }];
+}
+
 // Card 1: before the move (the board now)
 function sbBefore(L, now, u) {
   const fen = L.fens[now];
@@ -1081,8 +1138,10 @@ function sbBefore(L, now, u) {
     .sort((a, b) => b.pct - a.pct).slice(0, 5);
   const open = mlOpen();
   mlShown = open && players.length ? { fen, ucis: players.map((r) => r.uci) } : null;
+  const tac = tacticHere();
+  const hide = tac && tac.fen === fen && tac.level < 4;
   const toggle = `<button class="ml-toggle" title="How ~${rating} players typically go on after each move (Maia, scored by Stockfish)">${open ? '▾' : '▸'} Full lines</button>`;
-  return `<section class="sb-card live"><div class="sb-body"><div>`
+  return `<section class="sb-card live"><div class="sb-body${hide ? ' tac-hide' : ''}">${tac && tac.fen === fen ? sbTactic(tac) : ''}<div>`
     + sbCandidates(best, turn, engine.eval_white, 'Top bot moves', 'sf')
     + (players.length ? sbCandidates(players, turn, engine.eval_white, `Top player moves${toggle}`, 'maia', '', open ? (r) => mlHtml(fen, r.uci) : null) : '')
     + `</div>${sb.ladder?.length ? `<div><div class="sb-sub-h"><span>Top pick by rating</span><span class="sb-engine" data-uci="${esc(engine.uci)}">Engine <b>${esc(engine.move)}</b></span></div>${sbTrack(sb, rating)}</div>` : ''}`
@@ -1110,7 +1169,12 @@ function sbAfter(L, k, u) {
   const d = sbDrop(L, k) ?? row?.drop ?? 0;
   const [grade, g] = sbGrade(d, row?.rank);
   const best = sb.all[0];
-  const facts = row?.rank !== 1 ? `<span data-uci="${esc(best.uci)}">Best was <b>${esc(best.move)}</b></span>` : '';
+  // the tactic finder's verdict on this move, when the position had one ("Missed a fork: Nxe2")
+  const tac = sb.tactic;
+  const tname = tac && (TAC_NAME[tac.motifs[0]] || 'tactic');
+  const facts = tac && tac.uci === p.uci ? `<span>Found the ${tname === 'free material' ? 'free material' : tname}</span>`
+    : tac ? `<span data-uci="${esc(tac.uci)}">Missed ${tname === 'free material' ? 'free material' : `a ${tname}`}: <b>${esc(tac.move)}</b></span>`
+    : row?.rank !== 1 ? `<span data-uci="${esc(best.uci)}">Best was <b>${esc(best.move)}</b></span>` : '';
   const ticks = sb.all.map((r) => `<i class="t${r.tier}${r.uci === p.uci ? ' me' : ''}" data-uci="${esc(r.uci)}"></i>`).join('');
   return `<section class="sb-card after ${g}"><div class="sb-eyebrow"><span>${label}</span><span class="sb-grade">${grade}</span></div>`
     + `<div class="sb-rankbar">${ticks}</div>${facts ? `<div class="sb-facts">${facts}</div>` : ''}</section>`;
@@ -1136,6 +1200,15 @@ function renderKeyCard() {
   if (now != null) cards.push(sbBefore(L, now, u));
   else if (!currentGame().isGameOver()) cards.push(sbWaiting());
   box.innerHTML = cards.join('');
+  box.querySelectorAll('.sb-tac-btn').forEach((b) => {
+    b.onclick = () => {
+      const t = tacticHere();
+      if (!t) return;
+      tacLevel.set(t.fen, b.dataset.tac === 'show' ? 4 : t.level + 1);
+      renderKeyCard();
+      renderShapes();
+    };
+  });
   const mlBtn = box.querySelector('.ml-toggle');
   if (mlBtn) mlBtn.onclick = () => { store('maiaLines', mlOpen() ? '0' : '1'); renderKeyCard(); };
   if (!mlBtn) mlShown = null;  // no live card with player moves: nothing to fetch for
@@ -3077,7 +3150,7 @@ const studyMine = (fen) => fen.split(' ')[1] === state.study.data.color[0];
 // arrows that belong to the position rather than to a hover: the Learn guide (empty elsewhere), plus
 // the arrows you drew on it
 function baseShapes() {
-  return [...guideShapes(), ...drawnShapes()];
+  return [...guideShapes(), ...tacticShapes(), ...drawnShapes()];
 }
 
 function guideShapes() {

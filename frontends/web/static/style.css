@@ -948,6 +948,24 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .sb-table.maia .sb-cols span { color: var(--maia); }
 .sb-table.sf .sb-cols span { color: var(--t3-text); }
 
+/* Tactics finder: the box on top of the live card, and the lists blurred until the move is shown */
+.sb-tactic { margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--t1) 12%, var(--inset));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--t1) 45%, transparent); font-size: 13px; }
+.sb-tac-head { display: flex; align-items: center; gap: 8px; }
+.sb-tac-head b { flex: 1; color: var(--t1); font-weight: 600; }
+.sb-tac-btn { padding: 3px 10px; border: 0; border-radius: 99px; background: color-mix(in srgb, var(--t1) 30%, transparent);
+  color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+.sb-tac-btn:hover { background: color-mix(in srgb, var(--t1) 45%, transparent); }
+.sb-tac-btn.quiet { background: none; color: var(--muted); }
+.sb-tac-btn.quiet:hover { color: var(--text); }
+.sb-tac-row { margin-top: 6px; color: var(--muted); }
+.sb-tac-row b { color: var(--text); }
+.sb-tac-move { font-size: 15px; }
+.sb-tac-tag { margin-left: 6px; padding: 1px 7px; border-radius: 99px; background: var(--inset); font-size: 11px; color: var(--text); }
+.sb-tac-line { display: block; margin-top: 3px; font-size: 12px; color: var(--faint); }
+.sb-body.tac-hide .sb-table, .sb-body.tac-hide .sb-engine, .sb-body.tac-hide .sb-segs {
+  filter: blur(6px); pointer-events: none; user-select: none; }
+
 /* Maia's lines under the player moves: the toggle in the header, a wrapped line under each row, aligned with
    the move column (rank column 20 + gap 10 + row padding 8) */
 .ml-toggle { margin-left: 10px; padding: 0; border: 0; background: none; font: inherit; font-size: 11px; letter-spacing: 0;

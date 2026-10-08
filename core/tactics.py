@@ -139,7 +139,12 @@ def find(engine: Engine, board: chess.Board, depth: int = SEARCH_DEPTH, seconds:
     the geometry checks names it)."""
     if board.is_game_over():
         return None
-    lines = engine.lines(board, multipv=2, seconds=seconds, depth=depth)
+    return from_lines(board, engine.lines(board, multipv=2, seconds=seconds, depth=depth))
+
+
+def from_lines(board: chess.Board, lines: list[dict]) -> dict | None:
+    """find() on engine lines someone already has (the scoreboard's deep top 5: its #1 and #2 are all this
+    needs, so the live check costs no extra search). `lines` as Engine.lines returns them, with "pv"."""
     # a plain trade back after a capture is the "only good move" but not a tactic (the biggest false alarm on the
     # user's games, 2026-10-07). Taking back MORE than they took (they grabbed a pawn with a bishop) still counts:
     # skipping every recapture lost 20% of Lichess's hanging-piece puzzles. Needs the move history.

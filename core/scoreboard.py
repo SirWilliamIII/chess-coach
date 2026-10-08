@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import chess
 
+from core import tactics
 from core.engine import MATE_CP, win_percent
 from core.maia import RATINGS
 
@@ -132,6 +133,8 @@ def build(sf_engine, human_engine, maia, board: chess.Board, rating: int, opp_ra
         raise RuntimeError("Stockfish returned no lines")
     out = summarize(board.turn, sf, humans, full, rating, include, full)
     out["ladder"] = lad.result()
+    # the tactics finder on the deep search we already have (its validation: scripts/tactics_eval.py)
+    out["tactic"] = tactics.from_lines(board, sf)
     return out
 
 
