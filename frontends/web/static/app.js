@@ -5811,6 +5811,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'End') $('nav-end').click();
   else if (e.key === 'f') $('nav-flip').click();
   else if (e.key === 's' && !e.metaKey && !e.ctrlKey) openSavePosition();
+  else if (e.key === '?') $('dlg-keys').showModal();
   else if (e.key === 'Escape' && pinnedSquares.size) { pinnedSquares.clear(); paintSquares(); }
   else if (e.key === 'Escape' && state.demo) closeDemo();
   else if (e.key === 'Escape' && state.replay) stopReplay();

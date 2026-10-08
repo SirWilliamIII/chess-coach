@@ -437,6 +437,12 @@ dialog {
   width: min(560px, calc(100vw - 32px)); padding: 16px;
 }
 dialog::backdrop { background: rgba(0,0,0,.6); }
+.keys { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.keys th { text-align: left; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: 12px 0 4px; }
+.keys td { padding: 4px 0; vertical-align: top; }
+.keys td:first-child { white-space: nowrap; padding-right: 16px; color: var(--muted); }
+kbd { display: inline-block; min-width: 20px; padding: 1px 6px; border: 1px solid var(--line); border-bottom-width: 2px;
+  border-radius: 4px; background: var(--panel-2); color: var(--text); font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1.5; text-align: center; }
 .dlg-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .dlg-head h2 { font-size: 17px; margin: 0; }
 dialog textarea { width: 100%; resize: vertical; }

@@ -250,6 +250,27 @@
     <div class="row end"><button class="btn" id="play-go">Start game</button></div>
   </dialog>
 
+  <dialog id="dlg-keys">
+    <form method="dialog" class="dlg-head"><h2>Keyboard shortcuts</h2><button class="link">Close</button></form>
+    <table class="keys">
+      <tr><th colspan="2">Moves</th></tr>
+      <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Back / forward one move</td></tr>
+      <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Start / last move</td></tr>
+      <tr><td><kbd>f</kbd></td><td>Flip the board</td></tr>
+      <tr><td><kbd>s</kbd></td><td>Save this position</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Clear marked squares, close a demo board, or stop a replay</td></tr>
+      <tr><td><kbd>?</kbd></td><td>This list</td></tr>
+      <tr><th colspan="2">Drawing on the board</th></tr>
+      <tr><td>Right-drag</td><td>Arrow (orange)</td></tr>
+      <tr><td>+ <kbd>⌃</kbd> <kbd>⌥</kbd> <kbd>⌘</kbd> <kbd>⇧</kbd></td><td>Red / teal / blue / purple</td></tr>
+      <tr><td>Right-click empty square</td><td>Fill it (with a modifier: any square)</td></tr>
+      <tr><td>Right-click a piece</td><td>Show what it attacks (again to hide)</td></tr>
+      <tr><td>Left-click</td><td>Clear drawings</td></tr>
+      <tr><th colspan="2">Chat</th></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Send (<kbd>⇧</kbd> <kbd>Enter</kbd> for a new line)</td></tr>
+    </table>
+  </dialog>
+
   <dialog id="dlg-save-pos">
     <form method="dialog" class="dlg-head"><h2>Save this position</h2><button class="link">Close</button></form>
     <div class="pos-save-row">
