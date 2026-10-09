@@ -57,6 +57,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - **Direction (user, 2026-10-08):** most features now run without the Claude API (engine, Maia, ECO table, Lichess
   data, tablebase, both puzzle sources); Claude is the explainer you click for. Keep it that way: prefer a lookup or
   an engine fact over an LLM call. A coach hint button during puzzles was offered and declined for now.
+- **Built 2026-10-09, not yet used live:** the panels fill the width the board leaves and a board-size handle
+  (see "Layout"), and recording a game (⏺, see "Games").
 - **Next focus:** the user trying Puzzles (both sources) and the tactics finder live; then "watch out" (the
   opponent's tactics: the "allowed" puzzles are the offline half of it). Opening lessons after that. See TODOs.
 
@@ -211,6 +213,19 @@ file says what is true now. Last full cleanup: 2026-10-03.
   so a board click never blurs). Opening a favourite whose review is gone re-analyses the stored PGN. Loaded
   games only (`canTitle()`): bot games and the analysis board have no game_id. Reviews carry `date` only from
   2026-10-03 (`_date()` in `core/review.py`). Not tested: the re-analyse fallback, Safari/Firefox.
+- **Recording a game (⏺, 2026-10-09; user: the move list gets messed up by takebacks, redo, refreshes, so make
+  saving a game intentional).** ⏺ (`#nav-rec`, last board button) starts a recording from the line on the board
+  (moves already played included): `rec` = `{startFen, moves}` in localStorage `recording`, separate from the
+  board's state, so refreshes and mode changes can't touch it. `recTrack()` (end of `update()`): a position one
+  move past the recording's end is appended, whoever made it (you, the bot, a replay; also ▶ along a loaded game
+  from the end). A move made **by hand** (`recPlayed`, set in `onBoardMove`) from a position inside the recording
+  that differs from the recorded one replaces the tail (takeback then a new move), with a chat note of what was
+  dropped. Anything else (◀ ▶ inside it, other games) leaves it alone: the button greys and its tooltip says
+  where the board is. The dialog: the move list, Undo last move, Cut here (board behind the end), Discard,
+  title/White/Black/result, "Save to favourites" → `POST /api/recorded` → `favorites.save_recorded()`: a ★ row
+  with the PGN and no review pass (game_id = what `/api/load` computes from that PGN, so opening it from ★
+  Favourites analyses it and finds its title). Not tested: Safari/Firefox, moves made by scoreboard-row or chat
+  chip clicks inside the recording (they don't set `recPlayed`, so they append at the end but don't replace).
 - **Saved positions (📌, 2026-10-04).** `core/positions.py`: a `positions` table in `data/library.sqlite`
   (title, the line as start FEN + SAN moves, final FEN, orientation, source like "A vs B" / "Bot game vs …" /
   "Set-up position", deepest ECO name). 💾 under the board (key `s`) or "💾 Save" in the position editor →
@@ -289,6 +304,12 @@ file says what is true now. Last full cleanup: 2026-10-03.
     edge and end at the buttons' bottom edge by construction (no JS measuring). `.side` has `contain: size`, so
     its content never stretches those rows: the board decides the height, the panels scroll inside. Any new
     direct child of `.board-col` needs a row (there are exactly five).
+  - **The side column fills the leftover width** (2026-10-09; user: with the scoreboard hidden on a laptop the
+    coach stayed narrow): `minmax(var(--side-w), var(--side-max, 1200px))`, so `--side-w` is only its minimum
+    (the board formula subtracts it) and a height-bound board or a hidden panel widens the panels instead of
+    centring margins. Both panels hidden: capped at `--side-w`. **Board size handle** (`#side-resize`, the gap
+    left of `.side`, `setBoardMax()`): dragging sets `--board-user` (→ `--board-max`, min 320) on `main`,
+    localStorage `boardMax`, double-click clears it. Hidden ≤ 760 px.
   - **Breakpoints:** ≥ 1680 px: board | scoreboard | coach. 761-1679 px: board | one column with the scoreboard
     over the coach and a drag handle between them (`#side-split`, `setSplit()`, share 0.25-0.85 in localStorage
     `sideSplit`, default 0.66, double-click resets). ≤ 1360 px the nav is an icon rail by itself. ≤ 760 px: one

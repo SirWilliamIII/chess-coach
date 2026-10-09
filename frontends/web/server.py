@@ -259,6 +259,32 @@ def favorite_set(game_id: str, req: FavoriteReq):
     return {"favorite": True, "title": fav["title"]}
 
 
+class RecordedReq(BaseModel):
+    title: str
+    white: str = "White"
+    black: str = "Black"
+    result: str = "*"
+    start_fen: str
+    moves: list[str]  # SAN from start_fen
+
+
+@app.post("/api/recorded")
+def favorite_recorded(req: RecordedReq):
+    title = req.title.strip()[:200]
+    if not title:
+        raise HTTPException(400, "give the game a title")
+    if not req.moves:
+        raise HTTPException(400, "no moves recorded yet")
+    if req.result not in ("1-0", "0-1", "1/2-1/2", "*"):
+        raise HTTPException(400, "result must be 1-0, 0-1, 1/2-1/2 or *")
+    parse_fen(req.start_fen)  # 400 on a bad start position
+    try:
+        return favorites.save_recorded(title, req.white.strip()[:80] or "White", req.black.strip()[:80] or "Black",
+                                       req.result, req.start_fen, req.moves)
+    except ValueError:
+        raise HTTPException(400, "those moves don't replay from the start position")
+
+
 # ---------- saved board positions (core/positions.py) ----------
 
 @app.get("/api/positions")

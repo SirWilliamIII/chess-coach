@@ -108,12 +108,14 @@
         <button class="navbtn" id="nav-end" title="End (End)" data-tip="End (End)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 6v12M6.5 6.5L13 12l-6.5 5.5z"/></svg></button>
         <button class="navbtn" id="nav-flip" title="Flip board (f)" data-tip="Flip board (f)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4.5v15M4.5 8L8 4.5 11.5 8M16 19.5v-15M12.5 16l3.5 3.5 3.5-3.5"/></svg></button>
         <button class="navbtn" id="nav-save" title="Save this position (s)" data-tip="Save position (s)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-3.75L7 20z"/></svg></button>
+        <button class="navbtn" id="nav-rec" title="Record a game" data-tip="Record a game"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle class="rec-dot" cx="12" cy="12" r="3.5"/></svg><span class="rec-count" id="rec-count"></span></button>
       </div>
     </section>
 
     <!-- the side column: scoreboard and coach, level with the board's top edge and the nav's bottom edge (one
          grid, see style.css). Side by side on wide screens, stacked otherwise. A hidden panel leaves a tab. -->
     <div class="side" id="side">
+      <div class="side-resize" id="side-resize" title="Drag to size the board; double-click to reset"></div>
       <section class="panel score-panel" id="score-panel">
         <header class="panel-head"><span class="panel-title">Scoreboard</span>
           <span class="panel-tools">
@@ -189,7 +191,7 @@
       <button data-tab="chesscom" class="on">From chess.com</button>
       <button data-tab="lichess">From Lichess</button>
       <button data-tab="saved">Saved on this device (offline)</button>
-      <button data-tab="favorites">★ Favourites</button>
+      <button data-tab="favorites">★ Favorites</button>
     </div>
     <div id="tab-chesscom">
       <div class="row">
@@ -283,6 +285,27 @@
     <div class="row end"><button class="btn" id="pos-save-go">Save</button></div>
   </dialog>
 
+  <dialog id="dlg-rec">
+    <form method="dialog" class="dlg-head"><h2>Recording</h2><button class="link">Close</button></form>
+    <p class="card-sub" id="rec-status"></p>
+    <div class="rec-moves" id="rec-moves"></div>
+    <div class="row rec-edit">
+      <button class="link" id="rec-undo">Undo last move</button>
+      <button class="link hidden" id="rec-cut"></button>
+      <button class="link" id="rec-discard">Discard recording</button>
+    </div>
+    <div class="rec-fields">
+      <label class="field rec-title"><span class="label">Title</span><input id="rec-title" maxlength="200" autocomplete="off"></label>
+      <label class="field"><span class="label">White</span><input id="rec-white" maxlength="80" autocomplete="off"></label>
+      <label class="field"><span class="label">Black</span><input id="rec-black" maxlength="80" autocomplete="off"></label>
+      <label class="field"><span class="label">Result</span><select id="rec-result">
+        <option value="*">Unfinished</option><option value="1-0">White won</option>
+        <option value="0-1">Black won</option><option value="1/2-1/2">Draw</option></select></label>
+    </div>
+    <p class="card-sub" id="rec-msg"></p>
+    <div class="row end"><button class="btn" id="rec-save">Save to favorites</button></div>
+  </dialog>
+
   <dialog id="dlg-positions" class="wide">
     <form method="dialog" class="dlg-head"><h2>📌 Saved positions</h2><button class="link">Close</button></form>
     <div class="row pos-tools">
@@ -296,7 +319,7 @@
     <form method="dialog" class="dlg-head"><h2>📚 Lessons</h2><button class="link">Close</button></form>
     <input id="lib-q" placeholder="Search your coach answers: back rank, Najdorf, knight fork…" autocomplete="off">
     <div class="lib-filters">
-      <label class="toggle"><input type="checkbox" id="lib-starred"> ★ Favourites</label>
+      <label class="toggle"><input type="checkbox" id="lib-starred"> ★ Favorites</label>
       <label class="toggle"><input type="checkbox" id="lib-habits"> 🧠 Habits only</label>
     </div>
     <div id="lib-tags" class="lib-tags"></div>

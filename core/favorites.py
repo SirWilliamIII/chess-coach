@@ -73,6 +73,27 @@ def save(review: dict, title: str | None = None) -> dict:
     return get(review["game_id"])
 
 
+def save_recorded(title: str, white: str, black: str, result: str, start_fen: str, moves: list[str]) -> dict:
+    """A game recorded on the board (SAN from `start_fen`) as a titled favourite, with no review pass: opening
+    it later re-analyses the stored PGN like any favourite whose review is gone. Raises ValueError on a bad line."""
+    from . import eco
+    from .review import game_id, load_pgn
+
+    board = chess.Board(start_fen)
+    ucis, opening = [], None
+    for san in moves:
+        move = board.parse_san(san)  # ValueError on an illegal move: the caller reports it
+        ucis.append({"uci": move.uci()})
+        board.push(move)
+        if hit := eco.lookup(board):
+            opening = hit["name"]
+    stub = {"game_id": "", "white": white, "black": black, "result": result, "opening": opening,
+            "date": time.strftime("%Y.%m.%d"), "start_fen": start_fen, "moves": ucis}
+    # the id /api/load will compute from the stored PGN, so the opened game finds this row (☆ and title)
+    stub["game_id"] = game_id(load_pgn(pgn_of(stub)))
+    return save(stub, title)
+
+
 def set_title(game_id: str, title: str | None) -> None:
     with library._lock:
         _db().execute("UPDATE favorites SET title = ? WHERE game_id = ?", (title, game_id))

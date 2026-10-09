@@ -22,6 +22,10 @@ const state = {
   puzzle: null,     // an opening puzzle: {p (from /api/puzzles/next), topic, pattern, step, waiting, misses, hint, failed, done}
 };
 
+let rec = null;  // a game being recorded (⏺ under the board): {startFen, moves: [SAN]}, see "recording a game"
+let recPlayed = false;  // the next update() follows a move made on the board by hand (onBoardMove)
+let recPrev = null;     // the position the board showed at the last update()
+
 // [label, question, needs, action]. 'game': only offered when a game with moves is loaded.
 // A chip with an action runs locally (no coach call) instead of asking the question.
 // Each chip is defined once and shared by the review and bot-game lists below.
@@ -246,6 +250,7 @@ function renderBoard() {
 }
 
 function onBoardMove(orig, dest) {
+  recPlayed = true;
   if (state.editor) return updateEditor();
   if (state.demo) return onDemoMove(orig, dest);
   if (state.play) return onPlayMove(orig, dest);
@@ -457,9 +462,9 @@ function dockGamePanel() {
   if (gp.parentElement !== home) home.appendChild(gp);
 }
 
-// ---- favourite games + their titles (core/favorites.py). Only a loaded game has a game_id to key
+// ---- favorite games + their titles (core/favorites.py). Only a loaded game has a game_id to key
 // them on; a title can be typed by double-clicking the header gap, the line above the board or the
-// game line in the chat header (the three spots the user picked), and giving one favourites the game.
+// game line in the chat header (the three spots the user picked), and giving one favorites the game.
 function canTitle() {
   const r = state.review;
   return !!(r?.game_id && r.moves.length && !state.demo && !state.play && !state.study && !state.editor);
@@ -479,14 +484,14 @@ async function saveFavorite(body) {
   try {
     Object.assign(r, await api(`/api/favorites/${encodeURIComponent(r.game_id)}`, body));
   } catch (e) {
-    addMsg('error', `Couldn't update favourites: ${esc(e.message)}`);
+    addMsg('error', `Couldn't update favorites: ${esc(e.message)}`);
   }
   if (state.review === r) renderInfo();
 }
 
 function toggleFavorite() {
   const r = state.review;
-  if (r.favorite && r.title && !confirm(`Remove “${r.title}” from favourites? Its title is removed too.`)) return;
+  if (r.favorite && r.title && !confirm(`Remove “${r.title}” from favorites? Its title is removed too.`)) return;
   saveFavorite({ favorite: !r.favorite });
 }
 
@@ -551,7 +556,7 @@ function renderInfo() {
     return;
   }
   $('game-info').innerHTML = `<button class="fav-btn${r.favorite ? ' on' : ''}" id="fav-btn"
-    title="${r.favorite ? 'Remove from favourites' : 'Add to favourites'}">${r.favorite ? '★' : '☆'}</button>`
+    title="${r.favorite ? 'Remove from favorites' : 'Add to favorites'}">${r.favorite ? '★' : '☆'}</button>`
     + `${esc(r.white)} vs ${esc(r.black)} · ${esc(r.result)}`;
   $('fav-btn').onclick = toggleFavorite;
   $('board-sub').textContent = '';  // the opening title above (#opening-tag) names the opening now
@@ -1043,7 +1048,7 @@ async function requestMaiaLines() {
   renderKeyCard();  // shows it, and asks for the next missing one (here or wherever the board is now)
 }
 
-// Which move each rating picks (Maia's favourite, 600 → 2600), as runs along one track; your rating marked
+// Which move each rating picks (Maia's favorite, 600 → 2600), as runs along one track; your rating marked
 function sbTrack(sb, rating) {
   const lad = (sb.ladder || []).filter((l) => l.moves.length);
   if (lad.length < 2) return '';
@@ -1500,6 +1505,7 @@ function update() {
   if (!puzzleLive()) requestExplorer(c);
   noteMove();
   saveBoard();
+  recTrack();
 }
 
 // ---- the board survives a page refresh: a snapshot in localStorage, restored by init() only when the
@@ -2273,7 +2279,7 @@ function renderAnswer(data, opts = {}) {
     ? `<div class="demos">${jumps.map((j, i) => (j.now ? '' : `<button class="demo-btn jump-btn" data-j="${i}">⏭ Jump ahead to move ${Math.ceil(Math.max(1, j.ply) / 2)}</button>`)).join('')}</div>` : '';
   const label = opts.label ? `<div class="gm-label">${esc(opts.label)}</div>` : '';
   const star = data.entry_id
-    ? `<button class="star${data.starred ? ' on' : ''}" title="Save to favourites in Lessons">${data.starred ? '★' : '☆'}</button>` : '';
+    ? `<button class="star${data.starred ? ' on' : ''}" title="Save to favorites in Lessons">${data.starred ? '★' : '☆'}</button>` : '';
   const msg = addMsg(opts.label ? 'coach gm' : 'coach',
     star + label + markdown(data.answer) + renderQuiz(data.quiz) + jumpBtn + buttons + tools, opts.where);
   msg.querySelectorAll('.demo-btn[data-i]').forEach((b) => { b.onclick = () => openDemo(demos[+b.dataset.i]); });
@@ -2542,7 +2548,7 @@ async function showFavorites() {
   try {
     const favs = await api('/api/favorites');
     if (!favs.length) {
-      list.innerHTML = '<p class="hint">No favourites yet. Open a game and click the ☆ next to the players’ names.</p>';
+      list.innerHTML = '<p class="hint">No favorites yet. Open a game and click the ☆ next to the players’ names.</p>';
       return;
     }
     list.innerHTML = favs.map((g, i) => {
@@ -2560,7 +2566,7 @@ async function showFavorites() {
         $('dlg-games').close();
         try {
           const r = await api('/api/saved/open', { game_id: g.game_id, me: state.me || null });
-          setReview(r, `Opened ${g.title || `${r.white} vs ${r.black}`} from your favourites.`);
+          setReview(r, `Opened ${g.title || `${r.white} vs ${r.black}`} from your favorites.`);
         } catch {
           // the saved review is gone (data/reviews cleared): analyse it again from the stored PGN
           loadGame(g.pgn);
@@ -5514,6 +5520,176 @@ async function openSavedPosition(p) {
 }
 
 $('nav-save').onclick = openSavePosition;
+
+// ---------------------------------------------------------------- recording a game
+// ⏺ under the board starts a recording from the line on the board now (the moves that led here included). From
+// then on a move that takes the board one step past the recording's last position is added, whoever played it
+// (you, the bot, a replay's opponent; ▶ along a loaded game too). Anything else (◀ ▶ inside it, takebacks, other
+// games, refreshes) leaves it alone: corrections are explicit (Undo last move, Cut here). Kept in localStorage
+// until saved, so it survives refreshes and mode changes. Saved as a titled ★ favorite (no review pass: opening
+// it from Find games → ★ Favorites analyses it then).
+
+try { rec = JSON.parse(recall('recording') || 'null'); } catch {}
+if (rec && !replays(rec.startFen, rec.moves)) rec = null;
+
+const posKey = (fen) => fen.split(' ').slice(0, 4).join(' ');  // the position, without the move counters
+
+function recPositions() {
+  const c = new Chess(rec.startFen);
+  const keys = [posKey(c.fen())];
+  for (const san of rec.moves) { c.move(san); keys.push(posKey(c.fen())); }
+  return { keys, end: c };
+}
+
+function recStore() { store('recording', rec ? JSON.stringify(rec) : undefined); }
+
+// where the board is relative to the recording: index of the shown position in it (-1: off it)
+function recWhere(keys) {
+  const here = posKey(currentGame().fen());
+  return keys.lastIndexOf(here);
+}
+
+// the move that takes `c` to the position `key`, if one does
+function moveTo(c, key) {
+  return c.moves().find((san) => { c.move(san); const k = posKey(c.fen()); c.undo(); return k === key; });
+}
+
+function recTrack() {
+  const here = state.editor ? null : posKey(currentGame().fen());
+  if (rec && !state.demo && here) {
+    const { keys, end } = recPositions();
+    const n = rec.moves.length, from = keys.lastIndexOf(recPrev);
+    let san;
+    if (here !== keys[n] && (san = moveTo(end, here))) {
+      rec.moves.push(san);
+      recStore();
+    } else if (recPlayed && from >= 0 && from < n && !keys.includes(here)) {
+      // a different move played by hand from inside the recording (after a takeback, or ◀ then a new move):
+      // that's a correction, so the recording follows it. ▶ never gets here: stepping isn't a played move.
+      const c = new Chess(rec.startFen);
+      rec.moves.slice(0, from).forEach((m) => c.move(m));
+      if ((san = moveTo(c, here))) {
+        const dropped = rec.moves.slice(from);
+        rec.moves = [...rec.moves.slice(0, from), san];
+        recStore();
+        const at = `${c.moveNumber()}${c.turn() === 'w' ? '.' : '...'} ${san}`;
+        addMsg('system', `⏺ Recording changed at ${esc(at)}: dropped ${esc(dropped.join(' '))}.`);
+      }
+    }
+  }
+  recPrev = here;
+  recPlayed = false;
+  recSync();
+}
+
+function recMovesText() {
+  const c = new Chess(rec.startFen);
+  return rec.moves.map((san, i) => {
+    const white = c.turn() === 'w', n = c.moveNumber();
+    c.move(san);
+    return `${white ? `${n}. ` : i === 0 ? `${n}... ` : ''}${esc(san)}`;
+  }).join(' ');
+}
+
+function recSync() {
+  const btn = $('nav-rec');
+  if (!rec) {
+    btn.classList.remove('rec-on', 'rec-away');
+    $('rec-count').textContent = '';
+    btn.title = btn.dataset.tip = 'Record a game';
+    return;
+  }
+  const { keys } = recPositions();
+  const at = state.demo || state.editor ? -1 : recWhere(keys), n = rec.moves.length, moves = `${n} move${n === 1 ? '' : 's'}`;
+  btn.classList.add('rec-on');
+  btn.classList.toggle('rec-away', at < 0);
+  $('rec-count').textContent = n || '';
+  btn.title = btn.dataset.tip = at < 0 ? `Recording (${moves}): the board is off it, go back to its last position to carry on`
+    : at < n ? `Recording (${moves}): you're looking back at move ${at}`
+    : `Recording: ${moves}`;
+  if ($('dlg-rec').open) recRender(keys, at);
+}
+
+function recRender(keys, at) {
+  const n = rec.moves.length;
+  $('rec-moves').innerHTML = recMovesText();
+  $('rec-moves').scrollTop = 1e6;
+  $('rec-status').textContent = at < 0 ? 'The board is somewhere else. Moves are added again once it is back at the last recorded position.'
+    : at < n ? `The board is ${n - at} move${n - at > 1 ? 's' : ''} back from the end. Play on from the end to add moves, or cut the recording here.`
+    : 'Recording. Every move played on the board is added.';
+  $('rec-undo').disabled = !n;
+  $('rec-cut').classList.toggle('hidden', !(at >= 0 && at < n));
+  $('rec-cut').textContent = `Cut here (drop the last ${n - at === 1 ? 'move' : `${n - at} moves`})`;
+}
+
+function recStart() {
+  const b = boardToSave();
+  rec = { startFen: b.start_fen, moves: b.moves.slice() };
+  recStore();
+  recSync();
+  addMsg('system', `⏺ Recording${rec.moves.length ? ` (with the ${rec.moves.length} move${rec.moves.length === 1 ? '' : 's'} already on the board)` : ''}. `
+    + 'Every move played from here is added; click ⏺ under the board to see it, title it and save.');
+}
+
+function recDefaults() {
+  const c = new Chess(rec.startFen);
+  rec.moves.forEach((san) => c.move(san));
+  const result = c.isCheckmate() ? (c.turn() === 'w' ? '0-1' : '1-0') : c.isDraw() || c.isStalemate() ? '1/2-1/2' : '*';
+  let names = {};
+  try { names = JSON.parse(recall('recNames') || '{}'); } catch {}
+  let [white, black] = [names.white || 'White', names.black || 'Black'];
+  if (state.play) {
+    const me = state.me || 'Me', bot = state.play.levelName || 'Bot';
+    [white, black] = state.play.color === 'white' ? [me, bot] : [bot, me];
+  }
+  // not the opening on the board: that can be a different line (the server names the recorded one)
+  const date = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  return { white, black, result, title: `Game, ${date}` };
+}
+
+function openRecording() {
+  if (!rec) return recStart();
+  const d = recDefaults();
+  $('rec-white').value = d.white;
+  $('rec-black').value = d.black;
+  $('rec-result').value = d.result;
+  $('rec-title').value = d.title;
+  $('rec-msg').textContent = '';
+  $('dlg-rec').showModal();
+  recSync();
+  $('rec-title').select();
+}
+
+$('nav-rec').onclick = openRecording;
+$('rec-undo').onclick = () => { rec.moves.pop(); recStore(); recSync(); };
+$('rec-cut').onclick = () => {
+  const at = recWhere(recPositions().keys);
+  if (at >= 0) { rec.moves = rec.moves.slice(0, at); recStore(); recSync(); }
+};
+$('rec-discard').onclick = () => {
+  if (rec.moves.length && !confirm(`Discard the recording (${rec.moves.length} move${rec.moves.length === 1 ? '' : 's'})?`)) return;
+  rec = null;
+  recStore();
+  recSync();
+  $('dlg-rec').close();
+};
+$('rec-save').onclick = async () => {
+  const title = $('rec-title').value.trim();
+  if (!title) return void $('rec-title').focus();
+  const white = $('rec-white').value.trim(), black = $('rec-black').value.trim();
+  try {
+    await api('/api/recorded', { title, white, black, result: $('rec-result').value, start_fen: rec.startFen, moves: rec.moves });
+  } catch (e) {
+    $('rec-msg').textContent = e.message;
+    return;
+  }
+  if (!state.play) store('recNames', JSON.stringify({ white, black }));
+  rec = null;
+  recStore();
+  recSync();
+  $('dlg-rec').close();
+  addMsg('system', `★ Saved “${esc(title)}” to your favorites (Find games → ★ Favorites). Opening it there analyses it.`);
+};
 $('btn-positions').onclick = openPositions;
 $('pos-q').oninput = renderPositions;
 $('pos-save-current').onclick = () => { $('dlg-positions').close(); openSavePosition(); };
@@ -5666,6 +5842,27 @@ $('side-split').onpointerdown = (e) => {
   };
 };
 $('side-split').ondblclick = () => store('sideSplit', setSplit(0.66).toFixed(3));
+// Beside the board (above 760 px): drag to size the board; the side column takes the rest (CSS --board-user caps
+// the board, the height and width limits still apply). Remembered per browser; double-click goes back to the max.
+function setBoardMax(px) {
+  if (px) document.querySelector('main').style.setProperty('--board-user', `${Math.round(px)}px`);
+  else document.querySelector('main').style.removeProperty('--board-user');
+  requestAnimationFrame(() => { document.body.dispatchEvent(new Event('chessground.resize')); cg.redrawAll(); });
+}
+if (+recall('boardMax')) setBoardMax(+recall('boardMax'));
+$('side-resize').onpointerdown = (e) => {
+  e.preventDefault();
+  const handle = e.currentTarget;
+  handle.setPointerCapture(e.pointerId);
+  const x0 = e.clientX, w0 = $('board-wrap').getBoundingClientRect().width;
+  let w = null;
+  handle.onpointermove = (m) => { w = Math.max(320, w0 + m.clientX - x0); setBoardMax(w); };
+  handle.onpointerup = () => {
+    handle.onpointermove = handle.onpointerup = null;
+    if (w != null) store('boardMax', Math.round(w));
+  };
+};
+$('side-resize').ondblclick = () => { store('boardMax'); setBoardMax(null); };
 // Side nav: ‹ folds it to an icon rail (remembered per browser). ≤ 1360 px it's a rail anyway (CSS), and ≤ 760 px
 // a top bar, so the button only shows where the choice exists.
 function setNavCollapsed(on) {

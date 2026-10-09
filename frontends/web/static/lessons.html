@@ -32,7 +32,7 @@
     <h1>📚 Lessons</h1>
     <input id="lib-q" placeholder="Search your coach answers: back rank, Najdorf, knight fork…" autocomplete="off">
     <div class="lib-filters">
-      <label class="toggle"><input type="checkbox" id="lib-starred"> ★ Favourites</label>
+      <label class="toggle"><input type="checkbox" id="lib-starred"> ★ Favorites</label>
       <label class="toggle"><input type="checkbox" id="lib-habits"> 🧠 Habits only</label>
     </div>
     <div id="lib-tags" class="lib-tags"></div>
@@ -83,7 +83,7 @@
         return `<div class="lib-entry" data-id="${e.id}">
           <div class="lib-top"><span class="lib-q">${e.starred ? '★ ' : ''}${esc(e.question)}</span>
             <span class="lib-actions">
-              <button class="link star${e.starred ? ' on' : ''}" title="Favourite">${e.starred ? '★' : '☆'}</button>
+              <button class="link star${e.starred ? ' on' : ''}" title="Favorite">${e.starred ? '★' : '☆'}</button>
               <button class="link lib-del" title="Delete from Lessons">🗑</button>
             </span></div>
           <div class="lib-meta">${esc(where)}${where ? ' · ' : ''}${esc(when(e.created_at))}</div>
