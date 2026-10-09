@@ -65,15 +65,16 @@ file says what is true now. Last full cleanup: 2026-10-03.
 ## Running and testing
 
 - `./start` (venv on first run, then the web app on :8000; host/port from `CHESS_HOST`/`CHESS_PORT` in `.env`,
-  default 127.0.0.1:8000, flags override; the primary clone's `.env` binds the Tailscale IP) or
+  default 127.0.0.1:8000, flags override; the primary clone's `.env` binds 127.0.0.1 behind `tailscale serve`, see below) or
   `.venv/bin/python -m frontends.web.server [--host H] [--port P]`. Default host `127.0.0.1`.
 - **`.env` is gitignored** and must exist per clone: `ANTHROPIC_API_KEY`, `LICHESS_TOKEN`, optional
   `CHESS_USER`, `PLAYER_RATING` (chess.com rapid since 2026-10-07, default 800; the primary clone has 790), `ANTHROPIC_ADMIN_KEY` + `MONTHLY_SPEND_LIMIT`
   (org-spend card), `COACH_MODEL`, `STUDY_MODEL`, `COACH_EFFORT`, `COACH_THINKING`, `COACH_ENGINE_DEPTH`.
   Two clones on this machine: `/Users/will/chess-coach` (primary) and `~/Projects/chess-coach` (kept in sync
   with `git pull`), each with its own `.env`.
-- **Other devices (e.g. a tailnet):** bind to the Tailscale IP (`--host $(tailscale ip -4)`), or keep
-  localhost and use `tailscale serve`. There is no auth: every device shares the one global state (below),
+- **Other devices (tailnet):** the primary clone keeps localhost and runs `tailscale serve --bg --http=80
+  localhost:8000` (2026-10-09), so other devices open `http://mbp.mastodon-snake.ts.net` (or `http://mbp`). The
+  serve config persists in tailscaled; `tailscale serve status` / `tailscale serve reset`. There is no auth: every device shares the one global state (below),
   coach questions bill your API key, and `/usage` + `/lessons` expose org spend and saved answers.
 - **The server does not hot-reload Python.** Restart after editing `core/*.py` or `server.py`; `prompts/` and
   `static/` are re-read live. Its output goes to the terminal that started it (`/tmp/chess-coach-server.log`
