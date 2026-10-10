@@ -1402,3 +1402,7 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
 .ov-captures { background: #3ddc84; }
 .ov-checks { background: #ff4d4f; }
 .ov-threats { background: #ff9f1a; }
+/* Mine / Theirs: the line weight each side's arrows use (theirs thinner and paler) */
+.ov-side { height: 4px; background: var(--text); }
+.ov-side.opp { height: 2px; opacity: .45; }
+.ov-sep { width: 100%; margin: 3px 0; border: 0; border-top: 1px solid var(--line); }

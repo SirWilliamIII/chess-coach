@@ -142,6 +142,13 @@ const cg = Chessground($('board'), {
       ovCapMid:   { key: 'ovCapMid',   color: '#3ddc84', opacity: 0.75, lineWidth: 8 },
       ovCheckMid: { key: 'ovCheckMid', color: '#ff4d4f', opacity: 0.75, lineWidth: 8 },
       ovThreatMid:{ key: 'ovThreatMid',color: '#ff9f1a', opacity: 0.75, lineWidth: 8 },
+      // the opponent's ("Theirs"): same colours, thinner and paler
+      ovCapOpp:      { key: 'ovCapOpp',      color: '#3ddc84', opacity: 0.42, lineWidth: 5 },
+      ovCheckOpp:    { key: 'ovCheckOpp',    color: '#ff4d4f', opacity: 0.42, lineWidth: 5 },
+      ovThreatOpp:   { key: 'ovThreatOpp',   color: '#ff9f1a', opacity: 0.42, lineWidth: 5 },
+      ovCapOppMid:   { key: 'ovCapOppMid',   color: '#3ddc84', opacity: 0.42, lineWidth: 5 },
+      ovCheckOppMid: { key: 'ovCheckOppMid', color: '#ff4d4f', opacity: 0.42, lineWidth: 5 },
+      ovThreatOppMid:{ key: 'ovThreatOppMid',color: '#ff9f1a', opacity: 0.42, lineWidth: 5 },
       // first legs of L-shaped (knight) drawings: no arrowhead, see marker[id$="Mid"] in style.css
       greenMid:    { key: 'greenMid',    color: '#15781B', opacity: 0.6, lineWidth: 10 },
       drawNoneMid: { key: 'drawNoneMid', color: '#d35400', opacity: 1, lineWidth: 6 },
@@ -2215,15 +2222,25 @@ function ovCheckWorthIt(c, m, me, them) {
   } finally { c.undo(); }
 }
 
+// "Mine" is on unless switched off (it was the only side before "Theirs" existed); "Theirs" only when switched on
+const ovMine = () => overlays.mine !== false;
+const ovAny = () => !!(overlays.captures || overlays.checks || overlays.threats) && (ovMine() || !!overlays.theirs);
+
 function overlayShapes() {
-  if (!(overlays.captures || overlays.checks || overlays.threats) || puzzleLive()) return [];
+  if (!ovAny() || puzzleLive()) return [];
   let c;
   try { c = overlayGame(); } catch { return []; }
   if (!c || c.isGameOver()) return [];
   const me = sbUser() || state.orientation[0], them = me === 'w' ? 'b' : 'w';
+  // theirs first, so yours draw on top where they cross; theirs in the same colours, thinner and paler (…Opp brushes)
+  return [...(overlays.theirs ? ovSideShapes(c, them, me, 'Opp') : []), ...(ovMine() ? ovSideShapes(c, me, them, '') : [])];
+}
+
+// one side's checks, captures and threats (`me` = the side the arrows belong to)
+function ovSideShapes(c, me, them, sfx) {
   const shapes = [];
-  const arrow = (from, to, brush, knight) => shapes.push(...(knight ? knightShapes(from, to, brush) : [{ orig: from, dest: to, brush }]));
-  // your moves on their turn: the same position with you to move (no en passant, it belongs to the real mover)
+  const arrow = (from, to, brush, knight) => shapes.push(...(knight ? knightShapes(from, to, brush + sfx) : [{ orig: from, dest: to, brush: brush + sfx }]));
+  // that side's moves on the other's turn: the same position with it to move (no en passant, it belongs to the real mover)
   let mine = c;
   if (c.turn() !== me) {
     const f = c.fen().split(' ');
@@ -2231,7 +2248,7 @@ function overlayShapes() {
     try { mine = new Chess(f.join(' ')); } catch { mine = null; }
   }
   // a capture that also checks is drawn once, as a check (the more forcing of the two); never "taking" the king
-  // (their king can stand in your check on their turn)
+  // (the other king can stand in check on its own turn)
   for (const m of mine ? mine.moves({ verbose: true }) : []) {
     if (m.captured === 'k') continue;
     const check = /[+#]/.test(m.san);
@@ -2239,9 +2256,9 @@ function overlayShapes() {
     if (overlays.checks && check) { if (ovCheckWorthIt(mine, m, me, them)) arrow(m.from, m.to, 'ovCheck', m.piece === 'n'); }
     else if (overlays.captures && capture && ovWorthIt(mine, m.to, m.captured, m.piece, them)) arrow(m.from, m.to, 'ovCap', m.piece === 'n');
   }
-  // threats: your quiet moves (no capture, no check) after which you'd win something next move: a piece of theirs
-  // that wasn't winnable before now is (undefended, or worth more than one of yours attacking it), the moved piece
-  // itself safe where it lands. Discovered attacks count: any of your pieces can be the new attacker
+  // threats: quiet moves (no capture, no check) after which that side would win something next move: a piece of the
+  // other's that wasn't winnable before now is (undefended, or worth more than an attacker), the moved piece itself
+  // safe where it lands. Discovered attacks count: any piece can be the new attacker
   if (overlays.threats && mine) {
     const before = ovTargets(mine, me, them);
     for (const m of mine.moves({ verbose: true })) {
@@ -2265,8 +2282,8 @@ function setOverlay(key, on) {
 }
 
 function syncOverlayButton() {
-  $('nav-ov').classList.toggle('on', !!(overlays.captures || overlays.checks || overlays.threats));
-  $('ov-menu').querySelectorAll('[data-ov]').forEach((b) => { b.checked = !!overlays[b.dataset.ov]; });
+  $('nav-ov').classList.toggle('on', ovAny());
+  $('ov-menu').querySelectorAll('[data-ov]').forEach((b) => { b.checked = b.dataset.ov === 'mine' ? ovMine() : !!overlays[b.dataset.ov]; });
 }
 
 function toggleOverlayMenu(open = $('ov-menu').classList.contains('hidden')) {

@@ -307,8 +307,9 @@ file says what is true now. Last full cleanup: 2026-10-03.
   checkboxes, localStorage `overlays`; `overlayShapes()` runs first in `baseShapes()` (and in the editor's
   `renderBoard()`). The usual analysis colours (user's call): checks red `ovCheck`, captures green `ovCap`, threats
   orange `ovThreat`, bright and translucent so they read apart from right-drag drawings (whose modifier keys were left
-  alone, user's call). **All three are your moves, whoever's turn it is; nothing points at your pieces** (user: playing
-  Black, White's captures showed as yours; then "need not have red arrows point at threats against us"). Your side =
+  alone, user's call). **"Mine" (on unless unticked) is your moves whoever's turn it is** (user: playing Black, White's
+  captures showed as yours); **"Theirs"** (off by default) adds the opponent's by the same rules, same colours,
+  thinner and paler (`…Opp` brushes, drawn under yours; `ovSideShapes()` per side). Your side =
   `sbUser()`, else the side at the bottom (⇅ flips them on the analysis board); on their turn, from the same FEN
   with you to move. One rule for what's worth showing (meant for late middlegames and puzzles): a capture when the
   piece is undefended or worth more than the taker (`ovWorthIt()`); a check when it mates, takes something worth more,
