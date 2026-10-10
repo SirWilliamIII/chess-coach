@@ -878,11 +878,8 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 @keyframes sb-pulse { 50% { box-shadow: 0 0 0 4px rgba(255,77,77,.35); } }
 @keyframes sb-glow { 50% { box-shadow: 0 0 0 4px rgba(129,182,76,.35); } }
 @media (prefers-reduced-motion: reduce) { .sb-alert.fresh, .sb-alert.t3.fresh, .sb-alert.good.fresh { animation: none; } }
-.eg-opts .seg button { white-space: nowrap; }
-.eg-opp { display: flex; gap: 6px; align-items: center; }
-.eg-opts { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
 .eg-grid { display: flex; flex-direction: column; gap: 14px; margin: 10px 0 4px; max-height: min(60vh, 560px); overflow-y: auto; }
-.eg-grid.busy { opacity: .5; pointer-events: none; }
+.eg-body.busy { opacity: .5; pointer-events: none; }
 .eg-gh { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 6px; }
 .eg-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .eg-tile { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px;
@@ -1187,3 +1184,27 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .score-panel { container-type: inline-size; }
 @container (max-width: 400px) { .sb-rating > span { display: none; } .panel-tools { gap: 6px; } }
 @container (max-width: 340px) { .gp-long { display: none; } }
+
+/* endgame dialog as steps (renderEndgames(): goal, material, side, opponent) */
+.eg-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 4px 0 18px; }
+.eg-crumb { display: flex; align-items: center; gap: 7px; padding: 5px 10px 5px 6px; border: 1px solid var(--line); border-radius: 99px;
+  background: none; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.eg-crumb:hover:not(:disabled) { color: var(--text); background: var(--hover); }
+.eg-crumb:disabled { opacity: .45; cursor: default; }
+.eg-crumb.on { color: var(--text); border-color: var(--accent); }
+.eg-cn { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--inset); font-size: 11px; font-weight: 700; }
+.eg-crumb.on .eg-cn { background: var(--accent); color: #1c1b19; }
+.eg-sep { color: var(--faint, var(--muted)); }
+.eg-q { margin: 0 0 14px; font-size: 16px; font-weight: 600; }
+.eg-body { min-height: 220px; }
+.eg-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.eg-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px 16px; text-align: left;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--inset); color: var(--text); font: inherit; cursor: pointer; }
+.eg-choice:hover { background: var(--hover); }
+.eg-choice.on, .eg-tile.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.eg-choice b { font-size: 15px; }
+.eg-choice span { font-size: 12.5px; color: var(--muted); }
+.eg-elo-row { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--muted); font-size: 13px; }
+.eg-start { margin-top: 20px; }
+.eg-types { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.eg-sub { font-size: 11.5px; color: var(--muted); line-height: 1.35; text-align: left; }

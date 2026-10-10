@@ -165,20 +165,11 @@
 
   <dialog id="dlg-endgame" class="wide">
     <form method="dialog" class="dlg-head"><h2>♔ Endgame trainer</h2><button class="link">Close</button></form>
-    <div class="eg-opts">
-      <div class="seg" id="eg-modes"></div>
-      <div class="seg" id="eg-color">
-        <button data-color="white">White</button><button data-color="random">Random</button><button data-color="black">Black</button>
-      </div>
-      <div class="eg-opp">
-        <div class="seg" id="eg-opp"><button data-opp="human">Human</button><button data-opp="stockfish">Stockfish</button></div>
-        <select id="eg-elo" title="The human opponent's rating (chess.com rapid)"></select>
-      </div>
-    </div>
-    <p class="hint" id="eg-mode-hint"></p>
-    <div id="eg-grid" class="eg-grid"></div>
+    <!-- one choice per step (user's call, 2026-10-09: all of it at once was overload): goal, material, side,
+         opponent, then Start. The crumbs above say what's picked; clicking one goes back to that step -->
+    <div class="eg-crumbs" id="eg-crumbs"></div>
+    <div class="eg-body" id="eg-body"></div>
     <p class="hint" id="eg-status"></p>
-    <p class="hint eg-foot">Every drill is a fresh random position: "New position" on the drill's card (or "Another one" when it's over) gives the next one with the same material. Up to 7 pieces the result is exact (Lichess tablebase) and each move you make is checked; bigger pawn set-ups use Stockfish. You play the opponent you pick (Maia, a human-like bot at that rating, or full-strength Stockfish) with the eval bar off.</p>
   </dialog>
 
   <dialog id="dlg-puzzles" class="wide">

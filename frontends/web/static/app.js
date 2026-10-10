@@ -4610,7 +4610,8 @@ const egProbes = new Map();  // fen → promise of the tablebase verdict (not in
 let egPresets = null;
 // opponent: Maia by default (user's call, 2026-10-08: full-strength Stockfish only when asked for)
 let egChoice = { mode: EG_MODES[recall('egMode')] ? recall('egMode') : 'win',  // "lies" was removed 2026-10-08
-  color: recall('egColor') || 'white', opp: recall('egOpp') || 'human', elo: +recall('egElo') || null };
+  color: recall('egColor') || 'white', opp: recall('egOpp') || 'human', elo: +recall('egElo') || null,
+  spec: recall('egSpec') || null, group: recall('egGroup') || null };
 
 function egStats() {
   try { return JSON.parse(recall('egStats') || '{}'); } catch { return {}; }
@@ -4636,64 +4637,115 @@ function egSpecLabel(spec) {
   return spec.split('-').map((s) => s.split('').join('+')).join(' vs ');
 }
 
-async function openEndgames() {
+async function openEndgames(step = 1) {
   if (!egPresets) {
     try {
       egPresets = await api('/api/endgame/presets');
       botLevels ??= await api('/api/play/levels');
     } catch (e) { return void addMsg('error', esc(e.message)); }
   }
+  egStep = step;
   renderEndgames();
   $('eg-status').textContent = '';
   $('dlg-endgame').showModal();
 }
 
-function renderEndgames() {
-  const { mode, color } = egChoice;
-  $('eg-modes').innerHTML = Object.entries(EG_MODES).map(([k, [label]]) => `<button data-mode="${k}" class="${k === mode ? 'on' : ''}">${label}</button>`).join('');
-  $('eg-mode-hint').textContent = EG_MODES[mode][1];
-  $('eg-color').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.color === color));
-  renderEgOpponent();
-  const white = color !== 'black';
-  const stats = egStats();
-  const groups = [...new Set(egPresets.map((p) => p.group))];
-  $('eg-grid').innerHTML = groups.map((g) => `<div class="eg-group"><div class="eg-gh">${esc(g)}</div><div class="eg-tiles">${
-    egPresets.filter((p) => p.group === g).map((p) => {
-      const st = stats[`${p.spec}|${egModeFor(p.spec, mode)}`];
-      const [mine, theirs] = p.spec.includes('-') ? p.spec.split('-') : [null, null];
-      const art = mine ? `<span class="eg-art"><span class="${white ? 'w' : 'b'}">${egGlyphs(mine, white)}</span><span class="eg-vs">vs</span><span class="${white ? 'b' : 'w'}">${egGlyphs(theirs, !white)}</span></span>`
-        : `<span class="eg-art"><span class="eg-n">${p.spec === 'pawns:even' ? '+0.0' : p.spec.split(':')[1]}</span><span class="eg-vs">${p.spec.startsWith('pawns') ? '♙ ♟' : 'pieces'}</span></span>`;
-      return `<button class="eg-tile" data-spec="${esc(p.spec)}" title="${esc(egSpecLabel(p.spec))}">${art}<span class="eg-label">${esc(p.label)}</span>`
-        + `${st ? `<span class="eg-st" title="Done / tried in this mode">${st.done}/${st.tries}</span>` : ''}</button>`;
-    }).join('')}</div></div>`).join('');
-  $('eg-modes').querySelectorAll('button').forEach((b) => { b.onclick = () => { egChoice.mode = b.dataset.mode; store('egMode', b.dataset.mode); renderEndgames(); }; });
-  $('eg-grid').querySelectorAll('.eg-tile').forEach((b) => { b.onclick = () => startEndgame(b.dataset.spec); });
-}
-
-$('eg-color').querySelectorAll('button').forEach((b) => {
-  b.onclick = () => { egChoice.color = b.dataset.color; store('egColor', b.dataset.color); renderEndgames(); };
-});
+// The dialog is a stepper (user's calls, 2026-10-09: every option at once was overload; then material split in
+// two): 1 goal, 2 type (the preset group), 3 pieces, 4 side, 5 opponent + Start. Each step shows the remembered
+// choice selected; picking one moves on.
+let egStep = 1;
+const EG_STEPS = ['Goal', 'Type', 'Pieces', 'Your side', 'Opponent'];
+const EG_COLORS = { white: 'White', random: 'Random', black: 'Black' };
 
 // the Maia levels ("Maia (~1400)"); none when Maia isn't installed, and then it's Stockfish only
 function egHumanLevels() {
   return (botLevels || []).map((l) => ({ ...l, elo: +(l.name.match(/~(\d+)/)?.[1]) })).filter((l) => l.elo);
 }
 
-function renderEgOpponent() {
-  const humans = egHumanLevels();
-  const human = egChoice.opp === 'human' && humans.length > 0;
-  $('eg-opp').classList.toggle('hidden', !humans.length);
-  $('eg-opp').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.opp === (human ? 'human' : 'stockfish')));
-  const elo = egChoice.elo || state.playerRating || 800;
-  const pick = humans.length ? humans.reduce((a, b) => (Math.abs(b.elo - elo) < Math.abs(a.elo - elo) ? b : a)) : null;
-  $('eg-elo').innerHTML = humans.map((l) => `<option value="${l.elo}"${l === pick ? ' selected' : ''}>~${l.elo}</option>`).join('');
-  $('eg-elo').classList.toggle('hidden', !human);
+function egOppLabel() {
+  const human = egChoice.opp === 'human' && egHumanLevels().length > 0;
+  return human ? `Human ~${egChoice.elo || state.playerRating || 800}` : 'Stockfish';
 }
 
-$('eg-opp').querySelectorAll('button').forEach((b) => {
-  b.onclick = () => { egChoice.opp = b.dataset.opp; store('egOpp', b.dataset.opp); renderEgOpponent(); };
-});
-$('eg-elo').onchange = (e) => { egChoice.elo = +e.target.value; store('egElo', e.target.value); };
+function egTileArt(spec, white) {
+  const [mine, theirs] = spec.includes('-') ? spec.split('-') : [null, null];
+  return mine ? `<span class="eg-art"><span class="${white ? 'w' : 'b'}">${egGlyphs(mine, white)}</span><span class="eg-vs">vs</span><span class="${white ? 'b' : 'w'}">${egGlyphs(theirs, !white)}</span></span>`
+    : `<span class="eg-art"><span class="eg-n">${spec === 'pawns:even' ? '+0.0' : spec.split(':')[1]}</span><span class="eg-vs">${spec.startsWith('pawns') ? '♙ ♟' : 'pieces'}</span></span>`;
+}
+
+function renderEndgames() {
+  const { mode, color } = egChoice;
+  const groups = [...new Set(egPresets.map((p) => p.group))];
+  const group = groups.includes(egChoice.group) ? egChoice.group : null;
+  // the pieces only count while they belong to the type picked
+  const preset = egPresets.find((p) => p.spec === egChoice.spec && p.group === group);
+  const spec = preset?.spec || null;
+  const done = [EG_MODES[egModeFor(spec, mode)][0], group, preset?.label, EG_COLORS[color], egOppLabel()];
+  // every step but the current one shows its (remembered) pick; past the type / the pieces only once picked
+  const reachable = (n) => n <= 2 || (n === 3 ? !!group : !!spec);
+  $('eg-crumbs').innerHTML = EG_STEPS.map((name, i) => {
+    const n = i + 1;
+    const val = n === egStep || !done[i] || !reachable(n) ? null : done[i];
+    return `<button class="eg-crumb${n === egStep ? ' on' : ''}" data-step="${n}"${reachable(n) ? '' : ' disabled'}>`
+      + `<span class="eg-cn">${n}</span><span>${val ? esc(val) : name}</span></button>`;
+  }).join('<span class="eg-sep">›</span>');
+  $('eg-crumbs').querySelectorAll('.eg-crumb').forEach((b) => { b.onclick = () => { egStep = +b.dataset.step; renderEndgames(); }; });
+
+  const body = $('eg-body');
+  const choice = (items, on, attr) => `<div class="eg-choices">${items.map(([k, label, sub]) =>
+    `<button class="eg-choice${k === on ? ' on' : ''}" data-${attr}="${k}"><b>${esc(label)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</button>`).join('')}</div>`;
+  if (egStep === 1) {
+    body.innerHTML = '<h3 class="eg-q">What do you want to practise?</h3>'
+      + choice(Object.entries(EG_MODES).map(([k, [label, sub]]) => [k, label, sub]), mode, 'mode');
+    body.querySelectorAll('[data-mode]').forEach((b) => {
+      b.onclick = () => { egChoice.mode = b.dataset.mode; store('egMode', b.dataset.mode); egStep = 2; renderEndgames(); };
+    });
+  } else if (egStep === 2) {
+    const white = color !== 'black';
+    body.innerHTML = '<h3 class="eg-q">What kind of ending?</h3><div class="eg-tiles eg-types">' + groups.map((g) => {
+      const ps = egPresets.filter((p) => p.group === g);
+      return `<button class="eg-tile${g === group ? ' on' : ''}" data-group="${esc(g)}">${egTileArt(ps[0].spec, white)}`
+        + `<span class="eg-label">${esc(g)}</span><span class="eg-sub">${ps.map((p) => esc(p.label)).join(' · ')}</span></button>`;
+    }).join('') + '</div>';
+    body.querySelectorAll('[data-group]').forEach((b) => {
+      b.onclick = () => { egChoice.group = b.dataset.group; store('egGroup', b.dataset.group); egStep = 3; renderEndgames(); };
+    });
+  } else if (egStep === 3) {
+    const white = color !== 'black';
+    const stats = egStats();
+    body.innerHTML = `<h3 class="eg-q">${esc(group)}: which pieces?</h3><div class="eg-tiles">` + egPresets.filter((p) => p.group === group).map((p) => {
+      const st = stats[`${p.spec}|${egModeFor(p.spec, mode)}`];
+      return `<button class="eg-tile${p.spec === spec ? ' on' : ''}" data-spec="${esc(p.spec)}" title="${esc(egSpecLabel(p.spec))}">${egTileArt(p.spec, white)}<span class="eg-label">${esc(p.label)}</span>`
+        + `${st ? `<span class="eg-st" title="Done / tried in this mode">${st.done}/${st.tries}</span>` : ''}</button>`;
+    }).join('') + '</div>';
+    body.querySelectorAll('.eg-tile').forEach((b) => {
+      b.onclick = () => { egChoice.spec = b.dataset.spec; store('egSpec', b.dataset.spec); egStep = 4; renderEndgames(); };
+    });
+  } else if (egStep === 4) {
+    body.innerHTML = '<h3 class="eg-q">Which side do you play?</h3>'
+      + choice(Object.entries(EG_COLORS).map(([k, label]) => [k, label, k === 'random' ? 'A coin flip each drill' : '']), color, 'color');
+    body.querySelectorAll('[data-color]').forEach((b) => {
+      b.onclick = () => { egChoice.color = b.dataset.color; store('egColor', b.dataset.color); egStep = 5; renderEndgames(); };
+    });
+  } else {
+    const humans = egHumanLevels();
+    const human = egChoice.opp === 'human' && humans.length > 0;
+    const elo = egChoice.elo || state.playerRating || 800;
+    const pick = humans.length ? humans.reduce((a, b) => (Math.abs(b.elo - elo) < Math.abs(a.elo - elo) ? b : a)) : null;
+    body.innerHTML = '<h3 class="eg-q">Who do you play against?</h3>'
+      + (humans.length ? choice([['human', 'Human', 'Maia: plays like a person at the rating you pick'], ['stockfish', 'Stockfish', 'Full strength: never slips']], human ? 'human' : 'stockfish', 'opp')
+        : '<p class="hint">Stockfish at full strength (Maia isn\'t installed).</p>')
+      + (human ? `<label class="eg-elo-row">Rating <select id="eg-elo" title="The human opponent's rating (chess.com rapid)">${
+        humans.map((l) => `<option value="${l.elo}"${l === pick ? ' selected' : ''}>~${l.elo}</option>`).join('')}</select></label>` : '')
+      + `<div class="eg-start"><button class="btn" id="eg-go"${spec ? '' : ' disabled'}>Start drill</button></div>`
+      + '<p class="hint eg-foot">Every drill is a fresh random position with that material. Up to 7 pieces the result is exact (Lichess tablebase) and each of your moves is checked; bigger pawn set-ups use Stockfish. The eval bar is off.</p>';
+    body.querySelectorAll('[data-opp]').forEach((b) => {
+      b.onclick = () => { egChoice.opp = b.dataset.opp; store('egOpp', b.dataset.opp); renderEndgames(); };
+    });
+    if ($('eg-elo')) $('eg-elo').onchange = (e) => { egChoice.elo = +e.target.value; store('egElo', e.target.value); renderEndgames(); };
+    $('eg-go').onclick = () => startEndgame(spec);
+  }
+}
 
 // Maia at the picked rating, or full-strength Stockfish (the last level when Maia isn't installed)
 async function egBotLevel() {
@@ -4715,18 +4767,18 @@ async function startEndgame(spec, mode = egChoice.mode, pick = egChoice.color) {
   const open = $('dlg-endgame').open;
   if (open) {
     $('eg-status').textContent = 'Setting up a position…';
-    $('eg-grid').classList.add('busy');
+    $('eg-body').classList.add('busy');
   }
   let pos, review;
   try {
     pos = await api('/api/endgame/new', { spec, mode, color });
     review = await api('/api/play/new', { color, level: level.id, fen: pos.fen });
   } catch (e) {
-    if (open) { $('eg-status').textContent = e.message; $('eg-grid').classList.remove('busy'); }
+    if (open) { $('eg-status').textContent = e.message; $('eg-body').classList.remove('busy'); }
     else addMsg('error', esc(e.message));
     return;
   }
-  $('eg-grid').classList.remove('busy');
+  $('eg-body').classList.remove('busy');
   if (open) $('dlg-endgame').close();
   playToken++;
   egRecord(`${spec}|${mode}`, 'tries');
@@ -4755,7 +4807,7 @@ function egGoalCard(p, color) {
     + `<div class="eg-actions"><button class="btn ghost small" data-a="again">New position</button>`
     + `<button class="btn ghost small" data-a="pick">Pick other material</button></div></div>`);
   msg.querySelector('[data-a=again]').onclick = () => startEndgame(eg.spec, eg.mode, eg.pick);
-  msg.querySelector('[data-a=pick]').onclick = openEndgames;
+  msg.querySelector('[data-a=pick]').onclick = () => openEndgames(2);  // straight to the type step
 }
 
 function egProbe(fen) {
@@ -4820,7 +4872,7 @@ function egFinish(p, ok, text) {
     + `<div class="card-sub">${esc(text)}${esc(slips)}</div><div class="eg-actions"><button class="btn small" data-a="again">Another one</button>`
     + `<button class="btn ghost small" data-a="pick">Pick other material</button></div></div>`);
   msg.querySelector('[data-a=again]').onclick = () => startEndgame(eg.spec, eg.mode, eg.pick);
-  msg.querySelector('[data-a=pick]').onclick = openEndgames;
+  msg.querySelector('[data-a=pick]').onclick = () => openEndgames(2);  // straight to the type step
 }
 
 // called from endGame(): the drill's verdict on how the game ended
@@ -5748,7 +5800,7 @@ $('load-go').onclick = () => {
 };
 
 $('btn-study').onclick = openStudyDialog;
-$('btn-endgames').onclick = openEndgames;
+$('btn-endgames').onclick = () => openEndgames();
 $('btn-puzzles').onclick = () => openPuzzles();
 $('pz-q').oninput = () => {
   clearTimeout(pzSearchTimer);

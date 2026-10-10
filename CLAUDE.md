@@ -595,8 +595,10 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 ### Endgame trainer (`core/endgames.py`, `core/tablebase.py`, "endgame trainer" in `app.js`, 2026-10-04)
 
-- 365chess-style (user's reference: set_endgames_training.php): "♔ Endgames" (side nav, Learn group) → pick a mode, a side and a
-  material tile (`PRESETS`: mates, pawns, rooks, queens, minors, random 4-7 pieces, pawn structures of 6-10
+- 365chess-style (user's reference: set_endgames_training.php): "♔ Endgames" (side nav, Learn group) → a stepper (2026-10-09,
+  user: all options at once was overload; `renderEndgames()`, `egStep`): 1 goal, 2 type (the preset group), 3 pieces,
+  4 side, 5 opponent + Start drill, crumbs on top show the remembered picks (`egChoice`, localStorage incl. `egGroup`,
+  `egSpec`) and jump back; "Pick other material" on a drill card opens step 2. The material tiles (`PRESETS`: mates, pawns, rooks, queens, minors, random 4-7 pieces, pawn structures of 6-10
   pawns); the server makes a fresh random position (`generate()`) and you play it against the opponent picked in
   the dialog (`egBotLevel()`): Human = Maia at a rating (`#eg-elo`, default `PLAYER_RATING`; user's call 2026-10-08:
   Stockfish almost never) or full-strength Stockfish; localStorage `egOpp`/`egElo`. Eval bar off (the scoreboard hides with it).
