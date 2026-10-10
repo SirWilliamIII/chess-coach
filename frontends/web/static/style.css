@@ -50,7 +50,7 @@ input, textarea {
 input:focus, textarea:focus { outline: 2px solid var(--accent-dark); border-color: transparent; }
 
 /* ---------- side nav: section labels and icon rows, the panels' surfaces and type. 216 px; an icon rail
-   (68 px) when folded or ≤ 1360 px; a top bar ≤ 760 px. --nav-w is part of the board's width budget. ---------- */
+   (68 px) when folded or ≤ 1800 px; a top bar ≤ 900 px. --nav-w is part of the board's width budget. ---------- */
 :root { --nav-w: 216px; }
 body { padding-left: var(--nav-w); }
 .side-nav {
@@ -77,7 +77,7 @@ body { padding-left: var(--nav-w); }
 .nav-collapse { margin-top: auto; }
 .nav-collapse .ico { transition: transform .2s; }
 /* the rail: icons only, the labels as tooltips */
-@media (min-width: 761px) {
+@media (min-width: 901px) {
   body.nav-collapsed { --nav-w: 68px; }
   body.nav-collapsed .side-nav { overflow: visible; padding: 16px 0; align-items: center; }
   body.nav-collapsed .nav-label, body.nav-collapsed .nav-h { display: none; }
@@ -128,12 +128,17 @@ main {
      uses it), so a height-bound board or a hidden panel gives the panels the room instead of empty margins */
   display: grid; grid-template-columns: auto minmax(var(--side-w), var(--side-max, 1200px)); grid-template-rows: repeat(4, auto);
   column-gap: var(--gap); row-gap: 12px; padding: 28px var(--pad-x); justify-content: center; align-items: start;
+  /* when the width limits the board, the spare height splits above and below instead of pooling under the buttons */
+  min-height: 100vh; align-content: center;
 }
 .board-col { grid-column: 1; grid-row: 1 / span 4; display: grid; grid-template-rows: subgrid; }
 .side {
   grid-column: 2; grid-row: 2 / span 3; align-self: stretch; contain: size; min-width: 0; position: relative;
-  display: grid; gap: 0; grid-template-columns: minmax(0, 1fr); --share: .66;
-  grid-template-areas: "score" "split" "chat"; grid-template-rows: minmax(0, calc(var(--share) * (100% - 24px))) 24px minmax(0, 1fr);
+  display: grid; gap: 0; grid-template-columns: minmax(0, 1fr);
+  /* stacked: the coach gets --chat-h (a share of the column once the handle is dragged, see setSplit()), the
+     scoreboard the rest. The default favours the scoreboard: its lists are what you read every move, the coach is
+     a feed you scroll */
+  grid-template-areas: "score" "split" "chat"; grid-template-rows: minmax(0, 1fr) 24px minmax(0, var(--chat-h, clamp(210px, 28%, 380px)));
 }
 /* the handle between the stacked panels: a 24 px gap with a grip that shows on hover */
 .side-split { grid-area: split; position: relative; cursor: row-resize; touch-action: none; }
@@ -436,8 +441,11 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 }
 .chip.tip-right:hover::after { left: auto; right: 0; }
 .context { padding: 6px 16px 0; font-size: 12px; color: var(--muted); }
-.chat-input { display: flex; gap: 8px; padding: 12px 20px 20px; align-items: flex-end; }
-.chat-input textarea { flex: 1; resize: none; border-radius: 10px; }
+.chat-input { display: flex; gap: 8px; padding: 12px 20px 18px; align-items: flex-end; }
+/* one line that grows with what you type (field-sizing; browsers without it keep one line and scroll), so an
+   empty box doesn't take two lines of a short coach panel */
+.chat-input textarea { flex: 1; resize: none; border-radius: 10px; field-sizing: content; min-height: 40px; max-height: 140px; }
+.chat-input .btn { height: 37px; }
 
 /* ---------- dialogs ---------- */
 dialog {
@@ -472,7 +480,7 @@ dialog textarea { width: 100%; resize: vertical; }
 
 /* ---------- smaller screens ---------- */
 /* the nav is a rail by itself here (the collapse button has nothing to choose) */
-@media (min-width: 761px) and (max-width: 1360px) {
+@media (min-width: 901px) and (max-width: 1800px) {
   :root, body { --nav-w: 68px; }
   .side-nav { overflow: visible; padding: 16px 0; align-items: center; }
   .nav-label, .nav-h, .nav-collapse { display: none; }
@@ -485,10 +493,12 @@ dialog textarea { width: 100%; resize: vertical; }
     padding: 6px 10px; border-radius: 8px; background: #141312; border: 1px solid var(--line); color: var(--text);
     font-size: 12.5px; font-weight: 500; white-space: nowrap; box-shadow: 0 8px 20px rgba(0,0,0,.45); pointer-events: none;
   }
+}
+@media (min-width: 901px) and (max-width: 1360px) {
   main { --gap: 16px; --pad-x: 16px; --side-w: clamp(300px, 30vw, 380px); }
 }
 /* phones: a top bar of icons, then board, scoreboard and coach in one column */
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   :root, body, body.nav-collapsed { --nav-w: 0px; }
   .side-nav { position: sticky; top: 0; bottom: auto; width: auto; height: 56px; flex-direction: row; align-items: center;
     gap: 4px; padding: 0 12px; overflow: auto hidden; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -991,7 +1001,7 @@ body.rep-swap .score-body, body.rep-swap .rep-body { animation: panel-in .16s ea
    moved a few px between modes) */
 .top-row .btn.small { font-size: 13px; padding: 4px 10px; }
 
-@media (max-width: 760px) { #gp-details { left: auto; right: 0; top: 100%; margin-top: 2px; } }  /* one column: no room beside */
+@media (max-width: 900px) { #gp-details { left: auto; right: 0; top: 100%; margin-top: 2px; } }  /* one column: no room beside */
 .auto-coach { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; color: var(--muted); cursor: pointer; }
 .auto-coach input { margin: 0; }
 
@@ -1007,7 +1017,7 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
 .opening-box .opening-tag { margin: 0; flex: 0 1 auto; align-items: center; font-size: 13.5px; font-weight: 500; color: var(--text);
   -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 /* phones: the opening gets its own line under the name and the buttons */
-@media (max-width: 760px) { .opening-slot { order: 3; flex-basis: 100%; justify-content: flex-start; } }
+@media (max-width: 900px) { .opening-slot { order: 3; flex-basis: 100%; justify-content: flex-start; } }
 
 
 
@@ -1016,12 +1026,14 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
    Flat sections in the panel, divided by a rule. Colour means one thing: the severity scale (--t0..--t3) for
    what a move costs, Maia blue for how often people play it. Everything else is text and muted text. */
 .score-body { flex: 1; min-height: 0; overflow-y: auto; font-variant-numeric: tabular-nums;
-  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-/* the card fills the panel; the live card takes what the verdict strip leaves and spaces its lists and the
-   rating track evenly in it (user's call, 2026-10-07). When the panel is short, it just scrolls. */
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  container-type: size; container-name: sb; }  /* the card's spacing follows the panel's height (cqh) */
+/* the card fills the panel; the live card spreads its lists and the rating track with the room it has (user's call,
+   2026-10-07), but the gaps grow only so far (was space-around: a tall panel showed 100+ px empty bands between the
+   sections); the rest stays under the track. When the panel is short, it just scrolls. */
 #key-card { display: flex; flex-direction: column; min-height: 100%; }
 #key-card .sb-card.live { flex: 1; display: flex; flex-direction: column; }
-.sb-body { flex: 1; display: flex; flex-direction: column; justify-content: space-around; }
+.sb-body { flex: 1; display: flex; flex-direction: column; gap: clamp(14px, 4cqh, 44px); }
 .sb-card { padding: 18px 20px 20px; }
 .sb-card + .sb-card { border-top: 1px solid var(--line); }
 .t0 { --c: var(--t0); } .t1 { --c: var(--t1); } .t2 { --c: var(--t2); } .t3 { --c: var(--t3); }
@@ -1042,11 +1054,15 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
 
 /* the candidates: Stockfish's order, the cost against the best, the popularity at this rating */
 .sb-table { display: flex; flex-direction: column; gap: 1px; margin-top: 12px; }
-.sb-cols, .sb-row { display: grid; grid-template-columns: 20px minmax(48px, 1fr) 76px minmax(88px, 1.4fr); align-items: center;
+.sb-cols, .sb-row { display: grid; grid-template-columns: 20px minmax(52px, 84px) 60px minmax(0, 1fr); align-items: center;
   column-gap: 10px; padding: 0 8px; }
-.sb-cols { height: 22px; font-size: 10.5px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+.sb-cols { min-height: 22px; font-size: 10.5px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
 /* the header is only the list's name, across the row; the players' list gets Maia's blue */
 .sb-cols span { grid-column: 1 / -1; white-space: nowrap; }
+/* the players' heading carries the rating picker and Full lines: in a narrow panel (side by side at 1680-1800 px) it
+   ran past the panel's edge, so it wraps there */
+.sb-table.maia .sb-cols span { white-space: normal; line-height: 24px; }
+.ml-toggle { white-space: nowrap; }
 .sb-table + .sb-table { margin-top: 14px; }
 .sb-table.maia .sb-cols span { color: var(--maia); }
 .sb-table.sf .sb-cols span { color: var(--t3-text); }
@@ -1088,7 +1104,7 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
 .ml-san { font-weight: 500; color: var(--text); }
 .ml-mv:is(.t1, .t2, .t3) .ml-san { color: var(--c); font-weight: 600; }
 .ml-mv small { margin-left: 3px; font-size: 10.5px; color: var(--faint); }
-.sb-row { height: 27px; width: 100%; background: none; border: 0; border-radius: 8px; color: var(--text); font: inherit;
+.sb-row { height: clamp(26px, 3.2cqh, 30px); width: 100%; background: none; border: 0; border-radius: 8px; color: var(--text); font: inherit;
   font-size: 13px; text-align: left; cursor: pointer; transition: background .12s; }
 .sb-row:hover, .sb-row.hot { background: var(--hover-2); }
 .sb-rank { font-size: 12px; color: var(--faint); }
@@ -1102,7 +1118,7 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
 .sb-pop { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .sb-pbar { flex: 1; height: 6px; border-radius: 99px; background: var(--inset); overflow: hidden; }
 .sb-pbar span { display: block; height: 100%; border-radius: 99px; background: var(--maia); transition: width .3s ease; }
-.sb-row.maia-only { grid-template-columns: minmax(48px, 1fr) minmax(120px, 2fr); }
+.sb-row.maia-only { grid-template-columns: minmax(52px, 84px) minmax(0, 1fr); }
 .sb-row.skel { cursor: default; }
 .sb-row.skel span { grid-column: 1 / -1; height: 10px; border-radius: 5px; background: #2f2e2b; }
 .sb-row.skel:nth-child(2n) span { width: 80%; }
@@ -1194,7 +1210,7 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
 .pz-status { display: flex; flex-wrap: wrap; gap: 6px; }
 /* phones: puzzles keep the top row a fixed shape (name + buttons, then one line for the status or the hint), so a
    hint or a miss never pushes the board down. The opening pill makes way (the variation is under the board) */
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .top-row:has(.pz-status) .opening-slot { display: none; }
   .top-row:has(.pz-status) .head-row, .top-row:has(.pz-status) #summary { display: contents; }
   .top-row:has(.pz-status) .player.top { flex: 1 1 0; min-width: 0; flex-wrap: nowrap; overflow: hidden; }
@@ -1236,23 +1252,24 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
 .rp-head { display: flex; align-items: center; justify-content: space-between; }
 /* White | labels | Black: the player tiles, then one row per grade, all on the same three columns */
 .rp-table { display: grid; grid-template-columns: 1fr auto 1fr; column-gap: 8px; row-gap: 2px; align-items: center; }
-.rp-tile { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 12px 10px 10px;
+.rp-tile { min-width: 0; align-self: stretch; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 12px 10px 10px;
   background: var(--inset); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; }
 .rp-tile.you { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .rp-who { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
 .rp-chip { flex: none; width: 10px; height: 10px; border-radius: 3px; }
 .rp-chip.white { background: #ecebe6; }
 .rp-chip.black { background: #0f0f0e; box-shadow: inset 0 0 0 1px #5a5854; }
-.rp-name { font-size: 13px; font-weight: 600; min-width: 0; overflow-wrap: anywhere; text-align: center; line-height: 1.25; }
+.rp-name { font-size: 13px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.25; }
 .rp-acc { font-size: 30px; font-weight: 300; line-height: 1.1; font-variant-numeric: tabular-nums; }
-.rp-cap { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.rp-cap { max-width: 100%; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rp-tile.you .rp-cap { color: var(--accent); }
 .rp-n { text-align: center; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; padding: 4px 0; }
 .rp-n.zero { color: var(--faint); font-weight: 400; }
 .rp-n.inaccuracy { color: var(--t1); }
 .rp-n.mistake { color: var(--t2); }
 .rp-n.blunder { color: var(--t3-text); }
-.rp-g { display: flex; align-items: center; gap: 8px; min-width: 104px; font-size: 13px; color: var(--muted); }
+.rp-g { display: flex; align-items: center; gap: 8px; min-width: 92px; font-size: 13px; color: var(--muted); }
 .rp-g i { flex: none; width: 8px; height: 8px; border-radius: 50%; }
 .rp-section { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
 .rp-section-h { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
@@ -1307,7 +1324,7 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
    scrolls the page (user's call, 2026-10-09): every screen is the phone's height, a long panel scrolls inside itself,
    and no scrollbar shows anywhere */
 .m-tabs { display: none; }
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   :root { --m-top: 56px; --m-tabs: calc(50px + env(safe-area-inset-bottom)); }
   html, body { height: 100%; overflow: hidden; }
   * { scrollbar-width: none; }
@@ -1317,12 +1334,12 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
   .m-tabs button { flex: 1; height: 38px; border: 1px solid var(--line); border-radius: 10px; background: none; color: var(--muted);
     font: inherit; font-size: 14px; font-weight: 600; }
   .m-tabs button.on { background: var(--inset); color: var(--text); border-color: var(--accent); }
-  main { height: calc(100svh - var(--m-top)); box-sizing: border-box; overflow: hidden; padding-bottom: calc(var(--m-tabs) + 12px);
+  main { height: calc(100svh - var(--m-top)); min-height: 0; box-sizing: border-box; overflow: hidden; padding-bottom: calc(var(--m-tabs) + 12px);
     grid-template-rows: minmax(0, 1fr); }
   /* the board screen: the board also yields to the height (svh: the screen with the browser's bars showing), the
      rest being the top bar, the name rows, the opening, the eval bar, the buttons and the tabs */
   body:not(.m-moves):not(.m-coach) main { --board-w: min(calc(100vw - 32px), calc(100svh - var(--m-rest, 360px))); }
-  body:not(.m-moves):not(.m-coach) .board-col { align-items: center; }
+  body:not(.m-moves):not(.m-coach) .board-col { align-items: center; align-self: stretch; justify-content: center; }
   main { --m-rest: 330px; }
   .board-foot .game-info, .board-foot .game-title { display: none; }  /* no room beside the name; the names are on the rows */
   body:not(.m-moves):not(.m-coach) .side { display: none; }
@@ -1338,3 +1355,33 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
   .brand { flex: none; }
 }
 @media (max-width: 360px) { main { --m-rest: 372px; } }  /* the name rows wrap at this width */
+
+/* ---------- the scoreboard in a short panel (last: it overrides the scoreboard and game report rules above) ---------- */
+/* a short panel (stacked on laptops up to ~1100 px tall, phones): tighter cards so both lists fit before it scrolls */
+@container sb (max-height: 700px) {
+  .sb-card { padding: 12px 16px 14px; }
+  .sb-card.after { padding: 12px 16px 14px; }
+  .sb-card.after .sb-num { font-size: 20px; }
+  .sb-eyebrow + .sb-rankbar { margin-top: 8px; }
+  .rp-graph { height: 30px; margin: 2px 0 4px; }
+  .sb-table { margin-top: 6px; }
+  .sb-table + .sb-table { margin-top: 10px; }
+  .sb-sub-h { margin-top: 6px; }
+}
+/* very short (stacked on a 768-900 px tall laptop) with a loaded game's report strip above the cards: four rows per
+   list, so both lists show before it scrolls. Without the strip (analysis board, bot games) five fit */
+@container sb (max-height: 520px) {
+  #key-card:has(.report-strip) .sb-table > .sb-row:nth-of-type(n+5),
+  #key-card:has(.report-strip) .sb-table > .sb-row:nth-of-type(n+5) + .ml-line { display: none; }
+}
+/* shortest (stacked on a 768 px tall screen): 24 px rows and tighter cards still show both lists */
+@container sb (max-height: 440px) {
+  .sb-card, .sb-card.after { padding: 10px 16px 12px; }
+  .sb-row { height: 24px; }
+  .rp-graph { height: 26px; }
+}
+/* a narrow panel (side by side): the report's tiles are ~120 px, so the caption tightens to fit on one line */
+@container sb (max-width: 400px) {
+  .rp-cap { font-size: 9.5px; letter-spacing: .04em; }
+  .rp-table { column-gap: 6px; }
+}

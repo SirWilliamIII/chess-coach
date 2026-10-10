@@ -319,26 +319,32 @@ file says what is true now. Last full cleanup: 2026-10-03.
     (the board formula subtracts it) and a height-bound board or a hidden panel widens the panels instead of
     centring margins. Both panels hidden: capped at `--side-w`. **Board size handle** (`#side-resize`, the gap
     left of `.side`, `setBoardMax()`): dragging sets `--board-user` (→ `--board-max`, min 320) on `main`,
-    localStorage `boardMax`, double-click clears it. Hidden ≤ 760 px.
+    localStorage `boardMax`, double-click clears it. Hidden ≤ 900 px.
   - **Phones and touch** (2026-10-09, user: "way too many things to accidentally click when scrolling"): on a touch
     screen (`TOUCH`, `pointer: coarse`) moves are tap-only: a capture-phase `touchstart` listener on `#board` stops
     chessground seeing touches (it grabbed pieces on touchstart and, with one selected, moved on the next touch), so
     the page scrolls and a clean tap reaches it as the browser's click. The set-up board keeps touch (drag palette).
-    Scoreboard rows only show their arrow on touch (`playMaiaMove()`). ≤ 760 px: three screens, Board, Moves (the
+    Scoreboard rows only show their arrow on touch (`playMaiaMove()`). ≤ 900 px (760 until 2026-10-10: 761-900 gave a
+    327 px board beside a 300 px column; an iPad in portrait now gets a 782 px board): three screens, Board, Moves (the
     scoreboard) and Coach, flipped by the fixed tab bar `#m-tabs` (`setPhonePage()`, `body.m-moves` / `m-coach`; a
     row tap flips to the board). **Nothing scrolls the page and no scrollbar shows** (user's call): `html, body`
     overflow hidden, `main` is `100svh` minus the top bar, each panel screen is one panel at full height that scrolls
-    inside itself, scrollbars hidden everywhere, the top icon bar shrinks its items to fit. The board screen: `--board-w`
+    inside itself, scrollbars hidden everywhere, the top icon bar shrinks its items to fit. Opening the Coach screen scrolls the log to the latest (it was hidden, so
+    it opened at the top). The board screen sits centred between the top bar and the tabs (`main` has `min-height: 0`
+    there: the desktop `min-height: 100vh` made it taller than the screen); `--board-w`
     also ≤ `100svh - --m-rest` (330 px, 372 ≤ 360 px wide where the rows wrap; measured iPhone 13 334 px board, SE 196,
     Pixel 7 380). Panel hide buttons, tabs and the split handle don't apply on phones. The game line (☆ names ·
     result) is hidden there. User checked on a real phone 2026-10-09: taps "pretty dang good", the board fits.
     Puzzles on phones (2026-10-10): the top row is name + buttons, then one fixed line (`.pz-status`) for the status
     or the hint (the hint replaces "Black to play"), opening pill hidden, so a hint or a miss never moves the board.
-  - **Breakpoints:** ≥ 1680 px: board | scoreboard | coach. 761-1679 px: board | one column with the scoreboard
-    over the coach and a drag handle between them (`#side-split`, `setSplit()`, share 0.25-0.85 in localStorage
-    `sideSplit`, default 0.66, double-click resets). ≤ 1360 px the nav is an icon rail by itself. ≤ 760 px: one
-    column, the nav a top bar of icons (`--head-h` = its height). At 1200×800 the side column is ~680 px tall,
-    so the scoreboard scrolls or the coach is small: height is the limit there, the handle decides.
+  - **Breakpoints:** ≥ 1680 px: board | scoreboard | coach. 901-1679 px: board | one column with the scoreboard
+    over the coach and a drag handle between them (`#side-split`, `setSplit()`). Default (2026-10-10, never dragged):
+    the coach gets `--chat-h` = clamp(210 px, 28%, 380 px), the scoreboard the rest (was a 0.66 share: at 1440×900
+    the second list was cut off). Dragging stores the scoreboard's share (0.25-0.85) in localStorage `sideSplit` and
+    sets `--chat-h` from it; double-click clears it. ≤ 1800 px the nav is an icon rail by itself (≤ 1360 until
+    2026-10-10: at 1728×1117 the full nav left a width-bound 701 px board with 200 px empty under it; now 849); the
+    tighter page padding stays ≤ 1360. ≤ 900 px: one column, the nav a top bar of icons (`--head-h` = its height).
+    At 1366×768 the scoreboard still scrolls a little: height is the limit there, the handle decides.
   - **Side nav:** `nav.side-nav`, `--nav-w` 216 px, section labels (`.nav-h`) and icon rows (`.nav-item`, inline
     SVG `.ico`, one 24 px line set shared with the board buttons and panel controls; no emoji). No collapsible
     groups any more (the 2026-10-05 `<details>` tree went). Collapse (`#nav-collapse`, `setNavCollapsed()`,
@@ -367,7 +373,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
     puzzle "From your game vs X" / "Lichess puzzle · rated ~N"; lesson "Lesson · <name>"; coach demo its title
     (+ "· your own moves"); Explore lines the file's name; editor and analysis board nothing.
   - **Sizes:** `--board-w` = min(`--board-max` 880, `100vh - --head-h - 244px`, the width left beside the nav and
-    `--side-w`); `--strip` (rank labels only, 18 px; 0 on phones, where the labels sit inside the board so it's
+    `--side-w`); `main` is `min-height: 100vh; align-content: center`, so when the width limits the board the spare
+    height splits above and below; `--strip` (rank labels only, 18 px; 0 on phones, where the labels sit inside the board so it's
     centred). 1440×900: 656 px (height-bound); 1920×1080: 820.
   - **Spacing** (2026-10-09, user: "this is to the max, add padding around pretty much everything"): page padding
     28 px / `--pad-x` 40, `--gap` 32 (board ↔ panels), row gap 12, 24 px between the panels, 20 px inside them.
@@ -476,7 +483,12 @@ file says what is true now. Last full cleanup: 2026-10-03.
   engine pill) draws its arrow; clicking a row plays it
   (`playMaiaMove()`). Quick numbers (`lastEval`/`lastMaia`, `sbQuick()`) fill the candidates at once; the track
   waits for the deep search (skeletons). Eval off (bot game without it): only "What ~N play" (Maia). The card fills the
-  panel and spaces the lists and the track with `space-around` (`.sb-body`, user's call 2026-10-07).
+  panel and spreads the lists and the track (user's call 2026-10-07), but since 2026-10-10 with capped gaps
+  (`.sb-body` gap clamp(14px, 4cqh, 44px), `.score-body` is a size container named `sb`): `space-around` left 100+ px
+  empty bands in a tall panel. Row columns are rank | move (≤ 84 px) | eval | bar, so the eval sits beside the move
+  (it floated mid-row on the bot list, whose bar column is empty). Short panels tighten (container queries at the end
+  of `style.css`: ≤ 700 px tall compact cards, ≤ 520 px with a loaded game's report strip four rows per list, ≤ 440 px
+  24 px rows). The coach's input is one line that grows (`field-sizing: content`; no growth in browsers without it).
 - **Maia's lines** ("▸ Full lines" in the Top player moves header, localStorage `maiaLines`, 2026-10-07): under
   each player move, how ~N players typically go on: Maia's top move for both sides at the picker's rating, 8
   more moves (`scoreboard.maia_line()`, `POST /api/maia_line`, one line per request on `S.full_card_engine`),

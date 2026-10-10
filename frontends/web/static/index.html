@@ -11,8 +11,8 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <!-- side nav: section labels and icon rows; folds to an icon rail (‹, or automatically ≤ 1360 px) and becomes a
-       top bar ≤ 760 px. Button ids are the ones app.js binds -->
+  <!-- side nav: section labels and icon rows; folds to an icon rail (‹, or automatically ≤ 1800 px) and becomes a
+       top bar ≤ 900 px. Button ids are the ones app.js binds -->
   <nav class="side-nav" id="side-nav">
     <div class="brand"><img class="logo" src="/static/logo-mark.png" alt=""><span class="nav-label">Chess Coach</span></div>
     <div class="nav-sec"><div class="nav-h">Play</div>
@@ -151,7 +151,7 @@
         <div class="chips" id="chips"></div>
         <div class="context" id="chat-context"></div>
         <form class="chat-input" id="chat-form">
-          <textarea id="chat-text" rows="2" placeholder="Ask about the position on the board…"></textarea>
+          <textarea id="chat-text" rows="1" placeholder="Ask about the position on the board…"></textarea>
           <button class="btn" type="submit" id="chat-send">Send</button>
         </form>
       </section>
@@ -160,7 +160,7 @@
   </main>
 
   <!-- phones: three screens, the board, the scoreboard, the coach (user's calls, 2026-10-09: scrolling past the
-       board kept hitting it; no page scrolling at all). Hidden above 760 px -->
+       board kept hitting it; no page scrolling at all). Hidden above 900 px -->
   <nav class="m-tabs" id="m-tabs">
     <button data-page="board" class="on">Board</button>
     <button data-page="moves"><span class="sb-only">Moves</span><span class="rep-only">Lines</span></button>

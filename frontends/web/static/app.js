@@ -93,8 +93,8 @@ async function api(path, body, method) {
 
 // Touch screens move by tapping only (user's call, 2026-10-09: scrolling kept grabbing and moving pieces).
 const TOUCH = matchMedia('(pointer: coarse)').matches;
-// Phones show the board, the scoreboard and the coach as three screens, flipped with the tab bar (≤ 760 px, style.css)
-const PHONE = matchMedia('(max-width: 760px)');
+// Phones show the board, the scoreboard and the coach as three screens, flipped with the tab bar (≤ 900 px, style.css)
+const PHONE = matchMedia('(max-width: 900px)');
 
 const cg = Chessground($('board'), {
   coordinates: true,
@@ -184,6 +184,8 @@ function setPhonePage(page) {
   document.body.classList.toggle('m-coach', page === 'coach');
   document.querySelectorAll('#m-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.page === page));
   if (page === 'board') requestAnimationFrame(() => { document.body.dispatchEvent(new Event('chessground.resize')); cg.redrawAll(); });
+  // the log was display: none while another screen showed, so its scroll-to-latest didn't take: it opened at the top
+  if (page === 'coach') { const log = $('chat-log'); log.scrollTop = log.scrollHeight; }
 }
 document.querySelectorAll('#m-tabs button').forEach((b) => { b.onclick = () => setPhonePage(b.dataset.page); });
 
@@ -6102,13 +6104,14 @@ document.querySelectorAll('[data-show]').forEach((b) => { b.onclick = () => setP
 for (const w of ['score', 'chat']) if (recall(`hide-${w}`) === '1') document.body.classList.add(`hide-${w}`);
 dockGamePanel();
 // Stacked panels (below 1680 px): drag the handle between them to share the column; the scoreboard's share
-// (0.25-0.85 of the height) is remembered per browser.
+// (0.25-0.85 of the height) is remembered per browser. Never dragged (or double-clicked back): CSS's default, the
+// coach at about 28% of the column within 210-380 px.
 function setSplit(share) {
   const v = Math.max(0.25, Math.min(0.85, share));
-  $('side').style.setProperty('--share', v.toFixed(3));
+  $('side').style.setProperty('--chat-h', `calc(${(1 - v).toFixed(3)} * (100% - 24px))`);
   return v;
 }
-setSplit(+(recall('sideSplit') || 0.66));
+if (recall('sideSplit')) setSplit(+recall('sideSplit'));
 $('side-split').onpointerdown = (e) => {
   e.preventDefault();
   const handle = e.currentTarget;
@@ -6121,8 +6124,8 @@ $('side-split').onpointerdown = (e) => {
     if (share != null) store('sideSplit', share.toFixed(3));
   };
 };
-$('side-split').ondblclick = () => store('sideSplit', setSplit(0.66).toFixed(3));
-// Beside the board (above 760 px): drag to size the board; the side column takes the rest (CSS --board-user caps
+$('side-split').ondblclick = () => { $('side').style.removeProperty('--chat-h'); store('sideSplit'); };
+// Beside the board (above 900 px): drag to size the board; the side column takes the rest (CSS --board-user caps
 // the board, the height and width limits still apply). Remembered per browser; double-click goes back to the max.
 function setBoardMax(px) {
   if (px) document.querySelector('main').style.setProperty('--board-user', `${Math.round(px)}px`);
@@ -6143,7 +6146,7 @@ $('side-resize').onpointerdown = (e) => {
   };
 };
 $('side-resize').ondblclick = () => { store('boardMax'); setBoardMax(null); };
-// Side nav: ‹ folds it to an icon rail (remembered per browser). ≤ 1360 px it's a rail anyway (CSS), and ≤ 760 px
+// Side nav: ‹ folds it to an icon rail (remembered per browser). ≤ 1800 px it's a rail anyway (CSS), and ≤ 900 px
 // a top bar, so the button only shows where the choice exists.
 function setNavCollapsed(on) {
   document.body.classList.toggle('nav-collapsed', on);
@@ -6153,8 +6156,8 @@ function setNavCollapsed(on) {
 }
 $('nav-collapse').onclick = () => setNavCollapsed(!document.body.classList.contains('nav-collapsed'));
 if (recall('navCollapsed') === '1') setNavCollapsed(true);
-// as a top bar (≤ 760 px) the nav takes height from the board's budget: CSS reads it as --head-h
-const navTop = matchMedia('(max-width: 760px)');
+// as a top bar (≤ 900 px) the nav takes height from the board's budget: CSS reads it as --head-h
+const navTop = matchMedia('(max-width: 900px)');
 new ResizeObserver(() => {
   const h = navTop.matches ? Math.ceil($('side-nav').getBoundingClientRect().height) : 0;
   document.documentElement.style.setProperty('--head-h', `${h}px`);
