@@ -70,8 +70,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - **`.env` is gitignored** and must exist per clone: `ANTHROPIC_API_KEY`, `LICHESS_TOKEN`, optional
   `CHESS_USER`, `PLAYER_RATING` (chess.com rapid since 2026-10-07, default 800; the primary clone has 790), `ANTHROPIC_ADMIN_KEY` + `MONTHLY_SPEND_LIMIT`
   (org-spend card), `COACH_MODEL`, `STUDY_MODEL`, `COACH_EFFORT`, `COACH_THINKING`, `COACH_ENGINE_DEPTH`.
-  Two clones on this machine: `/Users/will/chess-coach` (primary) and `~/Projects/chess-coach` (kept in sync
-  with `git pull`), each with its own `.env`.
+  One clone on this machine, `/Users/will/chess-coach` (the second, `~/Projects/chess-coach`, was deleted
+  2026-10-10 at the user's request; its 3 saved answers are in `data/library-projects-clone-2026-09-26.sqlite`).
 - **Other devices (tailnet):** the primary clone keeps localhost and runs `tailscale serve --bg --http=80
   localhost:8000` (2026-10-09), so other devices open `http://mbp.mastodon-snake.ts.net` (or `http://mbp`). The
   serve config persists in tailscaled; `tailscale serve status` / `tailscale serve reset`. There is no auth: every device shares the one global state (below),
