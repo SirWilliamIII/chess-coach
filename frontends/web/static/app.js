@@ -2340,7 +2340,7 @@ async function ask(question, opts = {}) {
     }
     pending.remove();
     if (opts.skipEmpty && /^\(nothing\)\.?$/i.test(data.answer.trim())) return;
-    renderAnswer(data, { ...opts, live: true });
+    renderAnswer(data, opts);
   } catch (e) {
     pending.remove();
     addMsg('error', esc(e.message));
@@ -2363,7 +2363,7 @@ function renderQuiz(quiz) {
 }
 
 function renderAnswer(data, opts = {}) {
-  // a coach answer bubble: text, a move_quiz, Show me buttons, the checks bubble and a ☆ for the library
+  // a coach answer bubble: text, a move_quiz, Show me buttons and the checks bubble
   const n = (data.tools || []).length;
   const tools = n
     ? `<details class="tools"><summary>🔍 ${n} check${n > 1 ? 's' : ''}</summary>${data.tools.map((t) => `<div title="${esc(toolTitle(t))}">✓ ${esc(toolLabel(t))}</div>`).join('')}</details>` : '';
@@ -2373,16 +2373,13 @@ function renderAnswer(data, opts = {}) {
   // coach ply = the position *before* that move, so the board goes to ply - 1 moves played
   const jumps = state.review && !state.play
     ? (data.jumps || []).filter((j) => j.ply <= state.review.moves.length + 1) : [];
-  // a go-now jump ("what would you play as White's 10th move?") moves the board as the answer appears,
-  // only for a fresh answer (not one reopened from Lessons)
-  const auto = opts.live ? jumps.find((j) => j.now) : null;
+  // a go-now jump ("what would you play as White's 10th move?") moves the board as the answer appears
+  const auto = jumps.find((j) => j.now);
   const jumpBtn = jumps.some((j) => !j.now)
     ? `<div class="demos">${jumps.map((j, i) => (j.now ? '' : `<button class="demo-btn jump-btn" data-j="${i}">⏭ Jump ahead to move ${Math.ceil(Math.max(1, j.ply) / 2)}</button>`)).join('')}</div>` : '';
   const label = opts.label ? `<div class="gm-label">${esc(opts.label)}</div>` : '';
-  const star = data.entry_id
-    ? `<button class="star${data.starred ? ' on' : ''}" title="Save to favorites in Lessons">${data.starred ? '★' : '☆'}</button>` : '';
   const msg = addMsg(opts.label ? 'coach gm' : 'coach',
-    star + label + markdown(data.answer) + renderQuiz(data.quiz) + jumpBtn + buttons + tools, opts.where);
+    label + markdown(data.answer) + renderQuiz(data.quiz) + jumpBtn + buttons + tools, opts.where);
   msg.querySelectorAll('.demo-btn[data-i]').forEach((b) => { b.onclick = () => openDemo(demos[+b.dataset.i]); });
   msg.querySelectorAll('.jump-btn').forEach((b) => { b.onclick = () => jumpToPly(jumps[+b.dataset.j].ply); });
   if (auto) jumpToPly(auto.ply);
@@ -2411,97 +2408,12 @@ function renderAnswer(data, opts = {}) {
     btn.onmouseenter = () => { previewMove(btn.dataset.san, true); if (dest) { hoverSquare = dest; paintSquares(); } };
     btn.onmouseleave = () => { previewMove(btn.dataset.san, false); hoverSquare = null; paintSquares(); };
   });
-  const starBtn = msg.querySelector('.star');
-  if (starBtn) {
-    starBtn.onclick = async () => {
-      const on = !starBtn.classList.contains('on');
-      try {
-        await api(`/api/library/${data.entry_id}/star`, { starred: on });
-        starBtn.classList.toggle('on', on);
-        starBtn.textContent = on ? '★' : '☆';
-      } catch (e) { addMsg('error', esc(e.message)); }
-    };
-  }
   return msg;
 }
 
-// ---------------------------------------------------------------- the chat library
-
-let libTag = null;
-
-function openLibrary() {
-  $('dlg-library').showModal();
-  $('lib-q').focus();
-  searchLibrary();
-}
-
-let libTimer = null;
-
-async function searchLibrary() {
-  const params = new URLSearchParams({ q: $('lib-q').value.trim() });
-  if (libTag) params.set('tag', libTag);
-  if ($('lib-starred').checked) params.set('starred', 'true');
-  if ($('lib-habits').checked) params.set('habits', 'true');
-  let res;
-  try {
-    res = await api(`/api/library?${params}`);
-  } catch (e) {
-    $('lib-list').innerHTML = `<p class="hint">${esc(e.message)}</p>`;
-    return;
-  }
-  $('lib-tags').innerHTML = res.tags.map((t) =>
-    `<button class="lib-tag${t.tag === libTag ? ' on' : ''}" data-tag="${esc(t.tag)}">${esc(t.tag)} <span>${t.count}</span></button>`).join('');
-  $('lib-tags').querySelectorAll('.lib-tag').forEach((b) => {
-    b.onclick = () => { libTag = libTag === b.dataset.tag ? null : b.dataset.tag; searchLibrary(); };
-  });
-  if (!res.entries.length) {
-    $('lib-list').innerHTML = `<p class="hint">${res.tags.length ? 'Nothing matches.' : 'Nothing saved yet — every coach answer lands here automatically.'}</p>`;
-    return;
-  }
-  $('lib-list').innerHTML = res.entries.map((e) => {
-    const when = new Date(e.created_at * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-    const where = [e.position_label, e.game_label].filter(Boolean).join(' · ');
-    return `<div class="lib-entry" data-id="${e.id}">
-      <div class="lib-top"><span class="lib-q">${e.starred ? '★ ' : ''}${esc(e.question)}</span>
-        <button class="link lib-del" title="Delete from Lessons">🗑</button></div>
-      <div class="lib-meta">${esc(where)}${where ? ' · ' : ''}${esc(when)}</div>
-      ${e.habit ? `<div class="lib-habit">🧠 ${esc(e.habit)}</div>` : `<div class="lib-snippet">${esc(e.snippet)}</div>`}
-      <div class="lib-etags">${e.tags.map((t) => `<span>${esc(t)}</span>`).join('')}</div>
-    </div>`;
-  }).join('');
-  $('lib-list').querySelectorAll('.lib-entry').forEach((el) => {
-    el.onclick = () => openEntry(+el.dataset.id);
-    el.querySelector('.lib-del').onclick = async (ev) => {
-      ev.stopPropagation();
-      if (!confirm('Delete this from Lessons?')) return;
-      await api(`/api/library/${el.dataset.id}`, undefined, 'DELETE');
-      searchLibrary();
-    };
-  });
-}
-
-async function openEntry(id) {
-  const e = await api(`/api/library/${id}`);
-  $('dlg-library').close();
-  const when = new Date(e.created_at * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-  let review = null;
-  if (e.game_id) {  // put the board back exactly where the answer was given
-    try {
-      review = await api('/api/saved/open', { game_id: e.game_id, me: state.me || null });
-    } catch { /* game no longer saved: fall back to the position itself */ }
-  }
-  if (review) {
-    setReview(review, `From Lessons (${when}).`);
-    state.ply = Math.min(e.ply ?? 0, review.moves.length);
-    state.extra = e.extra || [];
-    update();
-  } else {
-    setReview(await api('/api/analysis', { fen: e.fen }), `From your library (${when}), on an analysis board of that position.`);
-  }
-  if (e.kind !== 'gm alert') addMsg('user', esc(e.question), e.position_label);
-  renderAnswer({ answer: e.answer, tools: e.tools, demos: e.demos, jumps: e.jumps, entry_id: e.id, starred: e.starred },
-    { label: e.kind === 'gm alert' ? e.question : null, where: e.kind === 'gm alert' ? e.position_label : null });
-}
+// The 📚 Lessons dialog (search, tags, reopen a saved answer) was removed 2026-10-09 (user's call). Answers are
+// still saved server-side (data/library.sqlite, /api/library, the unlinked /lessons page) and still serve as the
+// answer cache.
 
 function renderChips() {
   // in a lesson's Learn mode the chips live on the move cards instead (studyCard)
@@ -5707,10 +5619,6 @@ $('pos-title').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault();
 
 $('pb-takeback').onclick = takeback;
 $('btn-play').onclick = () => { pendingFen = null; openPlayDialog(); };
-$('btn-library').onclick = openLibrary;
-$('lib-q').oninput = () => { clearTimeout(libTimer); libTimer = setTimeout(searchLibrary, 250); };
-$('lib-starred').onchange = searchLibrary;
-$('lib-habits').onchange = searchLibrary;
 
 $('dlg-play').addEventListener('close', () => { if (!state.editor) pendingFen = null; });
 $('play-go').onclick = startGame;

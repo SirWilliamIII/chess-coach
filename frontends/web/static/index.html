@@ -29,7 +29,6 @@
       <button id="btn-study" class="nav-item" data-tip="Learn openings"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7C10 5.5 7.25 5 4 5.5v12.75c3.25-.5 6 0 8 1.5 2-1.5 4.75-2 8-1.5V5.5C16.75 5 14 5.5 12 7z"/><path d="M12 7v12.75"/></svg><span class="nav-label">Learn openings</span></button>
       <button id="btn-puzzles" class="nav-item" data-tip="Puzzles"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3.5L6 13.5h5.5L10.5 20.5l7.5-10.5h-5.5z"/></svg><span class="nav-label">Puzzles</span></button>
       <button id="btn-endgames" class="nav-item" data-tip="Endgames"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 17l-1.25-9.5 4.75 3.75L12 5.5l3.5 5.75 4.75-3.75L19 17z"/><path d="M5.5 20h13"/></svg><span class="nav-label">Endgames</span></button>
-      <button id="btn-library" class="nav-item" data-tip="Lessons"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 17.5h5M10.5 20.5h3"/><path d="M12 3.5a5.75 5.75 0 0 0-3.4 10.4c.6.45.9 1.1.9 1.85v.25h5v-.25c0-.75.3-1.4.9-1.85A5.75 5.75 0 0 0 12 3.5z"/></svg><span class="nav-label">Lessons</span></button>
     </div>
     <button class="nav-item nav-collapse" id="nav-collapse" data-tip="Expand the menu"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.5 17l-5-5 5-5M18 17l-5-5 5-5"/></svg><span class="nav-label">Collapse</span></button>
   </nav>
@@ -312,17 +311,6 @@
       <button class="btn ghost small" id="pos-save-current">💾 Save current position</button>
     </div>
     <div id="pos-list" class="pos-list"></div>
-  </dialog>
-
-  <dialog id="dlg-library" class="wide">
-    <form method="dialog" class="dlg-head"><h2>📚 Lessons</h2><button class="link">Close</button></form>
-    <input id="lib-q" placeholder="Search your coach answers: back rank, Najdorf, knight fork…" autocomplete="off">
-    <div class="lib-filters">
-      <label class="toggle"><input type="checkbox" id="lib-starred"> ★ Favorites</label>
-      <label class="toggle"><input type="checkbox" id="lib-habits"> 🧠 Habits only</label>
-    </div>
-    <div id="lib-tags" class="lib-tags"></div>
-    <div id="lib-list" class="games-list"></div>
   </dialog>
 
   <dialog id="dlg-load">

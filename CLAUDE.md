@@ -702,8 +702,11 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - **`/usage`** (`static/usage.html`): this app's spend (`core/usage.py`, `GET /api/usage`) plus org-wide
   month-to-date spend by model (`core/org_spend.py`, Cost Admin API, needs `ANTHROPIC_ADMIN_KEY`; excludes
   Priority Tier; cached 60 s). Add new models to `PRICING` in `core/usage.py` or they show as `unpriced_calls`.
-- **`/lessons`** (`static/lessons.html`): an unlinked standalone copy of the 📚 Lessons dialog, same endpoints
-  and DB, separate rendering code (display changes go in both). Can't restore the board; only formats bold.
+- **The 📚 Lessons dialog was removed from the app 2026-10-09** (user's call: "keep that stored in the backend for now"):
+  no nav item, no dialog, no ☆ on coach answers. Every answer is still saved (`data/library.sqlite`, `/api/library*`),
+  still serves as the exact-match answer cache, and `scripts/lessons_digest.py` still reads it.
+- **`/lessons`** (`static/lessons.html`): an unlinked standalone page of the saved answers (the only UI left for them), same endpoints
+  and DB. Can't restore the board; only formats bold.
 
 ## Model choice
 
