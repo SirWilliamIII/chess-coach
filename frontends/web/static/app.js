@@ -13,7 +13,6 @@ const state = {
   me: '',
   coachReady: false,
   explorerReady: false,
-  replay: null,     // replaying a loaded game: {color, hint}; the opponent follows the PGN
   chatBusy: false,
   play: null,       // practice game vs the bot: {color, level, levelName, moves, view, over, thinking}
   editor: null,     // position set-up: {tool, turn, prev: {orientation}}
@@ -256,7 +255,6 @@ function onBoardMove(orig, dest) {
   if (state.play) return onPlayMove(orig, dest);
   if (state.puzzle && !state.puzzle.done) return onPuzzleMove(orig, dest);
   if (state.study) return onStudyMove(orig, dest);
-  if (state.replay) return onReplayMove(orig, dest);
   const c = currentGame();
   let mv;
   try {
@@ -281,7 +279,6 @@ function canMove(c, turn) {
     const cv = state.study.curve;
     return !state.study.waiting && turn === state.study.data.color && (cv ? !cv.solved : studyNodeHere() !== null);
   }
-  if (state.replay) return turn === state.replay.color && state.ply < state.review.moves.length && !state.extra.length;
   const p = state.play;
   if (!p) return true;
   return !p.over && !p.thinking && p.view === p.moves.length && turn === p.color;
@@ -292,16 +289,6 @@ function jumpToPly(coachPly) {
   if (state.play || state.editor) return;  // a bot game / set-up board has no game timeline to jump in
   closeDemo(false);
   const target = Math.max(0, Math.min(coachPly - 1, state.review.moves.length));
-  if (state.replay) {
-    // goTo() ignores replays; move the replay itself, and swap the object so a pending
-    // opponent-move timer from before the jump sees a different replay and stands down
-    state.replay = { ...state.replay, hint: null, deviation: null, paused: false };
-    state.ply = target;
-    state.extra = [];
-    update();
-    replayStep();
-    return;
-  }
   goTo(target);
 }
 
@@ -311,7 +298,6 @@ function goTo(ply) {
   if (state.editor || puzzleLive()) return;
   if (state.demo) return demoStep(ply);
   if (state.study) return studyGoTo(ply);
-  if (state.replay) return replayView(ply);
   if (state.play) return playView(ply);
   state.ply = Math.max(0, Math.min(ply, state.review.moves.length));
   state.extra = [];
@@ -322,7 +308,6 @@ function back() {
   if (state.editor || puzzleLive()) return;
   if (state.demo) return demoStep(state.demo.step - 1);
   if (state.study) return studyGoTo(state.extra.length - 1);
-  if (state.replay) return replayView(state.ply - 1);
   if (state.play) return playView(state.play.view - 1);
   if (state.extra.length) { state.extra.pop(); update(); }
   else goTo(state.ply - 1);
@@ -332,7 +317,6 @@ function forward() {
   if (state.editor || puzzleLive()) return;
   if (state.demo) return demoStep(state.demo.step + 1);
   if (state.study) return studyForward();
-  if (state.replay) return replayView(state.ply + 1);
   if (state.play) return playView(state.play.view + 1);
   if (!state.extra.length) goTo(state.ply + 1);
 }
@@ -534,7 +518,23 @@ function syncTakeback() {
   $('pb-takeback').disabled = !p || p.moves.length <= (p.prefix || 0);
 }
 
-let abPicking = false;  // the analysis board's "Play bot from here" is showing its level picker
+let abPicking = false;  // "Play bot from here" is showing its level picker
+
+// "Play bot from here" (analysis board and loaded games); its level picker shows only once it's clicked, then
+// Start (user's calls, 2026-10-09)
+function renderPlayBotButtons() {
+  const hide = abPicking ? '' : ' hidden';
+  $('summary').innerHTML = `<div class="play-buttons"><button class="btn small" id="ab-play">${abPicking ? 'Start' : 'Play bot from here'}</button>`
+    + `<select id="ab-level" class="${hide}" title="Bot level (chess.com rapid)"></select>`
+    + `<button class="btn ghost small${hide}" id="ab-cancel" title="Cancel">✕</button></div>`;
+  $('ab-play').onclick = () => {
+    if (abPicking) return playBotFromHere();
+    abPicking = true;
+    renderInfo();
+  };
+  $('ab-cancel').onclick = () => { abPicking = false; renderInfo(); };
+  if (abPicking) fillBotLevels($('ab-level'));
+}
 
 function renderInfo() {
   const r = state.review;
@@ -556,18 +556,7 @@ function renderInfo() {
     $('game-info').textContent = '';  // a lesson or a puzzle may have labelled it
     $('board-sub').textContent = '';
     // no "I'm playing" toggle (removed 2026-10-07, user's call): the name labels (.you-pick) still pick your side
-    // "Play bot from here"; its level picker shows only once it's clicked, then Start (user's calls, 2026-10-09)
-    const hide = abPicking ? '' : ' hidden';
-    $('summary').innerHTML = `<div class="play-buttons"><button class="btn small" id="ab-play">${abPicking ? 'Start' : 'Play bot from here'}</button>`
-      + `<select id="ab-level" class="${hide}" title="Bot level (chess.com rapid)"></select>`
-      + `<button class="btn ghost small${hide}" id="ab-cancel" title="Cancel">✕</button></div>`;
-    $('ab-play').onclick = () => {
-      if (abPicking) return playBotFromHere();
-      abPicking = true;
-      renderInfo();
-    };
-    $('ab-cancel').onclick = () => { abPicking = false; renderInfo(); };
-    if (abPicking) fillBotLevels($('ab-level'));
+    renderPlayBotButtons();
     return;
   }
   $('game-info').innerHTML = `<button class="fav-btn${r.favorite ? ' on' : ''}" id="fav-btn"
@@ -576,13 +565,8 @@ function renderInfo() {
   $('fav-btn').onclick = toggleFavorite;
   $('board-sub').textContent = '';  // the opening title above (#opening-tag) names the opening now
 
-  if (state.replay) return renderReplayInfo();
-  // a loaded game is replayed: pick a side first, like "Play a game" (your side of the game is marked)
-  const mine = r.player_color;
-  $('summary').innerHTML = `<div class="me-pick"><span class="label">Replay as</span><div class="seg">`
-    + ['white', 'black'].map((c) => `<button data-replay="${c}">${c === 'white' ? 'White' : 'Black'}</button>`).join('')
-    + `</div>${mine ? `<span class="label">you were ${mine === 'white' ? 'White' : 'Black'}</span>` : ''}</div>`;
-  $('summary').querySelectorAll('[data-replay]').forEach((b) => { b.onclick = () => startReplay(b.dataset.replay); });
+  // no "Replay as" (removed 2026-10-09, user's call): your side is at the bottom; play on from any move vs the bot
+  renderPlayBotButtons();
 }
 
 function movesRows(moves, cellFn) {
@@ -782,7 +766,7 @@ function requestMaia(c) {
 }
 
 // a click plays the move where you could have played it yourself; otherwise (the bot's turn, a lesson's
-// opponent, a replay's other side) it only shows the arrow
+// opponent) it only shows the arrow
 function playMaiaMove(uci) {
   const c = currentGame();
   const turn = c.turn() === 'w' ? 'white' : 'black';
@@ -855,16 +839,15 @@ function sbPcts(sb, rating) {
   return new Map((l?.moves || []).map((m) => [m.uci, m.pct]));
 }
 
-// Whose moves the scoreboard is about: yours in a bot game or a replay, the player's in a loaded game; null
+// Whose moves the scoreboard is about: yours in a bot game, the player's in a loaded game; null
 // on the analysis board, where every move is yours.
 function sbUser() {
   if (state.play) return state.play.color[0];
-  if (state.replay) return state.replay.color[0];
   return state.review?.player_color?.[0] || null;
 }
 
 // The two positions on the card: `now` = the board (before your move), `k` = your last move (1-based; its
-// position is fens[k-1]). In a bot game or a replay the opponent answers within a second, so its turn isn't
+// position is fens[k-1]). In a bot game the opponent answers within a second, so its turn isn't
 // searched (`now` null: the card waits, same size); in a loaded game or on the analysis board the opponent's
 // options show too (user's call: the top card shouldn't vanish every other move).
 function sbTargets(L) {
@@ -873,7 +856,7 @@ function sbTargets(L) {
   const turnAt = (i) => L.fens[i].split(' ')[1];
   let k = n;
   while (u && k >= 1 && turnAt(k - 1) !== u) k--;
-  const auto = (state.play || state.replay) && u && turnAt(n) !== u;
+  const auto = state.play && u && turnAt(n) !== u;
   return { now: auto ? null : n, k: k >= 1 ? k : null };
 }
 
@@ -1204,7 +1187,7 @@ function sbBefore(L, now, u) {
     + `</div></section>`;
 }
 
-// The bot (or the replayed game) is about to answer: same shape as card 1, waiting
+// The bot is about to answer: same shape as card 1, waiting
 function sbWaiting() {
   return `<section class="sb-card"><div class="sb-eyebrow"><span>${state.play ? 'Bot is thinking' : 'Opponent to move'}</span><span class="sb-busy"></span></div>`
     + `<div class="sb-head"><b class="skel-text">Their move</b></div>${sbSkeleton(5)}</section>`;
@@ -1476,7 +1459,7 @@ function requestExplorer(c) {
   if (linesFor && !state.demo && c && c.fen() !== linesFor) { $('x-lines-box').classList.add('hidden'); linesFor = null; }
   const token = ++xToken;
   if (!c) return;
-  // only while Moves & engine is open (it starts closed): fetching every position behind a closed dropdown
+  // only while Full Explorer is open (it starts closed): fetching every position behind a closed dropdown
   // was ~340 Lichess requests an hour of play and tripped its rate limit (2026-10-06). Opening it fetches.
   if ($('gp-details').classList.contains('hidden')) return;
   const f = explorerFilters();
@@ -1629,7 +1612,7 @@ function update() {
 
 // ---- the board survives a page refresh: a snapshot in localStorage, restored by init() only when the
 // server still has the same game loaded (it keeps one global review), so it never lands on the wrong game.
-// Lessons, demos and replays aren't restored; a bot game is (its moves live only in the page).
+// Lessons and demos aren't restored; a bot game is (its moves live only in the page).
 
 const reviewKey = (r) => [r.game_id || '', r.start_fen, r.moves.length, r.white, r.black].join('|');
 
@@ -2370,7 +2353,6 @@ async function ask(question, opts = {}) {
 function currentMode() {
   if (state.demo) return 'demo';
   if (state.play) return 'play';
-  if (state.replay) return 'replay';
   return state.review.moves.length ? 'review' : 'analysis';
 }
 
@@ -2392,8 +2374,8 @@ function renderAnswer(data, opts = {}) {
   const jumps = state.review && !state.play
     ? (data.jumps || []).filter((j) => j.ply <= state.review.moves.length + 1) : [];
   // a go-now jump ("what would you play as White's 10th move?") moves the board as the answer appears,
-  // only for a fresh answer (not one reopened from Lessons) and not mid-replay, where you're already on the move
-  const auto = opts.live && !state.replay ? jumps.find((j) => j.now) : null;
+  // only for a fresh answer (not one reopened from Lessons)
+  const auto = opts.live ? jumps.find((j) => j.now) : null;
   const jumpBtn = jumps.some((j) => !j.now)
     ? `<div class="demos">${jumps.map((j, i) => (j.now ? '' : `<button class="demo-btn jump-btn" data-j="${i}">⏭ Jump ahead to move ${Math.ceil(Math.max(1, j.ply) / 2)}</button>`)).join('')}</div>` : '';
   const label = opts.label ? `<div class="gm-label">${esc(opts.label)}</div>` : '';
@@ -2566,13 +2548,11 @@ function resetChatUi(note) {
 
 function setReview(review, note, play = null, { keepChat = false } = {}) {
   closeDemo(false);
-  state.replay = null;
   state.study = null;
   closeEditor(false);
   if (state.play && !play) setEngineVisible(recall('engineOn') !== '0');  // leaving a game
   if (state.puzzle) { state.puzzle = null; pzToken++; setEngineVisible(recall('engineOn') !== '0'); }  // startPuzzle sets the next one
   state.play = play;
-  opponentCommentCount = 0;
   openingNote = { family: null, key: null, count: 0 };
   $('opening-tag').classList.add('hidden');  // a new game names its own opening
   pzSyncTacticsBtn(null);
@@ -2920,7 +2900,7 @@ function openEditor() {
   cg.set({ fen: c.fen(), lastMove: undefined });
   buildEditorPanel();
   update();
-  $('gp-toggle').click();  // the palette and presets live in the Moves & engine panel, closed by default
+  $('gp-toggle').click();  // the palette and presets live in the Full Explorer panel, closed by default
 }
 
 function closeEditor(render = true) {
@@ -3064,10 +3044,7 @@ async function analyseEditorPosition() {
   }
 }
 
-// ---------------------------------------------------------------- replay / branching off to the bot
-// A loaded game is replayed from the side you pick: play your game moves (or step with the arrows),
-// the opponent plays theirs. Play a different move and you're offered to play on from there against
-// the bot ("best moves only"), which can bring you back to the game at the same move.
+// ---------------------------------------------------------------- playing on against the bot
 
 // The bot's levels are named like "Maia (~1400)"; pick the one closest to a rating. The one level
 // without a rating ("Stockfish", or "Full strength" without Maia) is far stronger: only from 3000 up.
@@ -3080,27 +3057,7 @@ async function levelForRating(elo) {
   return rated.reduce((a, b) => (Math.abs(b.elo - elo) < Math.abs(a.elo - elo) ? b : a));
 }
 
-// Which bot level takes over the opponent: the closest to the rating of the player it replaces. If
-// that side is unrated, falls back to the rating of your side, then to the level last used in
-// "Play a game", then ~1100 as a last resort (chess.com scale; Lichess ~1500, the old default).
-async function botLevelFor(color) {
-  const r = state.review;
-  const oppColor = color === 'white' ? 'black' : 'white';
-  for (const [side, whose] of [[oppColor, `${r[oppColor]}'s`], [color, `${r[color]}'s (your side)`]]) {
-    // the chess.com-scale rating (a Lichess game's converted, see core/ratings.py): bot levels are chess.com
-    const elo = r[`${side}_elo_cc`];
-    if (!(elo > 0)) continue;
-    const shown = parseInt(r[`${side}_elo`], 10);
-    const note = elo !== shown ? ` (≈${elo} chess.com)` : '';
-    try { return { level: await levelForRating(elo), why: `matched to ${whose} ${shown} rating${note}` }; } catch { /* try the next source */ }
-  }
-  botLevels ??= await api('/api/play/levels').catch(() => []);
-  const last = botLevels.find((l) => String(l.id) === recall('botLevel'));
-  if (last) return { level: last, why: "the level you last used, since the game has no ratings" };
-  return { level: await levelForRating(1100), why: 'default, since the game has no ratings' };
-}
-
-// the analysis board's level picker: same list and remembered level as the Play dialog
+// the level picker beside "Play bot from here": same list and remembered level as the Play dialog
 async function fillBotLevels(sel) {
   botLevels ??= await api('/api/play/levels').catch(() => []);
   sel.innerHTML = botLevels.map((l) => `<option value="${l.id}">${esc(l.name.replace(/^Maia \(~(\d+)\)$/, 'Bot $1'))}</option>`).join('');
@@ -3109,40 +3066,20 @@ async function fillBotLevels(sel) {
   sel.onchange = () => store('botLevel', sel.value);
 }
 
-// analysis board → bot game from the shown position, you on the side at the bottom. The line played on the
-// board stays as the game's opening (prefix), so ◀ steps back through it and Maia sees the history.
+// analysis board or loaded game → bot game from the shown position, you on the side at the bottom. The moves so far
+// (the game's up to here, then any you played on the board) stay as the bot game's opening (prefix), so ◀ steps
+// back through them, Maia sees the history and "Review this game" gets the whole game; takeback stops there.
+// From a loaded game, "Back to the game" reopens it at the same move.
 async function playBotFromHere() {
   abPicking = false;
   const sel = $('ab-level');
   const level = botLevels?.find((l) => String(l.id) === sel.value);
   if (!level) return;
-  const color = state.orientation;
-  const prefix = [...state.extra];
-  playToken++;
-  let review;
-  try {
-    review = await api('/api/play/new', { color, level: level.id, fen: baseFen() });
-  } catch (e) {
-    addMsg('error', esc(e.message));
-    return;
-  }
-  const play = { color, level: level.id, levelName: level.name, startFen: review.start_fen,
-    moves: prefix, prefix: prefix.length, view: prefix.length, over: null, thinking: false, clock: null };
-  setEngineVisible(recall('engineOn') !== '0');
-  setReview(review, `Playing on from this position against the ${level.name} bot. You have ${color}.`, play);
-  if (playChess(play).turn() !== color[0]) botMove();
-}
-
-// leave the replay for a live bot game from the current position, playing `first` (your move) at once.
-// The game's moves so far are kept as the bot game's opening (`prefix`), so ◀ steps back through them
-// and "Review this game" gets the whole game; takeback stops at the branch point.
-async function branchToBot(first) {
   const r = state.review;
-  const color = state.replay.color;
-  const prefix = r.moves.slice(0, state.ply).map((m) => m.san);
-  const origin = `${r.white} vs ${r.black}, ${positionLabel().replace(/^After/, 'after')}`;
-  const back = { game_id: r.game_id, ply: state.ply, color };
-  const { level, why } = await botLevelFor(color);
+  const color = state.orientation;
+  const loaded = r.moves.length > 0;
+  const prefix = [...r.moves.slice(0, state.ply).map((m) => m.san), ...state.extra];
+  const origin = loaded ? `${r.white} vs ${r.black}, ${positionLabel().replace(/^After/, 'after')}` : null;
   playToken++;
   let review;
   try {
@@ -3152,11 +3089,11 @@ async function branchToBot(first) {
     return;
   }
   const play = { color, level: level.id, levelName: level.name, startFen: review.start_fen,
-    moves: prefix, prefix: prefix.length, view: prefix.length, over: null, thinking: false, back,
-    myElo: r[`${color}_elo_cc`] || undefined };  // the side you took over, if rated (chess.com scale)
+    moves: prefix, prefix: prefix.length, view: prefix.length, over: null, thinking: false, clock: null,
+    ...(loaded ? { back: { game_id: r.game_id, ply: state.ply, color }, myElo: r[`${color}_elo_cc`] || undefined } : {}) };
   setEngineVisible(recall('engineOn') !== '0');
-  setReview(review, `Playing on from ${origin} against a ${level.name} bot (${why}). You have ${color}.`, play);
-  onPlayMove(first.orig, first.dest);
+  setReview(review, `Playing on from ${origin || 'this position'} against the ${level.name} bot. You have ${color}.`, play);
+  if (playChess(play).turn() !== color[0]) botMove();
 }
 
 // the bot game's "Back to the game": reopen the saved review (no re-analysis) at the branch point
@@ -3173,111 +3110,9 @@ async function backToGame() {
   }
   setReview(review, `Back in ${review.white} vs ${review.black}.`);
   state.ply = back.ply;
-  startReplay(back.color);
-}
-
-// starts paused: nothing plays (or costs anything) until you make a move or press ▶
-async function startReplay(color) {
-  if (state.review.player_color !== color) await setYou(color);  // the coach's "you" follows the side you replay
-  closeDemo(false);
-  state.replay = { color, hint: null, paused: true, deviation: null };
-  state.orientation = color;
-  opponentCommentCount = 0;
-  openingNote = { family: null, key: null, count: 0 };
-  addMsg('system', `Replaying as ${color === 'white' ? 'White' : 'Black'}: play your moves from the game (or step with ▶). `
-    + "Play a different move to take the game your own way against the bot.");
-  update();
-}
-
-function stopReplay() {
-  state.replay = null;
-  setEngineVisible(recall('engineOn') !== '0');
-  update();
-}
-
-function replayNextMove() {
-  return state.review.moves[state.ply];
-}
-
-function replayStep() {
-  // play the opponent's recorded move, or wait for the player's
-  const rp = state.replay;
-  if (!rp) return;
-  const next = replayNextMove();
-  if (!next) { update(); return; }
-  if (next.color !== rp.color) {
-    // before the opponent's recorded move: did *they* have something special here?
-    const started = Date.now();
-    gmCheck(currentGame(), next, 'opponent').finally(() => {
-      setTimeout(() => {
-        if (state.replay !== rp) return;
-        state.ply++;
-        update();
-        commentOnOpponentMove(currentGame(), next.san);
-        replayStep();
-      }, Math.max(300, 700 - (Date.now() - started)));
-    });
-  } else {
-    gmCheck(currentGame(), next);
-  }
-}
-
-// Stepping with the nav buttons / arrow keys pauses the replay: the opponent's move then waits for
-// ▶ instead of a timer, otherwise stepping back past their move would bounce straight forward again.
-// Swapping the object makes a pending opponent-move timer stand down. Playing your own move resumes.
-function replayView(ply) {
-  const target = Math.max(0, Math.min(ply, state.review.moves.length));
-  if (target === state.ply) return;
-  state.replay = { ...state.replay, hint: null, deviation: null, paused: true };
-  state.ply = target;
-  state.extra = [];
-  cg.setAutoShapes([]);
-  update();
-}
-
-function onReplayMove(orig, dest) {
-  const rp = state.replay;
-  const next = replayNextMove();
-  if (next && next.uci.slice(0, 4) === orig + dest) {
-    rp.hint = null;
-    rp.deviation = null;
-    rp.paused = false;
-    state.ply++;
-    update();
-    replayStep();
-    return;
-  }
-  rp.hint = next;
-  if (next) {  // a different move: offer to play on against the bot from here
-    const c = new Chess(currentGame().fen());
-    try { rp.deviation = { orig, dest, san: c.move({ from: orig, to: dest, promotion: 'q' }).san }; } catch { rp.deviation = null; }
-  }
-  update();  // snaps the piece back
-  if (next) cg.setAutoShapes([{ orig: next.uci.slice(0, 2), dest: next.uci.slice(2, 4), brush: 'blue' }]);
-}
-
-function renderReplayInfo() {
-  const rp = state.replay;
-  const next = replayNextMove();
-  let status;
-  if (!next) status = `End of the game (${state.review.result}).`;
-  else if (rp.deviation) status = `In the game you played ${rp.hint.label} ${rp.hint.san} here (arrow). Play on with ${rp.deviation.san} against the bot instead?`;
-  else if (rp.hint) status = `In the game you played ${rp.hint.label} ${rp.hint.san} here. Play it to continue (arrow on the board).`;
-  else if (next.color === rp.color) status = 'Your move: play what you played in the game.';
-  else if (rp.paused) status = "Paused: press ▶ (or →) to play your opponent's move.";
-  else if (document.querySelector('.thinking')) status = 'Hold on, the coach spotted something before your opponent moves…';
-  else status = 'Opponent is playing their game move…';
-  const dev = rp.deviation;
-  const buttons = dev
-    ? `<button class="btn small" id="replay-branch">Play ${esc(dev.san)} vs bot</button>`
-      + '<button class="btn ghost small" id="replay-undo">Take it back</button>'
-    : '<button class="btn ghost small" id="replay-exit">Exit replay</button>';
-  $('summary').innerHTML = `<div class="status">Replay · you play ${rp.color}</div>
-    <div class="replay-status">${esc(status)}</div>
-    <div class="play-buttons">${buttons}</div>`;
-  $('replay-exit')?.addEventListener('click', stopReplay);
-  $('replay-branch')?.addEventListener('click', () => branchToBot(dev));
-  $('replay-undo')?.addEventListener('click', () => { rp.hint = rp.deviation = null; cg.setAutoShapes([]); update(); });
+  // the side you played on with is "you" again (the coach's player colour too), at the bottom
+  if (review.player_color !== back.color) await setYou(back.color);
+  else { state.orientation = back.color; update(); }
 }
 
 // ---------------------------------------------------------------- opening lessons
@@ -4187,20 +4022,7 @@ async function openingQuip(c) {
 // (user's call, 2026-10-04: no Claude spend you didn't ask for). The free opening quips don't depend on it.
 const autoCoach = () => recall('autoCoach') === '1';
 
-let opponentCommentCount = 0;
-const OPPONENT_COMMENT_LIMIT = 4;  // just the opening phase — quiet again after that, for cost
-
-async function commentOnOpponentMove(c, san) {
-  if (c.isGameOver()) return;
-  if (await openingQuip(c)) return;  // the free opening reaction stands in for the paid one-liner this move
-  if (!state.coachReady || !autoCoach() || opponentCommentCount >= OPPONENT_COMMENT_LIMIT) return;
-  if (state.review.moves[state.ply - 1]?.win_pct_lost >= BIG_MOMENT_PCT) return;  // noteMove() explains this one
-  opponentCommentCount++;
-  await ask(`[The opponent just played ${san}. Give your one-line reaction, or say (nothing) if there's really nothing worth saying.]`,
-    { silent: true, skipEmpty: true, ambient: true, where: positionLabel() });
-}
-
-// ---- a note on each move as you step through a loaded game (review or replay). The note itself is
+// ---- a note on each move as you step through a loaded game. The note itself is
 // free: it's read off the saved engine review. Only a big swing (>= BIG_MOMENT_PCT win chance lost)
 // asks the coach, and only if you stay on that move for a moment, so scrubbing past doesn't pay.
 // Each move is noted once per game; jumping (Home/End, a move list click) notes only where you land.
@@ -4331,8 +4153,7 @@ async function explainBigMoment(m, ply) {
 
 // ---- the card after each bot move: best move, main line, a sharper try, what they threaten.
 // Built by the engine on the server (/api/opponent_card) — no Claude call; "Why?" is the one
-// button that asks the coach, so cost only happens when you press it. Replays still get the
-// short coach one-liner above, since there you're meant to play your own game move.
+// button that asks the coach, so cost only happens when you press it.
 
 let cardToken = 0;
 
@@ -4478,7 +4299,7 @@ function syncCards() {
 let gmToken = 0;
 const gmSeen = new Set();
 
-async function gmCheck(c, gameMove = null, side = 'player') {
+async function gmCheck(c) {
   if (!state.coachReady || !autoCoach() || c.isGameOver()) return;
   const fen = c.fen();
   if (gmSeen.has(fen)) return;
@@ -4493,31 +4314,14 @@ async function gmCheck(c, gameMove = null, side = 'player') {
   gmSeen.add(fen);
   const m = res.moment;
   const facts = [
-    `The engine flagged a GM-level resource for ${side === 'player' ? 'the player' : "the player's opponent"} `
-      + `(${c.turn() === 'w' ? 'White' : 'Black'} to move):`,
+    `The engine flagged a GM-level resource for the player (${c.turn() === 'w' ? 'White' : 'Black'} to move):`,
     `- Kind: ${m.kind}${m.mate_in ? ` (mate in ${m.mate_in})` : ''}${m.material_sacrificed ? `, sacrificing about ${m.material_sacrificed} pawns' worth` : ''}`,
     `- Best move: ${m.move} (eval ${m.eval_white}), line: ${m.line}`,
     `- Next best: ${m.second_best} (eval ${m.second_eval_white})`,
   ];
-  if (side === 'opponent') {
-    facts.push(gameMove?.san === m.move
-      ? `- This is a replay of the player's real game, and the opponent found ${m.move} here.`
-      : `- This is a replay of the player's real game; the opponent missed it and played ${gameMove?.san}.`);
-    facts.push('Warn the player before the opponent moves: show the idea with show_on_board, explain it, and '
-      + 'point out what in the previous moves allowed it. Keep it short.');
-  } else {
-    if (gameMove) {
-      facts.push(gameMove.san === m.move
-        ? `- This is a replay of their real game, and they actually found ${m.move} here. Give them credit, then show why it works.`
-        : `- This is a replay of their real game: here they played ${gameMove.label} ${gameMove.san} instead.`);
-    }
-    facts.push('Point it out before they move: say there is something special on the board, show it with show_on_board, '
-      + 'and explain why it works and why it is hard to see. Keep it short.');
-  }
-  const opts = { silent: true, label: side === 'player' ? '⚡ GM moment' : '⚠ Watch out', where: positionLabel() };
-  const done = ask(facts.join('\n'), opts);
-  if (state.replay) renderInfo();  // show "hold on" in the replay status
-  if (side === 'opponent') await done;  // replays hold the opponent's move until the warning is shown
+  facts.push('Point it out before they move: say there is something special on the board, show it with show_on_board, '
+    + 'and explain why it works and why it is hard to see. Keep it short.');
+  ask(facts.join('\n'), { silent: true, label: '⚡ GM moment', where: positionLabel() });
 }
 
 // ---------------------------------------------------------------- playing the bot
@@ -4633,7 +4437,7 @@ function endGame(outcome, text) {
 
 function takeback() {
   const p = state.play;
-  const floor = p?.prefix || 0;  // a game branched off a replay: don't take back the original game's moves
+  const floor = p?.prefix || 0;  // a game played on from a position: don't take back the moves before it
   if (!p || p.moves.length <= floor) return;
   playToken++;  // drop any bot reply in flight
   p.thinking = false;
@@ -4750,7 +4554,7 @@ async function openPlayDialog() {
   $('play-clock-fields').classList.toggle('hidden', !$('play-clock-on').checked);
   $('dlg-play').querySelector('h2').textContent = pendingFen ? 'Play this position against the bot' : 'Play a game';
   $('play-continue-row').innerHTML = pendingFen ? ''
-    : '<button class="btn ghost small" id="play-continue-btn">Or replay one of your own games and branch off it…</button>';
+    : '<button class="btn ghost small" id="play-continue-btn">Or open one of your own games and play on from any move…</button>';
   const continueBtn = $('play-continue-btn');
   if (continueBtn) continueBtn.onclick = () => { $('dlg-play').close(); openGamesDialog(); };
   $('dlg-play').showModal();
@@ -5676,7 +5480,7 @@ $('nav-save').onclick = openSavePosition;
 // ---------------------------------------------------------------- recording a game
 // ⏺ under the board starts a recording from the line on the board now (the moves that led here included). From
 // then on a move that takes the board one step past the recording's last position is added, whoever played it
-// (you, the bot, a replay's opponent; ▶ along a loaded game too). Anything else (◀ ▶ inside it, takebacks, other
+// (you, the bot; ▶ along a loaded game too). Anything else (◀ ▶ inside it, takebacks, other
 // games, refreshes) leaves it alone: corrections are explicit (Undo last move, Cut here). Kept in localStorage
 // until saved, so it survives refreshes and mode changes. Saved as a titled ★ favorite (no review pass: opening
 // it from Find games → ★ Favorites analyses it then).
@@ -6133,7 +5937,7 @@ $('gp-toggle').onclick = (e) => {
   // the folded list can't scroll to the current move while the panel is hidden, so do it on open
   $('moves').querySelector('.mv.active')?.scrollIntoView({ block: 'nearest' });
 };
-// Moves & engine closes only with its ✕ (user's call): outside clicks, Esc and the toggle leave it open.
+// Full Explorer closes only with its ✕ (user's call): outside clicks, Esc and the toggle leave it open.
 $('gp-close').onclick = closeGpDropdown;
 closeGpDropdown();
 
@@ -6165,7 +5969,6 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === '?') $('dlg-keys').showModal();
   else if (e.key === 'Escape' && pinnedSquares.size) { pinnedSquares.clear(); paintSquares(); }
   else if (e.key === 'Escape' && state.demo) closeDemo();
-  else if (e.key === 'Escape' && state.replay) stopReplay();
   else return;
   e.preventDefault();
 });

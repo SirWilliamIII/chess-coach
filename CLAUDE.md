@@ -131,9 +131,9 @@ file says what is true now. Last full cleanup: 2026-10-03.
 ### Coach and cost
 
 - **Automatic coach calls are off by default** (user's call, 2026-10-04): the "Auto" checkbox in the Coach
-  header (`autoCoach()`, localStorage `autoCoach`) gates the only three Claude calls nobody asked for:
-  ⚠ Big moment (`explainBigMoment`), the replay one-liner (`commentOnOpponentMove`) and ⚡ GM moment / ⚠ Watch
-  out (`gmCheck`, which has no per-game cap; off also skips its engine check). Everything else that calls
+  header (`autoCoach()`, localStorage `autoCoach`) gates the only two Claude calls nobody asked for:
+  ⚠ Big moment (`explainBigMoment`) and ⚡ GM moment in bot games (`gmCheck`, which has no per-game cap; off also
+  skips its engine check). The replay one-liner and ⚠ Watch out went with Replay mode (2026-10-09). Everything else that calls
   Claude is a click (question, chip, Why?, Walk me through, lesson build). Opening quips are free either way.
 
 - **No cross-game memory.** `S.coach` is recreated (`make_coach()`) on loading a game, a fresh analysis
@@ -157,8 +157,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   to spoil the game's real continuation; if leaks return, fix that wording.
 - **Jump buttons / `jump_to_move`:** max 3 per answer, `move` (SAN) validated against the game. **Ply trap:**
   the coach's `ply` is the position *before* the move; the frontend's `goTo(n)` means n plies played, so the
-  button calls `goTo(ply - 1)`. `go_now: true` moves the board when the answer arrives (fresh answers only,
-  not mid-replay). Stored in `library.jump`.
+  button calls `goTo(ply - 1)`. `go_now: true` moves the board when the answer arrives (fresh answers only). Stored in `library.jump`.
 - **`web_search`** is scoped to naming/verifying an opening the coach doesn't recognise, never evaluation.
   Searches are counted per question (`calls.web_searches`); real-world population of that field is
   unverified; per-search cost isn't in the estimate.
@@ -193,7 +192,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   EPD, exact positions only. Used for opening quips, lesson names and trap labels; the explorer panel and
   coach tools still use the live explorer's names.
 
-### Games: loading, review, replay, favourites
+### Games: loading, review, playing on, favourites
 
 - **"Find game by username"** has chess.com, Lichess, Saved (offline) and ★ Favourites tabs.
   `/api/games?site=lichess` maps Lichess's list to the chess.com row shape (AI/anonymous players have no
@@ -203,7 +202,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   localStorage snapshot (`board`: ply, extra moves, orientation, the bot game's `state.play` minus
   `backLesson`/`thinking`), used only when `reviewKey()` matches the review the server still holds, and only
   lines that still replay. Bot games restore via `playView()` and the bot moves if it was its turn; the clock
-  doesn't run while away. Not restored: lessons, demos, replay mode, the chat log (the coach's conversation
+  doesn't run while away. Not restored: lessons, demos, the chat log (the coach's conversation
   is server-side and continues). Per browser, so each device on the tailnet has its own snapshot.
 - **Favourites (2026-10-03).** `core/favorites.py`: a `favorites` table in `data/library.sqlite` (game_id,
   title, names, ratings, result, date, opening, full PGN from `pgn_of()`, so it outlives `data/reviews/`).
@@ -218,7 +217,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   saving a game intentional).** ⏺ (`#nav-rec`, last board button) starts a recording from the line on the board
   (moves already played included): `rec` = `{startFen, moves}` in localStorage `recording`, separate from the
   board's state, so refreshes and mode changes can't touch it. `recTrack()` (end of `update()`): a position one
-  move past the recording's end is appended, whoever made it (you, the bot, a replay; also ▶ along a loaded game
+  move past the recording's end is appended, whoever made it (you, the bot; also ▶ along a loaded game
   from the end). A move made **by hand** (`recPlayed`, set in `onBoardMove`) from a position inside the recording
   that differs from the recorded one replaces the tail (takeback then a new move), with a chat note of what was
   dropped. Anything else (◀ ▶ inside it, other games) leaves it alone: the button greys and its tooltip says
@@ -234,13 +233,14 @@ file says what is true now. Last full cleanup: 2026-10-03.
   boards (`miniBoard()`, Unicode glyphs, no chessground), filter, rename, delete. Opening one starts an
   analysis board from the start FEN with the moves as `state.extra`, so ◀ walks back through the line; the
   original game context (names, review) isn't reattached. Server-side, so shared by every device.
-- **A loaded game is a replay; a different move branches off to the bot.** "Replay as [White][Black]" →
-  `startReplay(color)`, paused at the current move. Stepping pauses it; playing your game move resumes. A
-  different move sets `state.replay.deviation`: "Play X vs bot" (`branchToBot()`) or "Take it back". The bot
-  game starts from the game's start position with its moves up to the branch as `play.prefix` (Takeback and
-  ◀ floor there) and keeps `play.back` for "Back to the game". Branching and coming back reset the chat.
-  Bot level for a branch: `botLevelFor(color)` (rating of the side the bot replaces → your side's → last
-  used level → ~1100), `levelForRating()` picks the closest `(~N)` level. Game ratings go through
+- **A loaded game is a review with your side at the bottom; "Play bot from here" plays on from any move.** Replay
+  mode ("Replay as [White][Black]": the opponent's game moves auto-played, a deviation offered "Play X vs bot") was
+  removed 2026-10-09 (user's call; with it `branchToBot`, `botLevelFor`, `commentOnOpponentMove`, the replay half
+  of `gmCheck`). `playBotFromHere()` (the analysis board's button, also on loaded games): the bot game starts from
+  the game's start position with its moves up to the shown one (+ any played on the board) as `play.prefix`
+  (Takeback and ◀ floor there) and keeps `play.back` for "Back to the game" (`backToGame()`: reopens the saved
+  review at that move, your side "you" again via `setYou()`). The level is the picker's, not matched to the
+  game's ratings any more. Game ratings go through
   `white_elo_cc`/`black_elo_cc` (`public_review()`): a Lichess game's (`review.from_lichess()`) converted to
   chess.com, a chess.com game's as they are. The ratings shown on screen stay the site's own.
 - **Per-move cards when stepping through a game** (`noteMove()`): verdict, played/best with eval pills, ▶
@@ -258,21 +258,20 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - **Bot levels:** Maia (~400) … Maia (~2400) (chess.com rapid) every 100 (`maia.BOT_LEVELS`, `server.bot_levels()`), then
   "Stockfish" (full strength). Without Maia installed: the old Stockfish levels (`BOT_LEVELS` in
   `core/engine.py`, uncalibrated). `Maia.play()` samples Maia's top 10 by probability, never one under
-  `MIN_PLAY_PCT` 2%. `/api/play/move` passes the game's moves and `opp_elo` (your rating: a branched replay's
-  side, else `PLAYER_RATING`). **Strength per level is not measured.**
+  `MIN_PLAY_PCT` 2%. `/api/play/move` passes the game's moves and `opp_elo` (your rating: the side you took over
+  in a loaded game, else `PLAYER_RATING`). **Strength per level is not measured.**
 - **Opponent card** after each bot move (`showOpponentCard()` → `core/opponent_card`): best move + eval, main
   line, sharper try (only when `tricks.find()` tags a non-top sound sacrifice/trap), threats, loose pieces,
   known-trap rows, "If they…" replies. No Claude call; only **Why?** is paid (sends the "My plan?" chip prompt).
   Speed: `/api/play/move {card: true}` returns `opponent_card.quick()` (depth 14, ~25 ms) with the bot move, so
   the card shows at ~0.5 s; replies follow at ~1.5 s; the full card (depth 20) replaces the top rows at ~6 s
   unless the position moved on. Evals are White's point of view.
-- **Replays get a short coach one-liner** for opponent moves (`commentOnOpponentMove`, max 4), not a card.
 - **Opening reactions** ("Caro-Kann player, I see…"): free, `core/eco.py` + `core/opening_quips.py`
   (~65 hand-written lines by longest name prefix), `POST /api/opening`, max 3 per game, ply ≤ 16, standard
   start only. Tactic reactions aren't built.
 - **Takeback** is `#pb-takeback` beside the top name row (`.head-row`), shown only in bot games (`syncTakeback()`).
   `#summary` in a bot game shows no "Your move"/"Bot is thinking…" text (removed on purpose).
-- **Clock** exists only in fresh "Play a game" games, not in branched replays.
+- **Clock** exists only in fresh "Play a game" games, not in games played on from a position.
 
 ### Board (chessground)
 
@@ -334,22 +333,26 @@ file says what is true now. Last full cleanup: 2026-10-03.
     the board: then `.top-row` = the top name (`#player-top`), `.opening-slot`
     (the opening pill: `#opening-tag` only, 2026-10-09, user's call; the slot takes the
     leftover width with basis 0 so a long name shrinks instead of wrapping the row, the pill is centred in it and
-    hidden with no opening; its own line ≤ 760 px), and `.head-row` (`#summary`: Replay as / game status and
+    hidden with no opening; its own line ≤ 760 px), and `.head-row` (`#summary`: Play bot from here / game status and
     buttons / the editor's buttons, `#pb-takeback`).
-  - **Sizes:** `--board-w` = min(`--board-max` 880, `100vh - --head-h - 188px`, the width left beside the nav and
+  - **Sizes:** `--board-w` = min(`--board-max` 880, `100vh - --head-h - 244px`, the width left beside the nav and
     `--side-w`); `--strip` (rank labels only, 18 px; 0 on phones, where the labels sit inside the board so it's
-    centred). 1440×900: 712 px (height-bound); 1920×1080: 880.
+    centred). 1440×900: 656 px (height-bound); 1920×1080: 820.
+  - **Spacing** (2026-10-09, user: "this is to the max, add padding around pretty much everything"): page padding
+    28 px / `--pad-x` 40, `--gap` 32 (board ↔ panels), row gap 12, 24 px between the panels, 20 px inside them.
+    Cost: the board is ~55 px smaller on height-bound screens. The page must not scroll: recheck the 244 px when
+    adding a row (it was short by 2 px once: the page scrolled at 1440×900).
   - **Eval bar** (2026-10-09, user's call after Chessiro; the vertical one left the board off-centre on a phone):
     horizontal, 20 px, above the board inside `.board-row`, White's share filling from the left whichever way the
     board faces, words instead of a number (`evalBarWords()`: banded by White's win %, < 5 Equal, < 15 slightly
     better, < 30 better, < 42 crushing, else dominating, mates as "White mates in N"; first guesses). The number is
-    in its tooltip. Not the same as the older `evalWords()` (pawn bands, eval-pill tooltips and replay cards).
+    in its tooltip. Not the same as the older `evalWords()` (pawn bands, eval-pill tooltips and move cards).
   - **Colour tokens** (`:root`): `--inset`, `--hover`/`--hover-2`, `--faint`, `--maia`, and one severity scale
     `--t0..--t3` (+ `--t3-text`) for win chance lost (< 5, 5-15, 15-30, 30+), used by every scoreboard mark.
-  - **Moves & engine** (`.game-panel`, dropdown `#gp-details`) sits in the scoreboard's header, first in
+  - **Full Explorer** (was "Moves & engine", renamed 2026-10-09; `.game-panel`, dropdown `#gp-details`) sits in the scoreboard's header, first in
     `.panel-tools` (2026-10-09, user's call; `dockGamePanel()`, also on `setPanelHidden()`); while the scoreboard
     is hidden it goes under the board (`.board-foot-right`). The panel is a size container: under 400 px the
-    "Players" label hides, under 340 px the button reads "Moves". In the header the
+    "Players" label hides, under 340 px the button reads "Explorer". In the header the
     dropdown anchors to the panel (`.score-panel` is `overflow: visible`, the body keeps the rounded corners), right
     edge, under the header, so it never covers the board (the editor palette lives in it). Draggable/resizable (`position: fixed` on first drag), starts closed on
     every load (only "Set up position" opens it), closes only with ✕, folds the moves list to 5 rows
@@ -361,7 +364,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   `#summary` whenever the board has no game moves (FEN, 📌 position, editor's Analyse): `#ab-level` (the Play
   dialog's levels shown as "Bot 1500", shared localStorage `botLevel`) + `playBotFromHere()`: you take the side at
   the bottom, the line on the board becomes `play.prefix` (◀ walks it, Maia sees it), no clock; the bot moves first
-  if it's its turn. Loaded games keep "Replay as" instead.
+  if it's its turn. Loaded games too (see "Games").
 - **Position editor** ("Set up position", `openEditor()`): presets, side to move, FEN box; Play vs bot from
   here, Analyse, or Cancel. `editorFen()` infers castling from home squares and writes `- 0 1`. Not tested:
   opening it mid-lesson.
@@ -452,8 +455,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
   so it's "the typical continuation", not a likely game. Depth 12 still swings a little at big evals (a +6.8 →
   +4.4 step can flag a move); not checked against deep searches. Not built: clicking a line to play it, the
   "practical move" ranking built on these lines.
-- **Whose moves:** `sbTargets()`/`sbUser()` unchanged: the bot game's or replay's colour, else the review's
-  `player_color`; null on the analysis board ("Last move", "White to move"). In a bot game or replay the
+- **Whose moves:** `sbTargets()`/`sbUser()`: the bot game's colour, else the review's `player_color` (the side at
+  the bottom when the game opens); null on the analysis board ("Last move", "White to move"). In a bot game the
   opponent's turn isn't searched ("Bot is thinking" skeleton). `requestScoreboard()` runs the board's position
   first, then your last move's (with `include`), one after the other.
 - **Server** (`scoreboard.build()`): two searches at once, the deep top 5 (`DEPTH` 16 / `MAX_SECONDS` 3) on one
@@ -765,7 +768,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   (section 3), and are lesson notes chess-correct (section 5).
 - **Live coach runs not done yet:** "⚠ Big moment" answers, Why? on a move card, multi-turn `jump_to_move` /
   `go_now` walkthroughs.
-- **"Review this game" after branching** off a replay (should analyse the whole game from move 1): untested.
+- **"Review this game" after playing on** from a loaded game (should analyse the whole game from move 1): untested.
 - **Branch chat note without a rating:** reported once, not reproduced. Get a screenshot and the game, and check
   for a stale cached `app.js`.
 - **chess.com Insights, Black tab:** ask for the screenshot, extend `player.md`.

@@ -1084,7 +1084,7 @@ class ChatReq(BaseModel):
     ply: int = 0
     extra: list[str] = []
     where: str | None = None   # the page's label for the position ("After 35. Nf5")
-    mode: str | None = None    # review / replay / play / analysis / demo
+    mode: str | None = None    # review / play / analysis / demo
     label: str | None = None   # set for automatic GM alerts ("⚡ GM moment")
     ambient: bool = False      # opponent-move commentary: real answer, but not a library-worthy Q&A
 

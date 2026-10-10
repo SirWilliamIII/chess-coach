@@ -116,26 +116,26 @@ body { padding-left: var(--nav-w); }
    edge and end at the buttons' bottom edge by construction. `contain: size` keeps the panels' content from
    stretching those rows: the board decides the height, the panels scroll inside. ---------- */
 main {
-  --gap: 20px; --pad-x: 24px;
+  --gap: 32px; --pad-x: 40px;  /* roomier since 2026-10-09 (user: "this is to the max") */
   --side-w: clamp(320px, 26vw, 400px);
   --board-max: var(--board-user, 880px);  /* --board-user: set by dragging the handle beside the board */
   --strip: 18px;  /* the gap left of the board that holds the rank labels (the eval bar is above the board since 2026-10-09) */
-  /* the board: as big as the height allows (188 px: padding, the name row above, the eval bar, the name row and
+  /* the board: as big as the height allows (244 px: padding, the name row above, the eval bar, the name row and
      buttons below, the file letters, the row gaps), within the width left beside the nav and the side column */
-  --board-w: min(var(--board-max), calc(100vh - var(--head-h, 0px) - 188px),
+  --board-w: min(var(--board-max), calc(100vh - var(--head-h, 0px) - 244px),
     calc(100vw - var(--nav-w) - var(--side-w) - 2 * var(--pad-x) - var(--gap) - var(--strip)));
   /* the side column takes whatever the board leaves: --side-w is only its minimum (the board's width formula
      uses it), so a height-bound board or a hidden panel gives the panels the room instead of empty margins */
   display: grid; grid-template-columns: auto minmax(var(--side-w), var(--side-max, 1200px)); grid-template-rows: repeat(4, auto);
-  column-gap: var(--gap); row-gap: 6px; padding: 16px var(--pad-x); justify-content: center; align-items: start;
+  column-gap: var(--gap); row-gap: 12px; padding: 28px var(--pad-x); justify-content: center; align-items: start;
 }
 .board-col { grid-column: 1; grid-row: 1 / span 4; display: grid; grid-template-rows: subgrid; }
 .side {
   grid-column: 2; grid-row: 2 / span 3; align-self: stretch; contain: size; min-width: 0; position: relative;
   display: grid; gap: 0; grid-template-columns: minmax(0, 1fr); --share: .66;
-  grid-template-areas: "score" "split" "chat"; grid-template-rows: minmax(0, calc(var(--share) * (100% - 16px))) 16px minmax(0, 1fr);
+  grid-template-areas: "score" "split" "chat"; grid-template-rows: minmax(0, calc(var(--share) * (100% - 24px))) 24px minmax(0, 1fr);
 }
-/* the handle between the stacked panels: a 16 px gap with a grip that shows on hover */
+/* the handle between the stacked panels: a 24 px gap with a grip that shows on hover */
 .side-split { grid-area: split; position: relative; cursor: row-resize; touch-action: none; }
 .side-split::after { content: ""; position: absolute; left: 50%; top: 50%; width: 36px; height: 4px; transform: translate(-50%, -50%);
   border-radius: 99px; background: var(--line); opacity: 0; transition: opacity .15s, background .15s; }
@@ -151,14 +151,14 @@ body.hide-score .side-split, body.hide-chat .side-split { display: none; }
 .score-panel, .tab-score { grid-area: score; }
 .chat-panel, .tab-chat { grid-area: chat; }
 /* stacked (default): a hidden panel folds to a bar */
-body.hide-score .side { grid-template-rows: 44px 16px minmax(0, 1fr); }
-body.hide-chat .side { grid-template-rows: minmax(0, 1fr) 16px 44px; }
-body.hide-score.hide-chat .side { grid-template-rows: 44px 16px 44px; align-content: start; }
+body.hide-score .side { grid-template-rows: 44px 24px minmax(0, 1fr); }
+body.hide-chat .side { grid-template-rows: minmax(0, 1fr) 24px 44px; }
+body.hide-score.hide-chat .side { grid-template-rows: 44px 24px 44px; align-content: start; }
 body.hide-score.hide-chat main { --side-max: var(--side-w); }
 /* wide: scoreboard and coach side by side, a hidden one folds to a 40 px tab and the board takes the room */
 @media (min-width: 1680px) {
-  main { --side-w: calc(2 * clamp(320px, 19vw, 380px) + 16px); }
-  .side { gap: 16px; grid-template-areas: "score chat"; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  main { --side-w: calc(2 * clamp(320px, 19vw, 380px) + 24px); }
+  .side { gap: 24px; grid-template-areas: "score chat"; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
   .side-split { display: none; }
   body.hide-chat main { --side-w: calc(clamp(340px, 22vw, 440px) + 56px); }
   body.hide-score main { --side-w: calc(clamp(320px, 19vw, 380px) + 56px); }
@@ -177,7 +177,7 @@ body.hide-score .score-panel, body.hide-chat .chat-panel { display: none; }
 body.hide-score .tab-score, body.hide-chat .tab-chat { display: flex; }
 
 /* ---------- board ---------- */
-.board-row { display: flex; flex-direction: column; gap: 6px; padding-left: var(--strip); }
+.board-row { display: flex; flex-direction: column; gap: 10px; padding-left: var(--strip); }
 .board-wrap {
   position: relative;
   width: var(--board-w);
@@ -261,7 +261,7 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 }
 /* the two panels' header bars: one height, one type, one set of controls */
 .panel-head { flex: none; height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 0 10px 0 16px; border-bottom: 1px solid var(--line); }
+  padding: 0 14px 0 20px; border-bottom: 1px solid var(--line); }
 .panel-title { font-size: 14px; font-weight: 600; letter-spacing: .01em; }
 .panel-tools { display: flex; align-items: center; gap: 10px; }
 .panel-hide { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px;
@@ -346,7 +346,7 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
   border-top: 1px solid var(--line); padding: 8px 14px; font-size: 13px;
   display: flex; justify-content: space-between; align-items: center; gap: 8px; background: #2d3326;
 }
-.nav { display: flex; gap: 6px; margin-left: var(--strip); width: var(--board-w); }
+.nav { display: flex; gap: 8px; margin-left: var(--strip); width: var(--board-w); }
 .navbtn { position: relative; flex: 1; height: 36px; display: grid; place-items: center; padding: 0; background: var(--panel);
   border: 1px solid var(--line); border-radius: 10px; color: var(--text); transition: background .12s; }
 .navbtn .ico { width: 18px; height: 18px; }
@@ -388,13 +388,11 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 /* ---------- chat ---------- */
 .head-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
 /* compact so the pickers fit beside the top player's name */
-.head-row .me-pick { gap: 6px; }
-.head-row .me-pick .seg button { padding: 4px 7px; }
 /* the players' rating in the scoreboard's header: Maia's level for the popularity bars and the track marker */
 .sb-rating { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; color: var(--muted); }
 .sb-rating select { height: 28px; padding: 0 6px; background: var(--inset); color: var(--text); border: 1px solid var(--line);
   border-radius: 8px; font-size: 12.5px; }
-.chat-log { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.chat-log { flex: 1; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
 .msg { max-width: 92%; padding: 9px 12px; border-radius: 10px; word-wrap: break-word; }
 .msg p { margin: 0 0 16px; }
 .msg p:last-child, .msg ul:last-child, .msg ol.points:last-child, .msg .alert-red:last-child, .msg .protip:last-child { margin-bottom: 0; }
@@ -417,7 +415,7 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .thinking::after { content: "…"; animation: dots 1.2s steps(4) infinite; display: inline-block; width: 1.2em; overflow: hidden; vertical-align: bottom; }
 @keyframes dots { from { width: 0; } to { width: 1.2em; } }
 
-.chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 20px 0; }
 .side .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; mask-image: linear-gradient(90deg, #000 85%, transparent); }
 .side .chips::-webkit-scrollbar { display: none; }
 .side .chip { flex: none; }
@@ -436,7 +434,7 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 }
 .chip.tip-right:hover::after { left: auto; right: 0; }
 .context { padding: 6px 16px 0; font-size: 12px; color: var(--muted); }
-.chat-input { display: flex; gap: 8px; padding: 10px 16px 16px; align-items: flex-end; }
+.chat-input { display: flex; gap: 8px; padding: 12px 20px 20px; align-items: flex-end; }
 .chat-input textarea { flex: 1; resize: none; border-radius: 10px; }
 
 /* ---------- dialogs ---------- */
@@ -607,7 +605,6 @@ body.editor-mode .nav { display: none; }
              padding: 8px 10px; margin: 4px 0 16px; font-weight: 600; animation: alert-pulse 1.2s ease-out 2; }
 .alert-red strong { color: #ff8f8f; }
 @keyframes alert-pulse { 0% { box-shadow: 0 0 0 0 rgba(229, 72, 77, .7); } 100% { box-shadow: 0 0 0 10px rgba(229, 72, 77, 0); } }
-.replay-status { font-size: 13px; color: var(--muted); margin-top: 2px; width: 100%; }
 
 /* ---------- chat message anatomy ---------- */
 .msg.coach p.lead { font-size: 15.5px; font-weight: 600; color: #fff; }
@@ -756,8 +753,6 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .quip-line { font-weight: 600; }
 .quip-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
-.me-pick { display: flex; align-items: center; gap: 8px; }
-.me-pick .seg button { padding: 4px 12px; }
 
 /* opening lessons (studyCard / startStudy in app.js): the bot-game card look */
 .study-picker { max-height: 42vh; }
@@ -964,7 +959,7 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 #key-card { display: flex; flex-direction: column; min-height: 100%; }
 #key-card .sb-card.live { flex: 1; display: flex; flex-direction: column; }
 .sb-body { flex: 1; display: flex; flex-direction: column; justify-content: space-around; }
-.sb-card { padding: 14px 16px 16px; }
+.sb-card { padding: 18px 20px 20px; }
 .sb-card + .sb-card { border-top: 1px solid var(--line); }
 .t0 { --c: var(--t0); } .t1 { --c: var(--t1); } .t2 { --c: var(--t2); } .t3 { --c: var(--t3); }
 .g0 { --gc: var(--t0); } .g1 { --gc: var(--t1); } .g2 { --gc: var(--t2); } .g3 { --gc: var(--t3-text); }
@@ -1067,7 +1062,7 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .sb-ticks-axis span { position: absolute; transform: translateX(-50%); }
 
 /* after your move: a compact verdict strip, tinted with the grade's colour */
-.sb-card.after { padding: 12px 16px 14px; background: linear-gradient(90deg, color-mix(in srgb, var(--gc, transparent) 10%, transparent), transparent 80%);
+.sb-card.after { padding: 16px 20px 18px; background: linear-gradient(90deg, color-mix(in srgb, var(--gc, transparent) 10%, transparent), transparent 80%);
   box-shadow: inset 3px 0 0 var(--gc, transparent); }
 .sb-grade { padding: 2px 9px; border-radius: 99px; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; text-transform: none;
   color: var(--gc); background: color-mix(in srgb, var(--gc) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gc) 35%, transparent); }
