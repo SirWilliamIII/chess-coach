@@ -2,7 +2,7 @@
 data/openings/*.md (drop each new batch in as its own file).
 
 Each file is markdown with sections — a `## Name` / `### Name` header followed by a JSON list of
-{"name", "pgn"} objects (line names are ignored; only the moves matter). A trap is labelled with the
+{"name", "pgn"} objects (only the moves matter for traps; names are shown by browse()). A trap is labelled with the
 opening name of the last named position before it (vendored ECO table), so a header like "e4/e5
 masterfile" is only the fallback label. Every position in every
 line gets an engine eval, and a line contains a *trap* where one side's move throws away at least
@@ -85,15 +85,18 @@ def _label(moves: list[str], fallback: str) -> str:
 
 
 def parse(text: str, default_section: str = "") -> list[dict]:
-    """[{section, moves (SAN list)}], exact duplicate lines dropped. A line with an illegal or
+    """[{section, name, moves (SAN list)}], exact duplicate lines dropped. A line with an illegal or
     unparseable move is cut at that move (the legal part is still useful). Lines before the first
-    header (or in a file with none) get `default_section`."""
+    header (or in a file with none) get `default_section`. `name` is None for "Unnamed Line"."""
     parts = re.split(r"^#+\s*(.+?)\s*$", text, flags=re.M)
     parts = ["", default_section, parts[0]] + parts[1:]
     out, seen = [], set()
     for title, body in zip(parts[1::2], parts[2::2]):
         section = title.rstrip(":").strip()
-        for pgn in re.findall(r'"pgn"\s*:\s*"([^"]*)"', body):
+        for obj in re.findall(r'\{[^{}]*"pgn"[^{}]*\}', body):
+            pgn = re.search(r'"pgn"\s*:\s*"([^"]*)"', obj).group(1)
+            name = re.search(r'"name"\s*:\s*"([^"]*)"', obj)
+            name = name.group(1).strip() if name else ""
             board, moves = chess.Board(), []
             for tok in pgn.split():
                 san = re.sub(r"^\d+\.+", "", tok)
@@ -106,8 +109,42 @@ def parse(text: str, default_section: str = "") -> list[dict]:
                 moves.append(san)
             if moves and tuple(moves) not in seen:
                 seen.add(tuple(moves))
-                out.append({"section": section, "moves": moves})
+                out.append({"section": section, "name": None if name.lower() in ("", "unnamed line") else name,
+                            "moves": moves})
     return out
+
+
+_browse: tuple[str, dict | None, list[dict]] | None = None   # (source hash, trap index used, sections)
+
+
+def browse() -> list[dict]:
+    """Every line, grouped by the header it sits under, for viewing: [{title, lines: [{name, eco,
+    moves, trap}]}]. Headers with the same title in different files are merged; order is file order.
+    `trap` = {ply, move, punish, setter} for the first known trap move along the line (None while the
+    index is still being built)."""
+    global _browse
+    src = _source_hash()
+    if src is None:
+        return []
+    idx = index()
+    if _browse and _browse[0] == src and _browse[1] is idx:  # a rebuilt index is a new object
+        return _browse[2]
+    sections: dict[str, dict] = {}
+    for f in _source_files():
+        for ln in parse(f.read_text(), f.stem):
+            b, eco_name, trap = chess.Board(), None, None
+            for i, san in enumerate(ln["moves"]):
+                mv = b.parse_san(san)
+                if idx and trap is None:
+                    hit = next((t for t in idx["by_before"].get(b.epd(), []) if t["uci"] == mv.uci()), None)
+                    if hit:
+                        trap = {"ply": i, "move": san, "punish": hit["punish"], "setter": hit["setter"]}
+                b.push(mv)
+                eco_name = (eco.lookup(b) or {}).get("name", eco_name)
+            sec = sections.setdefault(ln["section"].lower(), {"title": ln["section"], "lines": []})
+            sec["lines"].append({"name": ln["name"], "eco": eco_name, "moves": ln["moves"], "trap": trap})
+    _browse = (src, idx, list(sections.values()))
+    return _browse[2]
 
 
 def _load_evals() -> dict[str, int]:

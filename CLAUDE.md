@@ -724,8 +724,13 @@ file says what is true now. Last full cleanup: 2026-10-03.
   in `data/openings_evals.json`; index `data/openings_index.json`, rebuilt in a background thread when the
   sources' hash changes (the old index keeps serving meanwhile). Labels come from the last ECO-named position
   (`_label()`); course-titled sections fall back to "from your opening files".
-- **State 2026-10-03:** `openings.md` + `openings2.md`, `openings3.md`, `openings5.md` → 2,506 lines, 20,316
-  positions, **502 traps**. Rebuilds reuse cached evals; a cold batch is ~380 new positions/min.
+- **State 2026-10-10:** `openings.md` + `openings2.md`, `openings3.md`, `openings5.md`, `markdown5.md` → 2,705
+  lines, 21,624 positions, **524 traps**. Rebuilds reuse cached evals; a cold batch is ~380 new positions/min.
+- **Viewing them** ("Opening files" in the side nav, Learn; 2026-10-10): `repertoire.browse()` → `GET
+  /api/repertoire`: every line grouped by the header it sits under (any `#` level; the same title in two files is
+  one group), with its `"name"` ("Unnamed Line" → none), deepest ECO name and the first known trap move along it.
+  Cached by source hash + index object (~3 s cold). The dialog fills a group only when opened; a line opens on the
+  demo board (`openDemo()` with a `sub` text; the trap move carries a note). Read-only.
 - Shown on review cards (`fell` / `punished` / `missed`) and the bot-game card (`trap_punish`, `trap_warn`),
   via `trapRow()` with a ▶ refutation demo. Not tested: a live bot game reaching a trap (rare with Maia/Stockfish
   until the bot uses an opening book). Some labels are odd where a line passes a position the ECO table names

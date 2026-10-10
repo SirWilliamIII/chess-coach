@@ -285,6 +285,13 @@ def favorite_recorded(req: RecordedReq):
         raise HTTPException(400, "those moves don't replay from the start position")
 
 
+# ---------- the user's opening files, for viewing (core/repertoire.py) ----------
+
+@app.get("/api/repertoire")
+def repertoire_browse():
+    return {"sections": repertoire.browse()}
+
+
 # ---------- saved board positions (core/positions.py) ----------
 
 @app.get("/api/positions")

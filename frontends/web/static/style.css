@@ -839,6 +839,20 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .pos-title { font-weight: 700; color: #fff; overflow-wrap: anywhere; cursor: text; }
 .pos-actions { margin-top: auto; display: flex; gap: 10px; align-items: center; }
 @media (max-width: 520px) { .pos-save-row { flex-direction: column; } }
+.rep-list { max-height: 65vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.rep-sec { background: var(--inset); border-radius: 8px; }
+.rep-sec > summary { cursor: pointer; list-style: none; padding: 10px 12px; display: flex; gap: 10px; align-items: baseline; }
+.rep-sec > summary::-webkit-details-marker { display: none; }
+.rep-sec > summary::before { content: '▸'; color: var(--muted); }
+.rep-sec[open] > summary::before { content: '▾'; }
+.rep-title { font-weight: 700; color: var(--text); }
+.rep-lines { display: flex; flex-direction: column; padding: 0 6px 8px; }
+.rep-line { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 6px; padding: 6px 8px;
+  color: var(--text); cursor: pointer; font: inherit; min-width: 0; }
+.rep-line:hover { background: var(--hover); }
+.rep-name { font-size: 13.5px; }
+.rep-moves { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rep-trap { font-size: 11.5px; color: var(--t3-text); margin-left: 6px; white-space: nowrap; }
 /* recording a game: ⏺ under the board turns red with the move count; grey-red when the board is off its line */
 .navbtn .rec-dot { fill: currentColor; stroke: none; opacity: 0; }
 .navbtn.rec-on { color: #e05252; }

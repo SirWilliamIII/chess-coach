@@ -2765,7 +2765,7 @@ function renderDemoInfo() {
     <button class="btn small" id="demo-exit-top">Back to my game</button>`;
   $('demo-exit-top').onclick = () => closeDemo();
   $('game-info').textContent = d.title;
-  $('board-sub').textContent = d.edited ? 'Your own line from here: keep exploring, or ask the coach about it.' : 'The coach’s line. Step through it, or move pieces to try something else.';
+  $('board-sub').textContent = d.edited ? 'Your own line from here: keep exploring, or ask the coach about it.' : d.sub || 'The coach’s line. Step through it, or move pieces to try something else.';
   const note = d.step ? d.notes[d.step - 1] : '';
   $('summary').innerHTML = `<div class="play-buttons">
       <button class="btn ghost small" id="demo-replay">Replay</button>
@@ -5487,6 +5487,80 @@ async function openSavedPosition(p) {
 }
 
 $('nav-save').onclick = openSavePosition;
+
+// ---------------------------------------------------------------- opening files
+// The lines in data/openings.md and data/openings/*.md, grouped by the header they sit under (same header in
+// two files = one group). Read-only: a line opens on the demo board (◀ ▶ step through it, Back to my game
+// returns). Sections fill in only when opened, since there are thousands of lines.
+
+let repSections = null;
+
+async function openRepertoire() {
+  $('dlg-repertoire').showModal();
+  if (repSections) return renderRepertoire();
+  $('rep-list').innerHTML = '<div class="card-sub">Loading…</div>';
+  try { repSections = (await api('/api/repertoire')).sections; } catch (e) { return void ($('rep-list').textContent = e.message); }
+  renderRepertoire();
+}
+
+function repMoveText(moves) {
+  return moves.map((san, i) => (i % 2 ? san : `${i / 2 + 1}.${san}`)).join(' ');
+}
+
+const repMoveNo = (ply) => `${Math.floor(ply / 2) + 1}.${ply % 2 ? '..' : ''}`;
+
+function repLabel(ln) {
+  return ln.name || ln.eco || repMoveText(ln.moves.slice(0, 6));
+}
+
+function renderRepertoire() {
+  const q = $('rep-q').value.trim().toLowerCase();
+  const shown = repSections.map((sec, si) => {
+    const hitTitle = !q || sec.title.toLowerCase().includes(q);
+    const lines = sec.lines.map((ln, li) => ({ ln, li })).filter(({ ln }) => hitTitle
+      || [ln.name, ln.eco, repMoveText(ln.moves)].join(' ').toLowerCase().includes(q));
+    return { sec, si, lines };
+  }).filter((x) => x.lines.length);
+  if (!repSections.length) return void ($('rep-list').innerHTML = '<div class="card-sub">No opening files: put markdown files in data/openings/.</div>');
+  if (!shown.length) return void ($('rep-list').innerHTML = '<div class="card-sub">Nothing matches.</div>');
+  $('rep-list').innerHTML = shown.map(({ sec, si, lines }) => {
+    const traps = lines.filter(({ ln }) => ln.trap).length;
+    return `<details class="rep-sec" data-si="${si}"${q ? ' open' : ''}><summary><span class="rep-title">${esc(sec.title)}</span>
+      <span class="card-sub">${lines.length} line${lines.length === 1 ? '' : 's'}${traps ? ` · ${traps} with a trap` : ''}</span></summary>
+      <div class="rep-lines"></div></details>`;
+  }).join('');
+  $('rep-list').querySelectorAll('.rep-sec').forEach((el) => {
+    const { sec, lines } = shown.find((x) => x.si === +el.dataset.si);
+    const fill = () => {
+      const box = el.querySelector('.rep-lines');
+      if (box.childElementCount) return;
+      box.innerHTML = lines.map(({ ln, li }) => {
+        const trap = ln.trap ? `<span class="rep-trap" title="A known trap from your files: this move loses">trap: ${esc(repMoveNo(ln.trap.ply))}${esc(ln.trap.move)}??</span>` : '';
+        return `<button class="rep-line" data-li="${li}" title="${esc(repMoveText(ln.moves))}">
+          <div class="rep-name">${esc(repLabel(ln))}${trap}</div>
+          ${ln.name && ln.eco ? `<div class="rep-moves">${esc(ln.eco)}</div>` : ''}
+          <div class="rep-moves">${esc(repMoveText(ln.moves))}</div></button>`;
+      }).join('');
+      box.querySelectorAll('.rep-line').forEach((b) => { b.onclick = () => openRepLine(sec, sec.lines[+b.dataset.li]); });
+    };
+    if (el.open) fill();
+    el.addEventListener('toggle', () => { if (el.open) fill(); });
+  });
+}
+
+function openRepLine(sec, ln) {
+  const notes = ln.moves.map(() => '');
+  if (ln.trap) {
+    const t = ln.trap;
+    notes[t.ply] = `Trap: this move loses${t.punish.length ? `, ${t.punish[0]} punishes it` : ''}.`;
+  }
+  $('dlg-repertoire').close();
+  openDemo({ title: `${sec.title} · ${repLabel(ln)}`, start_fen: START_FEN, moves: ln.moves, notes,
+    sub: 'A line from your opening files. Step through it, or move pieces to try something else.' });
+}
+
+$('btn-repertoire').onclick = openRepertoire;
+$('rep-q').oninput = renderRepertoire;
 
 // ---------------------------------------------------------------- recording a game
 // ⏺ under the board starts a recording from the line on the board now (the moves that led here included). From
