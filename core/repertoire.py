@@ -35,6 +35,9 @@ DATA = Path(__file__).resolve().parent.parent / "data"
 SOURCES = [DATA / "openings.md", DATA / "openings"]   # a file, and a folder of *.md files
 INDEX = DATA / "openings_index.json"
 EVALS = DATA / "openings_evals.json"
+# The trap check's deep evals, kept apart from the quick ones. Unsaved until 2026-10-10, every rebuild redid all
+# of them: ~37 of the 41 minutes of one rebuild (the quick pass took ~4)
+DEEP_EVALS = DATA / "openings_evals_deep.json"
 
 QUICK_SECONDS = 0.15
 VERIFY_DEPTH = 20
@@ -55,14 +58,24 @@ def _source_files() -> list[Path]:
     return files
 
 
+_hash_memo: tuple = (None, None)  # (files' names, sizes and mtimes, their hash)
+
+
 def _source_hash() -> str | None:
+    """Hash of the source files' contents; re-read only when one's size or mtime changes (every trap lookup
+    asks, up to four times per bot move, and the files are ~700 KB)."""
+    global _hash_memo
     files = _source_files()
     if not files:
         return None
+    stamp = tuple((f.name, st.st_size, st.st_mtime_ns) for f in files for st in [f.stat()])
+    if _hash_memo[0] == stamp:
+        return _hash_memo[1]
     h = hashlib.sha256()
     for f in files:
         h.update(f.name.encode() + b"\0" + f.read_bytes())
-    return h.hexdigest()
+    _hash_memo = (stamp, h.hexdigest())
+    return _hash_memo[1]
 
 
 GENERIC_LABEL = "from your opening files"
@@ -231,9 +244,9 @@ def _common(a: list[str], b: list[str]) -> int:
     return n
 
 
-def _load_evals() -> dict[str, int]:
+def _load_evals(path: Path = EVALS) -> dict[str, int]:
     try:
-        return json.loads(EVALS.read_text())
+        return json.loads(path.read_text())
     except (OSError, ValueError):
         return {}
 
@@ -242,14 +255,19 @@ def build(progress=print) -> dict:
     """Evaluate every position in openings.md, find the traps, write and return the index."""
     lines = [ln for f in _source_files() for ln in parse(f.read_text(), f.stem)]
     evals = _load_evals()
+    deep_evals = _load_evals(DEEP_EVALS)
     engine = Engine(threads=2, hash_mb=128)  # its own process, so the app's engine stays responsive
     try:
         def cp(board: chess.Board, deep: bool = False) -> int:
             if board.is_game_over():
                 return engine.evaluate(board)["cp_white"]
-            if deep:
-                return engine.lines(board, multipv=1, seconds=VERIFY_SECONDS, depth=VERIFY_DEPTH)[0]["cp_white"]
             key = board.epd()
+            if deep:
+                if key not in deep_evals:
+                    deep_evals[key] = engine.lines(board, multipv=1, seconds=VERIFY_SECONDS, depth=VERIFY_DEPTH)[0]["cp_white"]
+                    if len(deep_evals) % 50 == 0:  # keep progress if the server stops mid-check
+                        DEEP_EVALS.write_text(json.dumps(deep_evals))
+                return deep_evals[key]
             if key not in evals:
                 evals[key] = engine.lines(board, multipv=1, seconds=QUICK_SECONDS)[0]["cp_white"]
             return evals[key]
@@ -315,6 +333,7 @@ def build(progress=print) -> dict:
                     "moves_before": ln["moves"][:i],
                 }
         EVALS.write_text(json.dumps(evals))
+        DEEP_EVALS.write_text(json.dumps(deep_evals))
         index = {"source_hash": _source_hash(), "lines": len(lines), "positions": len(todo),
                  "traps": list(traps.values())}
         INDEX.write_text(json.dumps(index))

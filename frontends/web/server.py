@@ -360,10 +360,14 @@ def _prefetch_job(site: str, user: str, n: int):
             fetch_pgn = lambda g: g["pgn"]  # already included in the archive
         PREFETCH.update(total=len(items))
         for i, g in enumerate(items, 1):
+            # a saved Lichess game is skipped before its PGN request (one per game), as _mine_job does
+            if site == "lichess" and (CACHE_DIR / f"{g['id'][:8]}.json").exists():
+                PREFETCH.update(done=i)
+                continue
             game = load_pgn(fetch_pgn(g))
-            before = len(list(CACHE_DIR.glob("*.json")))
+            saved = (CACHE_DIR / f"{review_mod.game_id(game)}.json").exists()
             review_game(game, S.engine)  # returns straight away if it's already saved
-            PREFETCH["new"] += len(list(CACHE_DIR.glob("*.json"))) - before
+            PREFETCH["new"] += not saved
             PREFETCH.update(done=i)
         PREFETCH.update(status="done")
     except Exception as e:

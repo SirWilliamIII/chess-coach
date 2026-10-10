@@ -36,12 +36,6 @@ def from_lichess(gid: str) -> bool:
     return len(gid) == 8 and not gid.startswith("cc")
 
 
-def ply_label(ply: int) -> str:
-    """ply 1 -> '1.', ply 2 -> '1...'"""
-    n = (ply + 1) // 2
-    return f"{n}." if ply % 2 == 1 else f"{n}..."
-
-
 def opening_name(h: chess.pgn.Headers) -> str | None:
     if h.get("Opening"):
         return h["Opening"]

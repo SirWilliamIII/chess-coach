@@ -188,7 +188,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
   else `explorer.available()` is false and it's silently off).
 - **chess.com vs Lichess shape:** chess.com's monthly archive includes PGN inline; Lichess's game list
   doesn't, so each game needs `lichess.game_pgn(id)`. Matters for any multi-game Lichess work.
-- **Offline prefetch** is capped at 500 games (`min(500, req.n)`), each a full Stockfish pass.
+- **Offline prefetch** is capped at 500 games (`min(500, req.n)`), each a full Stockfish pass. Saved Lichess games
+  are skipped before their PGN request (2026-10-10).
 - **Explorer walks are slow and rate-limited:** ~1 s per request, serialized; `BUDGET` 20 (`core/openings.py`)
   ≈ 27 s cold. `explore(..., patient=True)` waits out 429s (the coach's tools are patient; the panel and
   `/api/lines` fail fast). `_warm_explorer()` pre-walks after each bot move in the opening (move ≤ 8). Disk
@@ -280,6 +281,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
   start only. Tactic reactions aren't built.
 - **Takeback** is `#pb-takeback` beside the top name row (`.head-row`), shown only in bot games (`syncTakeback()`).
   `#summary` in a bot game shows no "Your move"/"Bot is thinking…" text (removed on purpose).
+- **While the bot thinks**, `requestEval`/`requestMaia` don't search (2026-10-10): the reply (~0.45 s) made their
+  result stale before it landed, and they held `S.engine`/`S.card_engine`/Maia for the position after it.
 - **Clock** exists only in fresh "Play a game" games, not in games played on from a position.
 
 ### Board (chessground)
@@ -519,7 +522,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   the bottom when the game opens); null on the analysis board ("Last move", "White to move"). In a bot game the
   opponent's turn isn't searched ("Bot is thinking" skeleton). `requestScoreboard()` runs the board's position
   first, then your last move's (with `include`), one after the other.
-- **Server** (`scoreboard.build()`): two searches at once, the deep top 5 (`DEPTH` 16 / `MAX_SECONDS` 3) on one
+- **Server** (`scoreboard.build()`): two searches at once, the deep top 5 (`DEPTH` 15 / `MAX_SECONDS` 3; 16 until 2026-10-10, lowered for speed, user's call) on one
   sb engine and **every legal move** at `FULL_DEPTH` 10 / `FULL_SECONDS` 1.5 on the other (it also scores Maia's
   moves and `include`), so the wait is the top 5. Until 2026-10-06 a depth-16 search of Maia's moves ran before
   the full one; dropped for speed (user's call): 40 positions of a saved game went from 2.7 s to 1.44 s average,
@@ -767,7 +770,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - Sources: `data/openings.md` + `data/openings/*.md` (`##`/`###` headers + JSON lists of `{"name","pgn"}`; only
   moves matter; a pgn is cut at the first comment/glyph/variation). A move is a **trap** when it throws away ≥
   `TRAP_SWING` 150 cp and leaves the other side ≥ `TRAP_EDGE` +2, rechecked at depth 20. Evals cached per EPD
-  in `data/openings_evals.json`; index `data/openings_index.json`, rebuilt in a background thread when the
+  in `data/openings_evals.json`, the depth-20 rechecks in `data/openings_evals_deep.json` (2026-10-10; unsaved before,
+  they were ~37 of a rebuild's 41 min, and the first rebuild after that date still pays them once); index `data/openings_index.json`, rebuilt in a background thread when the
   sources' hash changes (the old index keeps serving meanwhile). Labels come from the last ECO-named position
   (`_label()`); course-titled sections fall back to "from your opening files".
 - **State 2026-10-10:** `openings.md` + `openings2.md`, `openings3.md`, `openings5.md`, `markdown5.md` → 2,705

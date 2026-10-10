@@ -19,8 +19,8 @@ HUMAN_SCORED = 8    # Maia moves kept for the odds (scored from the full search)
 
 # Search budget: stop at DEPTH or after MAX_SECONDS, whichever comes first (see Engine.lines). Measured
 # 2026-10-04, 38 positions from saved games vs depth 22: depth 15 was within 5 win % on all of them (depth 12:
-# 95%), and depth 18 took 2.4x as long for no visible gain. 16 is the margin.
-DEPTH = 16
+# 95%), and depth 18 took 2.4x as long for no visible gain. 15 since 2026-10-10 (was 16; user's call, for speed).
+DEPTH = 15
 MAX_SECONDS = 3.0
 # Every legal move ranked ("the 28th best of 37"), at a shallow depth: multipv over all moves costs about
 # n times one line. Measured 2026-10-06 on four positions of a saved game (33-41 legal moves, 3 threads):
@@ -115,24 +115,31 @@ def build(sf_engine, human_engine, maia, board: chess.Board, rating: int, opp_ra
     back in "extra"."""
     if board.is_game_over():
         return {"over": True}
-    humans = maia.moves(board, rating, opp_rating, top=max(HUMAN_SCORED, HUMAN_SHOWN)) if maia else []
     # Two searches at once on the two Stockfish processes: the deep top 5, and every legal move shallow (which
     # also scores Maia's moves and `include`). The wait is the deep one. A third, depth-16 search of Maia's
     # moves ran after the full one until 2026-10-06; dropped for speed (measured over 40 positions of a saved
     # game: 2.7 s average per scoreboard with it, the top 5 alone 1.6 s). Costs past #5 are now depth 10 only.
-    def ladder():
-        return [{"rating": r, "moves": [{k: m[k] for k in ("move", "uci", "pct")} for m in maia.moves(board, r, r, top=LADDER_SHOWN)]}
-                for r in LADDER] if maia else []
+    # Maia runs in the pool too (it was called before the searches started until 2026-10-10, so a busy Maia lock
+    # held both of them back); the searches don't need its answer, only summarize() does.
+    # Each thread gets its own board: board.san() pushes and pops a move, so a shared one could be read mid-change.
+    def humans_and_ladder(board):
+        if not maia:
+            return [], []
+        humans = maia.moves(board, rating, opp_rating, top=max(HUMAN_SCORED, HUMAN_SHOWN))
+        ladder = [{"rating": r, "moves": [{k: m[k] for k in ("move", "uci", "pct")} for m in maia.moves(board, r, r, top=LADDER_SHOWN)]}
+                  for r in LADDER]
+        return humans, ladder
 
     with ThreadPoolExecutor(2) as pool:
-        job = pool.submit(human_engine.lines, board, multipv=board.legal_moves.count(), seconds=FULL_SECONDS, depth=FULL_DEPTH)
-        lad = pool.submit(ladder)
+        job = pool.submit(human_engine.lines, board.copy(), multipv=board.legal_moves.count(), seconds=FULL_SECONDS, depth=FULL_DEPTH)
+        side = pool.submit(humans_and_ladder, board.copy())
         sf = sf_engine.lines(board, multipv=SF_LINES, seconds=MAX_SECONDS, depth=DEPTH)
         full = job.result()
+        humans, ladder = side.result()
     if not sf:
         raise RuntimeError("Stockfish returned no lines")
     out = summarize(board.turn, sf, humans, full, rating, include, full)
-    out["ladder"] = lad.result()
+    out["ladder"] = ladder
     # the tactics finder on the deep search we already have (its validation: scripts/tactics_eval.py)
     out["tactic"] = tactics.from_lines(board, sf)
     return out

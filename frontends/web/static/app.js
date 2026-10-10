@@ -730,6 +730,9 @@ function requestEval(c) {
   const token = ++evalToken;
   if (!state.engineOn) return;
   $('engine-lines').innerHTML = '<div class="eline" style="color:var(--muted)">Thinking…</div>';
+  // the bot's reply (~0.45 s) lands before this search would (0.2 + 0.6 s) and makes it stale: it only held the
+  // engine that the position after the reply needs
+  if (state.play?.thinking) return;
   evalTimer = setTimeout(async () => {
     try {
       // with the moves that led here, like the scoreboard: otherwise a repetition draw is invisible to it
@@ -747,7 +750,7 @@ function requestEval(c) {
   }, 200);
 }
 
-// The bar shows the scoreboard's #1 eval for this position once that deep search (depth 16) is in, else the
+// The bar shows the scoreboard's #1 eval for this position once that deep search (depth 15) is in, else the
 // quick one (0.6 s), so the bar and the scoreboard's top row agree (user's call, 2026-10-07). Called with the
 // quick result, or with nothing when the scoreboard lands (then it only acts if there's a deep number).
 function setEvalBar(quick) {
@@ -810,6 +813,7 @@ function requestMaia(c) {
   lastMaia = null;
   if (!maiaOn() || !c) return void ($('maia-lines').innerHTML = '');
   $('maia-lines').innerHTML = '<div class="eline" style="color:var(--muted)">Thinking…</div>';
+  if (state.play?.thinking) return;  // stale before it lands, like requestEval's
   const fen = c.fen();
   const line = currentLine();
   maiaTimer = setTimeout(async () => {
@@ -2110,18 +2114,6 @@ function clickMove(token) {
   return playSan(t.san);
 }
 
-function squareFromEvent(e) {
-  const rect = $('board').getBoundingClientRect();
-  const x = (e.clientX - rect.left) / rect.width;
-  const y = (e.clientY - rect.top) / rect.height;
-  if (x < 0 || x > 1 || y < 0 || y > 1) return null;
-  const fi = Math.min(7, Math.floor(x * 8));
-  const ri = Math.min(7, Math.floor(y * 8));
-  return state.orientation === 'white'
-    ? 'abcdefgh'[fi] + (8 - ri)
-    : 'abcdefgh'[7 - fi] + (ri + 1);
-}
-
 function moveBrush(move, isOpponent) {
   const isCheck = move.san.includes('+') || move.san.includes('#');
   const isCapture = move.flags.includes('c') || move.flags.includes('e');
@@ -2226,14 +2218,21 @@ function ovCheckWorthIt(c, m, me, them) {
 const ovMine = () => overlays.mine !== false;
 const ovAny = () => !!(overlays.captures || overlays.checks || overlays.threats) && (ovMine() || !!overlays.theirs);
 
+// the last position's shapes: hovering a scoreboard row redraws the board, and the threats play and undo every move
+let ovMemo = { key: null, shapes: [] };
+
 function overlayShapes() {
   if (!ovAny() || puzzleLive()) return [];
   let c;
   try { c = overlayGame(); } catch { return []; }
   if (!c || c.isGameOver()) return [];
   const me = sbUser() || state.orientation[0], them = me === 'w' ? 'b' : 'w';
-  // theirs first, so yours draw on top where they cross; theirs in the same colours, thinner and paler (…Opp brushes)
-  return [...(overlays.theirs ? ovSideShapes(c, them, me, 'Opp') : []), ...(ovMine() ? ovSideShapes(c, me, them, '') : [])];
+  const key = [c.fen(), me, ...['checks', 'captures', 'threats', 'theirs'].map((k) => !!overlays[k]), ovMine()].join('|');
+  if (ovMemo.key !== key) {
+    // theirs first, so yours draw on top where they cross; theirs in the same colours, thinner and paler (…Opp brushes)
+    ovMemo = { key, shapes: [...(overlays.theirs ? ovSideShapes(c, them, me, 'Opp') : []), ...(ovMine() ? ovSideShapes(c, me, them, '') : [])] };
+  }
+  return ovMemo.shapes.slice();
 }
 
 // one side's checks, captures and threats (`me` = the side the arrows belong to)
