@@ -153,6 +153,14 @@
     </div>
   </main>
 
+  <!-- phones: three screens, the board, the scoreboard, the coach (user's calls, 2026-10-09: scrolling past the
+       board kept hitting it; no page scrolling at all). Hidden above 760 px -->
+  <nav class="m-tabs" id="m-tabs">
+    <button data-page="board" class="on">Board</button>
+    <button data-page="moves">Moves</button>
+    <button data-page="coach">Coach</button>
+  </nav>
+
   <dialog id="dlg-study">
     <form method="dialog" class="dlg-head"><h2>Learn an opening</h2><button class="link">Close</button></form>
     <p class="hint">Lines come from master games, every move is checked by the engine, and the coach writes the notes. A lesson is built once (a few minutes, a few cents), then learning and drilling it is free.</p>

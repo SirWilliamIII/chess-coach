@@ -311,6 +311,18 @@ file says what is true now. Last full cleanup: 2026-10-03.
     centring margins. Both panels hidden: capped at `--side-w`. **Board size handle** (`#side-resize`, the gap
     left of `.side`, `setBoardMax()`): dragging sets `--board-user` (→ `--board-max`, min 320) on `main`,
     localStorage `boardMax`, double-click clears it. Hidden ≤ 760 px.
+  - **Phones and touch** (2026-10-09, user: "way too many things to accidentally click when scrolling"): on a touch
+    screen (`TOUCH`, `pointer: coarse`) moves are tap-only: a capture-phase `touchstart` listener on `#board` stops
+    chessground seeing touches (it grabbed pieces on touchstart and, with one selected, moved on the next touch), so
+    the page scrolls and a clean tap reaches it as the browser's click. The set-up board keeps touch (drag palette).
+    Scoreboard rows only show their arrow on touch (`playMaiaMove()`). ≤ 760 px: three screens, Board, Moves (the
+    scoreboard) and Coach, flipped by the fixed tab bar `#m-tabs` (`setPhonePage()`, `body.m-moves` / `m-coach`; a
+    row tap flips to the board). **Nothing scrolls the page and no scrollbar shows** (user's call): `html, body`
+    overflow hidden, `main` is `100svh` minus the top bar, each panel screen is one panel at full height that scrolls
+    inside itself, scrollbars hidden everywhere, the top icon bar shrinks its items to fit. The board screen: `--board-w`
+    also ≤ `100svh - --m-rest` (330 px, 372 ≤ 360 px wide where the rows wrap; measured iPhone 13 334 px board, SE 196,
+    Pixel 7 380). Panel hide buttons, tabs and the split handle don't apply on phones. The game line (☆ names ·
+    result) is hidden there. User checked on a real phone 2026-10-09: taps "pretty dang good", the board fits.
   - **Breakpoints:** ≥ 1680 px: board | scoreboard | coach. 761-1679 px: board | one column with the scoreboard
     over the coach and a drag handle between them (`#side-split`, `setSplit()`, share 0.25-0.85 in localStorage
     `sideSplit`, default 0.66, double-click resets). ≤ 1360 px the nav is an icon rail by itself. ≤ 760 px: one

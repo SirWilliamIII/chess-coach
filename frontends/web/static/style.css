@@ -1208,3 +1208,39 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .eg-start { margin-top: 20px; }
 .eg-types { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 .eg-sub { font-size: 11.5px; color: var(--muted); line-height: 1.35; text-align: left; }
+
+/* phones: three screens (setPhonePage()): the board, the scoreboard, the coach; the tab bar flips them. Nothing
+   scrolls the page (user's call, 2026-10-09): every screen is the phone's height, a long panel scrolls inside itself,
+   and no scrollbar shows anywhere */
+.m-tabs { display: none; }
+@media (max-width: 760px) {
+  :root { --m-top: 56px; --m-tabs: calc(50px + env(safe-area-inset-bottom)); }
+  html, body { height: 100%; overflow: hidden; }
+  * { scrollbar-width: none; }
+  *::-webkit-scrollbar { display: none; }
+  .m-tabs { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; gap: 8px; padding: 6px 16px calc(6px + env(safe-area-inset-bottom));
+    background: var(--bg, #262522); border-top: 1px solid var(--line); }
+  .m-tabs button { flex: 1; height: 38px; border: 1px solid var(--line); border-radius: 10px; background: none; color: var(--muted);
+    font: inherit; font-size: 14px; font-weight: 600; }
+  .m-tabs button.on { background: var(--inset); color: var(--text); border-color: var(--accent); }
+  main { height: calc(100svh - var(--m-top)); box-sizing: border-box; overflow: hidden; padding-bottom: calc(var(--m-tabs) + 12px);
+    grid-template-rows: minmax(0, 1fr); }
+  /* the board screen: the board also yields to the height (svh: the screen with the browser's bars showing), the
+     rest being the top bar, the name rows, the opening, the eval bar, the buttons and the tabs */
+  body:not(.m-moves):not(.m-coach) main { --board-w: min(calc(100vw - 32px), calc(100svh - var(--m-rest, 360px))); }
+  body:not(.m-moves):not(.m-coach) .board-col { align-items: center; }
+  main { --m-rest: 330px; }
+  .board-foot .game-info, .board-foot .game-title { display: none; }  /* no room beside the name; the names are on the rows */
+  body:not(.m-moves):not(.m-coach) .side { display: none; }
+  body.m-moves .board-col, body.m-coach .board-col { display: none; }
+  /* the panel screens: one panel, the whole height; hide/show and the split handle don't apply */
+  body.m-moves .side, body.m-coach .side { display: grid; height: 100%; grid-template-rows: minmax(0, 1fr); grid-template-areas: "one"; }
+  body.m-moves .score-panel, body.m-coach .chat-panel { display: flex; grid-area: one; max-height: none; }
+  body.m-moves .chat-panel, body.m-coach .score-panel, .side .panel-tab, .side-split, .panel-hide { display: none; }
+  /* the top bar fits the width instead of scrolling sideways */
+  .side-nav { overflow: hidden; padding: 0 8px; gap: 0; }
+  .nav-sec { flex: 1 1 auto; min-width: 0; justify-content: space-around; }
+  .nav-item { flex: 1 1 0; width: auto; min-width: 0; max-width: 44px; }
+  .brand { flex: none; }
+}
+@media (max-width: 360px) { main { --m-rest: 372px; } }  /* the name rows wrap at this width */

@@ -91,6 +91,11 @@ async function api(path, body, method) {
 
 // ---------------------------------------------------------------- board
 
+// Touch screens move by tapping only (user's call, 2026-10-09: scrolling kept grabbing and moving pieces).
+const TOUCH = matchMedia('(pointer: coarse)').matches;
+// Phones show the board, the scoreboard and the coach as three screens, flipped with the tab bar (≤ 760 px, style.css)
+const PHONE = matchMedia('(max-width: 760px)');
+
 const cg = Chessground($('board'), {
   coordinates: true,
   animation: { duration: 180 },
@@ -165,6 +170,22 @@ const cg = Chessground($('board'), {
     },
   },
 });
+
+// chessground acts on touchstart: a finger landing on a piece grabs it and blocks the scroll, and with a piece
+// selected the next touch plays the move. Keep touches from it, so the page scrolls; a clean tap still reaches it
+// as the browser's click (mousedown/mouseup), which selects and moves. The set-up board keeps touch: its palette
+// is drag and drop.
+if (TOUCH) {
+  $('board').addEventListener('touchstart', (e) => { if (!state.editor) e.stopPropagation(); }, { capture: true, passive: true });
+}
+
+function setPhonePage(page) {
+  document.body.classList.toggle('m-moves', page === 'moves');
+  document.body.classList.toggle('m-coach', page === 'coach');
+  document.querySelectorAll('#m-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.page === page));
+  if (page === 'board') requestAnimationFrame(() => { document.body.dispatchEvent(new Event('chessground.resize')); cg.redrawAll(); });
+}
+document.querySelectorAll('#m-tabs button').forEach((b) => { b.onclick = () => setPhonePage(b.dataset.page); });
 
 // The modifier keys are read here, on the press, because chessground's own brush choice can't tell
 // ⌘ from ⌥ (both map to its "blue") and ignores fn. Capture phase, so this runs before chessground's
@@ -770,7 +791,9 @@ function requestMaia(c) {
 function playMaiaMove(uci) {
   const c = currentGame();
   const turn = c.turn() === 'w' ? 'white' : 'black';
-  if (!canMove(c, turn)) {
+  // touch: a row only shows its move (moves are made on the board), and on a phone that means the board screen
+  if (TOUCH && PHONE.matches) setPhonePage('board');
+  if (TOUCH || !canMove(c, turn)) {
     cg.setAutoShapes([...baseShapes(), { orig: uci.slice(0, 2), dest: uci.slice(2, 4), brush: 'green' }]);
     return;
   }
