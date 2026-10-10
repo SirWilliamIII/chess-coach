@@ -70,6 +70,7 @@ async def lifespan(app):
     S.maia = maia.Maia()  # the model itself loads on the first request
     new_analysis(chess.STARTING_FEN)
     repertoire.index()  # loads the trap index, or starts building it if data/openings.md changed
+    threading.Thread(target=repertoire.browse, daemon=True).start()  # ~3 s; ready before the first "Opening files" click
     yield
     S.engine.close()
     S.card_engine.close()

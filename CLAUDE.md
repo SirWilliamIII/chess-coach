@@ -47,7 +47,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   toggle removed from the analysis board.
 - **Built 2026-10-08, not yet used live by the user:** opening puzzles (see "Opening puzzles"): the Lichess puzzle
   database's opening-tagged part in `data/puzzles.sqlite`, a picker with each opening's recurring patterns, a puzzle
-  mode with a hint ladder and a puzzle level, and "Tactics in this opening ›" at the right end of the row under the board. Pattern names
+  mode with a hint ladder and a puzzle level ("Tactics in this opening ›" under the board removed 2026-10-10, user's call). Pattern names
   are templates; the one-off Claude naming pass (top ~10 per opening, user reviews) waits for the user's verdict on
   which patterns are worth it.
 - **Built 2026-10-08, not yet used live:** puzzles from the user's own games ("Your mistakes" in Puzzles; see
@@ -57,6 +57,14 @@ file says what is true now. Last full cleanup: 2026-10-03.
   an engine fact over an LLM call. A coach hint button during puzzles was offered and declined for now.
 - **Built 2026-10-09, not yet used live:** the panels fill the width the board leaves and a board-size handle
   (see "Layout"), and recording a game (⏺, see "Games").
+- **Built 2026-10-10, not yet used live:** Explore lines (the user's opening files as a browsable, searchable list,
+  its own mode; see "Known traps"), one context line under the board per mode (see "Layout"), the game report on one
+  grid, the players' rating picker in the Top player moves heading, and a UI text sweep (user's call, saved as a
+  memory: no explainer copy, subtext or example placeholders; tooltips if needed). Sweep fixes: the editor closes the
+  Full Explorer it opened (`state.editor.openedGp`), a puzzle start closes it (it stayed open into lessons/puzzles
+  showing stale Maia/explorer lists); an endgame drill hides the engine after `setReview()` (leaving a puzzle there
+  turned the eval bar back on) and its empty scoreboard says why; all top-row buttons are one size (the board moved a
+  few px between modes); Find games tabs read chess.com / Lichess / Saved / ★ Favorites; US spelling (Analyze).
 - **Next focus:** the user trying Puzzles (both sources) and the tactics finder live; then "watch out" (the
   opponent's tactics: the "allowed" puzzles are the offline half of it). Opening lessons after that. See TODOs.
 
@@ -337,19 +345,27 @@ file says what is true now. Last full cleanup: 2026-10-03.
     localStorage `navCollapsed`) folds it to a 68 px rail with tooltips (`data-tip`); hidden where the rail is
     automatic. Button ids unchanged.
   - **Panels:** both have the same 48 px header (`.panel-head`: title, tools, a minus `[data-hide]` button).
-    The players' rating picker (`#sb-rating`) is in the scoreboard's header (moved from the top name row).
+    The players' rating picker is inline in the "Top player moves at ~N ▾" heading (`sbRatePick()`, `.sb-rate`;
+    "What players at ~N play" with the eval off), a mirror of `#maia-rating` (2026-10-10, user's call: in the panel
+    header it read as a random bot setting). `renderKeyCard()` skips while it has focus and catches up on blur.
     Hidden panel (`setPanelHidden()`, `body.hide-score` / `hide-chat`): a 44 px bar when stacked, a 40 px
     vertical tab when side by side (`.panel-tab`); the side column narrows and the board takes the room.
     In the side column the chat's chips are one scrolling line and "Asking about…" shows only while typing.
   - **Around the board:** `.bottom-row` = the bottom name (`#player-bottom`), then right-aligned `.board-foot` =
     `#game-title`
-    (favourites, hidden when empty), `#game-info` (☆ names · result, muted, shrinks first), `#board-sub`, "Tactics in this opening ›"
-    (`#opening-tactics`, moved out of the opening pill so the name gets its width), and `.board-foot-right` (Moves & engine only while the scoreboard is hidden; its dropdown opens upwards there). Above
+    (favourites, hidden when empty), `#game-info` (a loaded game's ☆ only), `#board-sub`, and `.board-foot-right` (Moves & engine only while the scoreboard is hidden; its dropdown opens upwards there). Above
     the board: then `.top-row` = the top name (`#player-top`), `.opening-slot`
     (the opening pill: `#opening-tag` only, 2026-10-09, user's call; the slot takes the
     leftover width with basis 0 so a long name shrinks instead of wrapping the row, the pill is centred in it and
     hidden with no opening; its own line ≤ 760 px), and `.head-row` (`#summary`: Play bot from here / game status and
     buttons / the editor's buttons, `#pb-takeback`).
+  - **The line under the board** (`setFoot()` → `#board-sub`, 2026-10-10; user: "it can be really helpful or really
+    confusing", after "Opening puzzle · Your game vs … · Caro-Kann Defense: Advance Variation" under a your-mistakes
+    puzzle): one line saying what this board is, never what the rows above already say (names, opening pill,
+    status). Loaded game "You won · Oct 4, 2026" (`resultWords()`, `gameDate()`; ☆ in `#game-info`); bot game "Bot
+    game" / "Playing on from A vs B" (`play.from`) / "Played on from the X lesson" / "Endgame drill · Hold it · …";
+    puzzle "From your game vs X" / "Lichess puzzle · rated ~N"; lesson "Lesson · <name>"; coach demo its title
+    (+ "· your own moves"); Explore lines the file's name; editor and analysis board nothing.
   - **Sizes:** `--board-w` = min(`--board-max` 880, `100vh - --head-h - 244px`, the width left beside the nav and
     `--side-w`); `--strip` (rank labels only, 18 px; 0 on phones, where the labels sit inside the board so it's
     centred). 1440×900: 656 px (height-bound); 1920×1080: 820.
@@ -375,7 +391,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
   - **Static files aren't cache-busted:** no `Cache-Control`, so a browser can keep an old `style.css`/`app.js`
     after edits. Ask for a hard reload (⌘⇧R) before chasing a layout report that doesn't reproduce.
 - **Analysis board: "Play bot from here"** (2026-10-09, user's calls: always there; the level picker only after
-  it's clicked, then the button reads Start, ✕ cancels; `abPicking`, kept across re-renders). In
+  it's clicked, then the button reads Start, ✕ cancels; `abPicking`, kept across re-renders and moves, reset by `setReview()` so a
+  new board never opens with it showing). In
   `#summary` whenever the board has no game moves (FEN, 📌 position, editor's Analyse): `#ab-level` (the Play
   dialog's levels shown as "Bot 1500", shared localStorage `botLevel`) + `playBotFromHere()`: you take the side at
   the bottom, the line on the board becomes `play.prefix` (◀ walks it, Maia sees it), no clock; the bot moves first
@@ -412,7 +429,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   e.g. `CURVE_RATINGS`, the coach's `db='lichess'` bands). Not converted: a chess.com blitz/bullet game's
   ratings (taken as rapid). Panel: "Human moves" under Stockfish's lines with **one rating for both sides** (`maiaRating()`, `#maia-rating`,
   localStorage `maiaElo`; the opponent at the same rating; user's call 2026-10-07: Stockfish's list is the
-  absolute one, Maia's "the typical player"; the scoreboard's picker mirrors it); a row click plays the move where `canMove` allows it. `pct` is "how likely a
+  absolute one, Maia's "the typical player"; the scoreboard's picker in the Top player moves heading mirrors it); a row click plays the move where `canMove` allows it. `pct` is "how likely a
   human plays it", never quality.
 - Setup per clone: `pip install git+https://github.com/CSSLab/maia3.git` (not in `requirements.txt`, torch is
   ~600 MB); the checkpoint downloads from Hugging Face on first use. Missing package = section hidden
@@ -518,6 +535,9 @@ file says what is true now. Last full cleanup: 2026-10-03.
   plus Book = moves while every position so far is in the ECO table. "Practice from this game": the game's
   missed/allowed groups from `data/my_puzzles.json` (button = that group in Your mistakes, chips jump to the move);
   games the miner hasn't seen say so.
+- **Layout** (2026-10-10 restyle; user: "almost super cool but looks a bit off"): one three-column grid (`.rp-table`:
+  White | labels | Black) for the player tiles (colour chip, name, accuracy, "Your accuracy" + green border on yours)
+  and the grade rows, so they line up; counts coloured by grade when non-zero, zeros faint; no now-line at move 0.
 - Not built: grade icons on the board, a time graph (reviews keep no clock times; chess.com PGNs have `%clk`, not
   checked), a game rating estimate (declined: a guess on a guess).
 
@@ -724,11 +744,37 @@ file says what is true now. Last full cleanup: 2026-10-03.
   (`_label()`); course-titled sections fall back to "from your opening files".
 - **State 2026-10-10:** `openings.md` + `openings2.md`, `openings3.md`, `openings5.md`, `markdown5.md` → 2,705
   lines, 21,624 positions, **524 traps**. Rebuilds reuse cached evals; a cold batch is ~380 new positions/min.
-- **Viewing them** ("Opening files" in the side nav, Learn; 2026-10-10): `repertoire.browse()` → `GET
-  /api/repertoire`: every line grouped by the header it sits under (any `#` level; the same title in two files is
-  one group), with its `"name"` ("Unnamed Line" → none), deepest ECO name and the first known trap move along it.
-  Cached by source hash + index object (~3 s cold). The dialog fills a group only when opened; a line opens on the
-  demo board (`openDemo()` with a `sub` text; the trap move carries a note). Read-only.
+- **Viewing them** ("Explore lines" in the side nav, Learn; 2026-10-10): `repertoire.browse()` → `GET
+  /api/repertoire`: sections (header, any `#` level, tidied by `_clean_title()`; the same title in two files is one
+  section) → groups (the line's own `"name"`, else its deepest ECO name shortened by `_short_name()` against the
+  header: "Sicilian Defense: Kan Variation, Knight Variation" under "Sicilian Kan" is "Knight Variation") → lines
+  (`div`: a few moves from where the line leaves its closest sibling, so a group's lines tell apart without the
+  whole move list; first known `trap`). A line that is only the start of another in its section, unnamed, is
+  dropped (88). ~2,700 lines → ~1,100 groups. The list shows names only (user's call, 2026-10-10: no line counts or
+  trap tags on the right; traps show on the board): header cards whose title pins while you scroll them, rows on one
+  left edge (chevron or blank), names up to two lines, branches indented; search results are a card each. Cached by source hash + index object (~3-7 s cold, warmed in a thread
+  at startup; the page fetches it 3 s after load). User's call: no full move strings on screen.
+- **Search** (`repSearch()` in app.js, in the browser over `repIndex`, ~5 ms a keystroke): tokens that look like
+  moves (`repMoveKey()`: case, move numbers, x + # ! ?, 0-0/O-O folded; "NF3", "1...c5", "cd4" work) must appear
+  in order in the line: starts with them > all in a row > in order with gaps (tightest stretch wins), ties to the
+  shorter line. Other tokens are words, ANDed, matched in the group name > ECO/line name > header, by word start,
+  the field run together ("counterattack" vs "Counter Attack") or one typo for 5+ letters (`repNear()`, OSA, so
+  "nadjorf"/"sicilain" match). Results are group rows (name, then header), best 80; ≤ 3 fold out; Enter
+  opens the first; a line found by moves opens on the demo board stopped where the typed moves end. The user's
+  expectation that "e4 nf3 a6" finds only the Najdorf can't hold: 136 lines have those moves in order (Kan,
+  O'Kelly, Ruy Lopez …a6); the O'Kelly ranks first (tightest), and the files' only Najdorf is named "Nadjorf".
+- **Its own mode** (user's call: it shouldn't take over the scoreboard whatever is open): clicking it leaves
+  whatever is on the board for a fresh analysis board (`/api/analysis`) and shows the list in the scoreboard's
+  place (`body.rep-mode`, `setRepMode()`/`repApply()`, localStorage `repMode`: `.score-body` hidden, `.rep-body`
+  shown, the Full Explorer dropdown closed). Anything else that takes the board ends it: `setReview()` (game, bot
+  game, puzzles, lesson, endgame, Analysis board, 📌 position) unless passed `keepMode` (refresh restore and first
+  load pass it) and `openEditor()`. ‹ in the panel header ends it too, leaving the board; the nav item only enters (clicked again it just focuses the search). A
+  line opens as a demo flagged `explore`: the top row reads "Line · <opening + branch> · <header> · Clear board"
+  instead of "Demo board · Back to my game"; under the board, the line's `"name"` from the file when it has one
+  (user's call: the file's own text belongs there; one line, full text in the tooltip; it's the only text the files
+  carry per line), plus "off the line: your moves" once you leave it. A named line's top row shows only its branch. No "Play bot from here" in this mode (user's call: it's for looking). The nav item shows `.on`; on phones the middle tab reads "Lines". While it's on,
+  `repMode()` stops `requestScoreboard`, `renderKeyCard` and `requestMaiaLines` (no engine work for a hidden
+  panel; so no live tactic alert either); leaving calls `update()`. Read-only.
 - Shown on review cards (`fell` / `punished` / `missed`) and the bot-game card (`trap_punish`, `trap_warn`),
   via `trapRow()` with a ▶ refutation demo. Not tested: a live bot game reaching a trap (rare with Maia/Stockfish
   until the bot uses an opening book). Some labels are odd where a line passes a position the ECO table names

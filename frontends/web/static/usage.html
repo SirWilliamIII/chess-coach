@@ -9,6 +9,12 @@
   <link rel="stylesheet" href="/static/style.css">
   <style>
     .wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 48px; }
+    /* the app's nav styles don't apply here: one row, as wide as the page */
+    body > header { max-width: 980px; margin: 0 auto; padding: 20px 16px 0; display: flex; align-items: center;
+      justify-content: space-between; gap: 12px; box-sizing: border-box; }
+    body > header .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
+    body > header .logo { width: 26px; height: 26px; }
+    body > header .btn { font-size: 13px; padding: 6px 12px; }
     .top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
     .top h1 { margin: 0; font-size: 22px; }
     .range { display: flex; gap: 6px; }

@@ -9,6 +9,12 @@
   <link rel="stylesheet" href="/static/style.css">
   <style>
     .wrap { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
+    /* the app's nav styles don't apply here: one row, as wide as the page */
+    body > header { max-width: 860px; margin: 0 auto; padding: 20px 16px 0; display: flex; align-items: center;
+      justify-content: space-between; gap: 12px; box-sizing: border-box; }
+    body > header .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
+    body > header .logo { width: 26px; height: 26px; }
+    body > header .btn { font-size: 13px; padding: 6px 12px; }
     .wrap h1 { margin: 0 0 14px; font-size: 22px; }
     #lib-q { width: 100%; margin: 0 0 10px; padding: 10px 12px; font-size: 15px; }
     .count { color: var(--muted); font-size: 13px; margin: 0 0 6px; }
@@ -30,7 +36,7 @@
 
   <div class="wrap">
     <h1>📚 Lessons</h1>
-    <input id="lib-q" placeholder="Search your coach answers: back rank, Najdorf, knight fork…" autocomplete="off">
+    <input id="lib-q" aria-label="Search your coach answers" autocomplete="off">
     <div class="lib-filters">
       <label class="toggle"><input type="checkbox" id="lib-starred"> ★ Favorites</label>
       <label class="toggle"><input type="checkbox" id="lib-habits"> 🧠 Habits only</label>

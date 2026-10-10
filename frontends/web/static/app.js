@@ -557,6 +557,30 @@ function renderPlayBotButtons() {
   if (abPicking) fillBotLevels($('ab-level'));
 }
 
+// The line under the board says what this board is, in one line, and nothing the rows above it already say (the
+// names, the opening, the status): user's call, 2026-10-10, after "Opening puzzle · Your game vs … · Caro-Kann
+// Defense: Advance Variation" under a puzzle from their own game. #game-info only holds a loaded game's ☆ (hidden
+// on phones with the title); the text goes in #board-sub, which phones show. `tip` = the whole text when cut off.
+function setFoot(text, tip = '') {
+  $('board-sub').textContent = text || '';
+  if (tip || !canTitle()) $('board-sub').title = tip;  // a loaded game keeps "Double-click to give this game a title"
+}
+
+const RESULT_WORDS = { '1-0': 'White won', '0-1': 'Black won', '1/2-1/2': 'Draw', '½-½': 'Draw' };
+
+function resultWords(r) {
+  if (!RESULT_WORDS[r.result]) return 'Unfinished';
+  if (r.result.includes('/') || r.result.includes('½') || !r.player_color) return RESULT_WORDS[r.result];
+  return (r.result === '1-0') === (r.player_color === 'white') ? 'You won' : 'You lost';
+}
+
+function gameDate(r) {
+  // "2026.10.04" as a local date (new Date("2026-10-04") is UTC midnight: the day before, west of Greenwich)
+  const [y, m, day] = (r.date || '').split(/[.-]/).map(Number);
+  if (!y || !m || !day) return '';
+  return new Date(y, m - 1, day).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 function renderInfo() {
   const r = state.review;
   dockGamePanel(!state.demo && !state.play && !state.study && !r.moves.length);
@@ -568,23 +592,24 @@ function renderInfo() {
   syncTakeback();
   document.querySelectorAll('.you-pick').forEach((el) => { el.onclick = () => setYou(el.dataset.color); });
   document.body.classList.toggle('demo-mode', !!state.demo);
+  $('game-info').textContent = '';
+  setFoot('');
   if (state.demo) return renderDemoInfo();
 
   if (state.play) return renderPlayInfo();
   if (state.puzzle) return renderPuzzleInfo();
   if (state.study) return renderStudyInfo();
   if (!r.moves.length) {
-    $('game-info').textContent = '';  // a lesson or a puzzle may have labelled it
-    $('board-sub').textContent = '';
     // no "I'm playing" toggle (removed 2026-10-07, user's call): the name labels (.you-pick) still pick your side
-    renderPlayBotButtons();
+    // Explore lines is for looking, not playing (user's call): no "Play bot from here" there
+    if (repMode()) $('summary').innerHTML = ''; else renderPlayBotButtons();
     return;
   }
+  // the names are on the rows above and below the board, the opening in the pill: here the ☆, the result, the date
   $('game-info').innerHTML = `<button class="fav-btn${r.favorite ? ' on' : ''}" id="fav-btn"
-    title="${r.favorite ? 'Remove from favorites' : 'Add to favorites'}">${r.favorite ? '★' : '☆'}</button>`
-    + `${esc(r.white)} vs ${esc(r.black)} · ${esc(r.result)}`;
+    title="${r.favorite ? 'Remove from favorites' : 'Add to favorites'}">${r.favorite ? '★' : '☆'}</button>`;
   $('fav-btn').onclick = toggleFavorite;
-  $('board-sub').textContent = '';  // the opening title above (#opening-tag) names the opening now
+  setFoot([resultWords(r), gameDate(r)].filter(Boolean).join(' · '));
 
   // no "Replay as" (removed 2026-10-09, user's call): your side is at the bottom; play on from any move vs the bot
   renderPlayBotButtons();
@@ -624,7 +649,7 @@ function renderMoveList(box) {
   if (state.demo) return renderDemoMoves(box);
   if (state.play) return renderPlayMoves(box);
   if (!r.moves.length) {
-    box.innerHTML = '<div class="empty">No game loaded. Use “Find game by username” or “Load game”, or just play moves on the board.</div>';
+    box.innerHTML = '';
     return;
   }
   box.innerHTML = movesRows(r.moves, cell);
@@ -892,7 +917,7 @@ function requestScoreboard(c) {
   clearTimeout(sbTimer);
   const token = ++sbToken;
   sbError = null;
-  if (!c || !state.engineOn || state.editor) return;
+  if (!c || !state.engineOn || state.editor || repMode()) return;
   const line = currentLine();
   const L = sbLine();
   const { now, k } = sbTargets(L);
@@ -1024,6 +1049,12 @@ function sbQuick(fen, turn) {
 // One list of moves, the same columns for both lists so they compare row for row: Stockfish's rank, the move,
 // the eval after it, and how often players at the chosen rating play it. The header is only the
 // list's name (user's call, 2026-10-06: no column labels).
+// The players' rating, picked where it's used (user's call, 2026-10-10: in the panel header it read as a random bot
+// setting): a mirror of the Human moves panel's #maia-rating, wired in renderKeyCard()
+function sbRatePick() {
+  return `<select class="sb-rate" title="Players' rating, for both sides: what Maia predicts players of this rating play">${$('maia-rating').innerHTML}</select>`;
+}
+
 function sbCandidates(rows, turn, bestEval, title = 'Top bot moves', cls = 'sf', busy = '', after = null) {
   const top = Math.max(1, ...rows.map((r) => r.pct || 0));
   // evals are White's side, so on Black's turn the best row has the lowest number: say whose move it is (user's
@@ -1062,7 +1093,7 @@ function mlHtml(fen, uci) {
 }
 
 async function requestMaiaLines() {
-  if (!mlOpen() || !mlShown || mlBusy) return;
+  if (!mlOpen() || !mlShown || mlBusy || repMode()) return;
   const { fen, ucis } = mlShown;
   const uci = ucis.find((u) => !mlCache.has(mlKey(fen, u)));
   if (!uci) return;
@@ -1178,7 +1209,7 @@ function sbBefore(L, now, u) {
     // the eval is off (a bot game without it): no costs, only what players at this rating pick
     const mm = lastMaia?.fen === fen ? lastMaia.moves : null;
     const top = Math.max(1, ...(mm || []).map((m) => m.pct));
-    return `<section class="sb-card live"><div class="sb-head"><b>What ~${rating}s play</b>${mm ? '' : '<span class="sb-busy"></span>'}`
+    return `<section class="sb-card live"><div class="sb-head"><b>What players at ${sbRatePick()} play</b>${mm ? '' : '<span class="sb-busy"></span>'}`
       + `</div><div class="sb-table">${(mm || []).map((m) => `<button class="sb-row maia-only" data-uci="${esc(m.uci)}">`
       + `<b class="sb-mv">${esc(m.move)}</b><span class="sb-pop"><span class="sb-pbar"><span style="width:${Math.max(3, 100 * m.pct / top)}%"></span></span></span></button>`).join('') || '<div class="sb-row skel"><span></span></div>'.repeat(5)}</div></section>`;
   }
@@ -1205,7 +1236,7 @@ function sbBefore(L, now, u) {
   const toggle = `<button class="ml-toggle" title="How ~${rating} players typically go on after each move (Maia, scored by Stockfish)">${open ? '▾' : '▸'} Full lines</button>`;
   return `<section class="sb-card live"><div class="sb-body${hide ? ' tac-hide' : ''}">${tac && tac.fen === fen ? sbTactic(tac) : ''}<div>`
     + sbCandidates(best, turn, engine.eval_white, 'Top bot moves', 'sf')
-    + (players.length ? sbCandidates(players, turn, engine.eval_white, `Top player moves${toggle}`, 'maia', '', open ? (r) => mlHtml(fen, r.uci) : null) : '')
+    + (players.length ? sbCandidates(players, turn, engine.eval_white, `Top player moves at ${sbRatePick()}${toggle}`, 'maia', '', open ? (r) => mlHtml(fen, r.uci) : null) : '')
     + `</div>${sb.ladder?.length ? `<div><div class="sb-sub-h"><span>Top pick by rating</span><span class="sb-engine" data-uci="${esc(engine.uci)}">Engine <b>${esc(engine.move)}</b></span></div>${sbTrack(sb, rating)}</div>` : ''}`
     + `</div></section>`;
 }
@@ -1277,7 +1308,7 @@ function reportGraph(rep, tall) {
   const now = Math.min(n, state.ply + state.extra.length);
   return `<div class="rp-graph${tall ? ' tall' : ''}" data-n="${n}"><svg viewBox="0 0 100 100" preserveAspectRatio="none">`
     + `<polygon points="0,100 ${pts} 100,100" class="rp-white"/><line x1="0" y1="50" x2="100" y2="50" class="rp-mid"/></svg>`
-    + `<i class="rp-now" style="left:${100 * now / n}%"></i>${dots}</div>`;
+    + `${now ? `<i class="rp-now" style="left:${100 * now / n}%"></i>` : ''}${dots}</div>`;  // at move 0 it was a stray line on the edge
 }
 
 function reportStrip(rep) {
@@ -1287,24 +1318,33 @@ function reportStrip(rep) {
     + `<span>Accuracy <b>${a('white')}</b> · <b>${a('black')}</b></span><button class="rp-toggle">▸ Game report</button></div></section>`;
 }
 
+// One three-column grid for the whole comparison (user, 2026-10-10: "almost super cool but looks a bit off": each
+// row was its own grid, so the names, accuracies and counts didn't line up): White's column | labels | Black's.
 function reportFull(rep, closable) {
   const r = state.review;
   const head = `<div class="sb-head rp-head"><b>Game report</b>${closable ? '<button class="rp-toggle">▾ Hide</button>' : ''}</div>`;
   if (!rep) return `<section class="sb-card report">${head}<div class="rp-graph tall skel"></div></section>`;
   const you = r.player_color;
-  const name = (c) => `<span class="rp-name">${esc(r[c])}${you === c ? ' <i>(you)</i>' : ''}</span>`;
-  const rows = REPORT_GRADES.map(([g, label]) => `<div class="rp-row"><span class="rp-n">${rep.sides.white.counts[g]}</span>`
-    + `<span class="rp-g ${g}"><i></i>${label}</span><span class="rp-n">${rep.sides.black.counts[g]}</span></div>`).join('');
+  const tile = (c) => {
+    const acc = rep.sides[c].accuracy;
+    // "you" in the caption, not a badge beside the name: the tiles are narrow and the name needs the room
+    return `<div class="rp-tile${you === c ? ' you' : ''}"><div class="rp-who"><i class="rp-chip ${c}"></i>`
+      + `<span class="rp-name" title="${esc(r[c])}">${esc(r[c])}</span></div>`
+      + `<div class="rp-acc">${acc ?? '–'}</div><div class="rp-cap">${you === c ? 'Your accuracy' : 'Accuracy'}</div></div>`;
+  };
+  const count = (c, g) => {
+    const n = rep.sides[c].counts[g];
+    return `<span class="rp-n ${n ? g : 'zero'}">${n}</span>`;
+  };
+  const rows = REPORT_GRADES.map(([g, label]) => `${count('white', g)}<span class="rp-g ${g}"><i></i>${label}</span>${count('black', g)}`).join('');
   const pr = rep.practice;
-  const practice = !pr.mined ? '<p class="hint">Tactics not looked for in this game yet: "Update from my games" in Puzzles.</p>'
-    : !pr.groups.length ? '<p class="hint">No missed or allowed tactics found in this game.</p>'
-    : pr.groups.map((g) => `<div class="rp-practice"><button class="btn ghost small" data-practice="${esc(g.key)}">${esc(g.title)}</button>`
-      + g.plies.map((p) => `<button class="rp-at" data-ply="${p}">${esc(r.moves[p - 1].label + r.moves[p - 1].san)}</button>`).join('') + '</div>').join('');
+  const practice = !pr.mined ? '<p class="rp-empty">Not checked for tactics yet: "Update from my games" in Puzzles does it.</p>'
+    : !pr.groups.length ? '<p class="rp-empty">No missed or allowed tactics in this game.</p>'
+    : pr.groups.map((g) => `<div class="rp-practice"><button class="rp-drill" data-practice="${esc(g.key)}">${esc(g.title)}<span>›</span></button>`
+      + `<span class="rp-ats">${g.plies.map((p) => `<button class="rp-at" data-ply="${p}" title="Go to this move">${esc(r.moves[p - 1].label + r.moves[p - 1].san)}</button>`).join('')}</span></div>`).join('');
   return `<section class="sb-card report">${head}${reportGraph(rep, true)}`
-    + `<div class="rp-row rp-names">${name('white')}<span></span>${name('black')}</div>`
-    + `<div class="rp-row rp-acc"><b>${rep.sides.white.accuracy ?? '–'}</b><span>Accuracy</span><b>${rep.sides.black.accuracy ?? '–'}</b></div>`
-    + `<div class="rp-grades">${rows}</div>`
-    + `<div class="sb-sub-h"><span>Practice from this game</span></div>${practice}</section>`;
+    + `<div class="rp-table">${tile('white')}<span></span>${tile('black')}${rows}</div>`
+    + `<div class="rp-section"><div class="rp-section-h">Practice from this game</div>${practice}</div></section>`;
 }
 
 function wireReport(box) {
@@ -1322,18 +1362,25 @@ function wireReport(box) {
 }
 
 function renderKeyCard() {
+  if (repMode()) return;  // Explore lines has the panel; leaving it re-renders
   const box = $('key-card');
+  // a search landing mid-pick would rebuild the heading and snap the rating dropdown shut: catch up on blur
+  if (document.activeElement?.matches?.('#key-card .sb-rate')) return;
   const sfOn = state.engineOn;
   const humansOn = maiaOn();
   // an endgame drill with the eval off: the numbers would only be half there (and Maia's are no help)
   if (puzzleLive()) {
-    $('sb-rating').classList.add('hidden');
     box.classList.remove('hidden');
     box.innerHTML = '<p class="hint sb-off">Hidden until the puzzle is over: the engine\'s moves would give the answer away.</p>';
     return;
   }
-  if (state.editor || !state.review || !(sfOn || humansOn) || (state.play?.endgame && !sfOn)) {
-    $('sb-rating').classList.add('hidden');
+  if (state.play?.endgame && !sfOn) {
+    // an empty panel looked broken: say why it's empty, like a live puzzle does
+    box.classList.remove('hidden');
+    box.innerHTML = '<p class="hint sb-off">Off during the drill: the engine would give it away.</p>';
+    return;
+  }
+  if (state.editor || !state.review || !(sfOn || humansOn)) {
     return void box.classList.add('hidden');
   }
   box.classList.remove('hidden');
@@ -1368,17 +1415,13 @@ function renderKeyCard() {
   if (!mlBtn) mlShown = null;  // no live card with player moves: nothing to fetch for
   requestMaiaLines();
 
-  // the rating picker sits in the panel's header, a mirror of the Human moves panel's one rating
-  const pick = $('sb-rating');
-  pick.classList.toggle('hidden', !humansOn);
-  if (humansOn) {
-    const sel = $('kc-rating');
-    if (sel.options.length !== $('maia-rating').options.length) sel.innerHTML = $('maia-rating').innerHTML;
+  // the rating pickers in the list headings drive the Human moves panel's dropdown, which stores it and refetches
+  box.querySelectorAll('.sb-rate').forEach((sel) => {
     sel.value = $('maia-rating').value;
-    pick.title = "Players' rating, for both sides: what Maia predicts players of this rating play";
-    // drive the panel's dropdown, which stores the rating and refetches
+    sel.onclick = (e) => e.stopPropagation();
+    sel.onblur = () => setTimeout(renderKeyCard);
     sel.onchange = () => { $('maia-rating').value = sel.value; $('maia-rating').dispatchEvent(new Event('change')); };
-  }
+  });
 
   // Moves on the live card (rows, track segments, the engine's pick): hover draws the move, with no text (user's
   // call, 2026-10-07); a row click plays it (where you could play it yourself; otherwise playMaiaMove only shows
@@ -1661,7 +1704,7 @@ function restoreBoard(review) {
   if (!snap || snap.key !== reviewKey(review)) return false;
   const play = snap.play && replays(snap.play.startFen, snap.play.moves) ? snap.play : null;
   if (play?.clock) play.clock.lastTick = Date.now();  // the time away isn't charged to anyone
-  setReview(review, null, play);
+  setReview(review, null, play, { keepMode: true });
   if (!play) {
     state.ply = Math.max(0, Math.min(snap.ply || 0, review.moves.length));
     const base = state.ply ? review.moves[state.ply - 1].fen_after : review.start_fen;
@@ -2298,7 +2341,7 @@ function toolLabel(t) {
   const where = `move ${at.no}, ${at.side} to move`;
   if (t.name === 'move_report') return `checked ${at.side}'s move ${at.no}`;
   if (t.name === 'compare_moves') return `compared ${(i.moves || []).join(', ')} · move ${at.no}`;
-  if (t.name === 'analyze_position') return `analysed · ${where}`;
+  if (t.name === 'analyze_position') return `analyzed · ${where}`;
   if (t.name === 'find_tricks') return `looked for tricks · ${where}`;
   if (t.name === 'opening_explorer') return `checked real games · ${where}`;
   if (t.name === 'opening_lines') return `mapped the main lines · ${where}`;
@@ -2331,7 +2374,7 @@ async function ask(question, opts = {}) {
     if (!opts.hideQuestion) addMsg('user', esc(question), positionLabel());
     $('chat-text').value = '';
   }
-  const pending = addMsg('coach', `<span class="thinking">${opts.silent ? 'Spotted something' : 'Analysing'}</span>`);
+  const pending = addMsg('coach', `<span class="thinking">${opts.silent ? 'Spotted something' : 'Analyzing'}</span>`);
   try {
     const where = opts.at || (state.demo
       ? { ply: Math.max(0, state.demo.ply - 1), extra: [...state.demo.then_moves, ...state.demo.moves.slice(0, state.demo.step)] }
@@ -2345,7 +2388,7 @@ async function ask(question, opts = {}) {
           const { steps } = await api('/api/chat/progress');
           const shown = steps.filter((t) => t.name !== 'show_on_board' && t.name !== 'move_quiz' && t.name !== 'jump_to_move');
           if (polling && shown.length) {
-            pending.innerHTML = `<span class="thinking">${opts.silent ? 'Spotted something' : 'Analysing'}</span>`
+            pending.innerHTML = `<span class="thinking">${opts.silent ? 'Spotted something' : 'Analyzing'}</span>`
               + `<div class="steps">${shown.map((t) => `<div>✓ ${esc(toolLabel(t))}</div>`).join('')}</div>`;
           }
         } catch { /* ignore */ }
@@ -2481,7 +2524,9 @@ function resetChatUi(note) {
 
 // ---------------------------------------------------------------- loading games
 
-function setReview(review, note, play = null, { keepChat = false } = {}) {
+function setReview(review, note, play = null, { keepChat = false, keepMode = false } = {}) {
+  if (!keepMode && repMode()) repApply(false);  // another mode takes the board: Explore lines ends
+  abPicking = false;  // a half-open "Play bot from here" picker belongs to the board it was opened on
   closeDemo(false);
   state.study = null;
   closeEditor(false);
@@ -2490,7 +2535,6 @@ function setReview(review, note, play = null, { keepChat = false } = {}) {
   state.play = play;
   openingNote = { family: null, key: null, count: 0 };
   $('opening-tag').classList.add('hidden');  // a new game names its own opening
-  pzSyncTacticsBtn(null);
   notedPlies.clear();
   bigMomentAsked.clear();
   state.review = review;
@@ -2511,7 +2555,7 @@ async function loadGame(ref, me = state.me || null) {
       await new Promise((r) => setTimeout(r, 400));
       const job = await api('/api/job');
       if (job.status === 'running') {
-        if (job.total) $('overlay-text').textContent = `Analysing position ${job.done} / ${job.total}`;
+        if (job.total) $('overlay-text').textContent = `Analyzing position ${job.done} / ${job.total}`;
         continue;
       }
       if (job.status === 'error') throw new Error(job.error);
@@ -2552,12 +2596,12 @@ async function showSaved() {
       const meWhite = g.white.toLowerCase() === me, meBlack = g.black.toLowerCase() === me;
       const won = (g.result === '1-0' && meWhite) || (g.result === '0-1' && meBlack);
       const lost = (g.result === '1-0' && meBlack) || (g.result === '0-1' && meWhite);
-      const res = !(meWhite || meBlack) ? esc(g.result) : won ? 'Won' : lost ? 'Lost' : g.result === '*' ? '–' : 'Draw';
+      const res = g.result === '*' ? '' : !(meWhite || meBlack) ? esc(g.result) : won ? 'Won' : lost ? 'Lost' : 'Draw';
       const when = new Date(g.saved_at * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
       return `<div class="game-row" data-id="${esc(g.game_id)}">
-        <span class="who">${esc(g.white)}${g.white_elo ? ` (${esc(g.white_elo)})` : ''} – ${esc(g.black)}${g.black_elo ? ` (${esc(g.black_elo)})` : ''}</span>
+        <span class="who">${g.white === '?' && g.black === '?' ? 'Untitled game' : `${esc(g.white)}${g.white_elo ? ` (${esc(g.white_elo)})` : ''} – ${esc(g.black)}${g.black_elo ? ` (${esc(g.black_elo)})` : ''}`}</span>
         <span class="res ${won ? 'win' : lost ? 'loss' : ''}">${res}</span>
-        <span class="meta">saved ${esc(when)} · ${esc(g.opening || '')}</span>
+        <span class="meta">${[`saved ${esc(when)}`, esc(g.opening || '')].filter(Boolean).join(' · ')}</span>
       </div>`;
     }).join('');
     list.querySelectorAll('.game-row').forEach((el) => {
@@ -2565,7 +2609,7 @@ async function showSaved() {
         $('dlg-games').close();
         try {
           const r = await api('/api/saved/open', { game_id: el.dataset.id, me: state.me || null });
-          setReview(r, `Opened ${r.white} vs ${r.black} from this Pi.`);
+          setReview(r, `Opened ${r.white} vs ${r.black}.`);
         } catch (e) {
           addMsg('error', esc(e.message));
         }
@@ -2582,15 +2626,15 @@ async function showFavorites() {
   try {
     const favs = await api('/api/favorites');
     if (!favs.length) {
-      list.innerHTML = '<p class="hint">No favorites yet. Open a game and click the ☆ next to the players’ names.</p>';
+      list.innerHTML = '<p class="hint">No favorites yet: ☆ under the board stars a game.</p>';
       return;
     }
     list.innerHTML = favs.map((g, i) => {
       const who = `${esc(g.white)}${g.white_elo ? ` (${esc(g.white_elo)})` : ''} – ${esc(g.black)}${g.black_elo ? ` (${esc(g.black_elo)})` : ''}`;
-      const meta = [g.title ? who : null, g.date ? esc(g.date.replaceAll('.', '-')) : null, esc(g.opening || '')].filter(Boolean).join(' · ');
+      const meta = [g.title ? who : null, gameDate(g) || null, esc(g.opening || '')].filter(Boolean).join(' · ');
       return `<div class="game-row" data-i="${i}">
         <span class="who">★ ${g.title ? esc(g.title) : who}</span>
-        <span class="res">${esc(g.result)}</span>
+        <span class="res">${g.result === '*' ? '' : esc(g.result)}</span>
         <span class="meta">${meta}</span>
       </div>`;
     }).join('');
@@ -2644,10 +2688,10 @@ async function pollPrefetch() {
   buttons.forEach((b) => { b.disabled = st.status === 'running'; });
   let text = '';
   if (st.status === 'running') {
-    text = st.total ? `Analysing game ${Math.min(st.done + 1, st.total)} of ${st.total}… (you can keep using the app)` : 'Fetching game list…';
+    text = st.total ? `Analyzing game ${Math.min(st.done + 1, st.total)} of ${st.total}…` : 'Fetching game list…';
     prefetchTimer = setTimeout(pollPrefetch, 1500);
   } else if (st.status === 'done') {
-    text = `Done: ${st.total} games ready offline (${st.new} newly analysed).`;
+    text = `Done: ${st.total} games ready offline (${st.new} newly analyzed).`;
   } else if (st.status === 'error') {
     text = st.error;
   }
@@ -2761,11 +2805,19 @@ function demoLabels(d) {
 
 function renderDemoInfo() {
   const d = state.demo;
-  $('player-top').innerHTML = `<span class="demo-tag">Demo board</span><span class="demo-sub">your game is paused</span>
+  const explore = d.explore && repMode();
+  // a line from Explore lines: on top its opening (when the file gives it no name) and header; under the board the
+  // name the file gives it (user's call: the file's own text belongs there), and whether you've left the line
+  $('player-top').innerHTML = explore
+    ? `<span class="demo-tag">Line</span>${d.short ? `<span class="demo-line" title="${esc(d.title)}">${esc(d.short)}</span>` : ''}<span class="demo-sub">${esc(d.section)}</span>
+    <button class="btn ghost small" id="demo-exit-top">Clear board</button>`
+    : `<span class="demo-tag">Demo board</span><span class="demo-sub">your game is paused</span>
     <button class="btn small" id="demo-exit-top">Back to my game</button>`;
   $('demo-exit-top').onclick = () => closeDemo();
-  $('game-info').textContent = d.title;
-  $('board-sub').textContent = d.edited ? 'Your own line from here: keep exploring, or ask the coach about it.' : d.sub || 'The coach’s line. Step through it, or move pieces to try something else.';
+  // a coach demo: what it shows (the top row says it's a demo); an Explore lines line: the file's name for it
+  const name = explore ? d.fileName : d.title;
+  const off = explore ? 'off the line: your moves' : 'your own moves';
+  setFoot(name ? `${name}${d.edited ? ` · ${off}` : ''}` : d.edited ? off[0].toUpperCase() + off.slice(1) : '', name || '');
   const note = d.step ? d.notes[d.step - 1] : '';
   $('summary').innerHTML = `<div class="play-buttons">
       <button class="btn ghost small" id="demo-replay">Replay</button>
@@ -2829,9 +2881,10 @@ function editorProblem(fen) {
 }
 
 function openEditor() {
+  if (repMode()) repApply(false);
   closeDemo(false);
   const c = state.review ? currentGame() : new Chess();
-  state.editor = { tool: 'move', turn: c.turn() === 'w' ? 'white' : 'black' };
+  state.editor = { tool: 'move', turn: c.turn() === 'w' ? 'white' : 'black', openedGp: $('gp-details').classList.contains('hidden') };
   cg.set({ fen: c.fen(), lastMove: undefined });
   buildEditorPanel();
   update();
@@ -2840,6 +2893,7 @@ function openEditor() {
 
 function closeEditor(render = true) {
   if (!state.editor) return;
+  if (state.editor.openedGp) closeGpDropdown();
   state.editor = null;
   document.body.classList.remove('editor-mode');
   cg.set({ selected: undefined });
@@ -2849,7 +2903,7 @@ function closeEditor(render = true) {
 function buildEditorPanel() {
   const img = pieceImages();
   const tools = ['white', 'black'].map((color) => `<div class="pal-row">${PALETTE_ROLES.map((role) =>
-    `<button class="pal" data-tool="${color}-${role}" title="Place ${color} ${role}" style="background-image:${esc(img[`${color}-${role}`])}"></button>`).join('')}</div>`).join('');
+    `<button class="pal" data-tool="${color}-${role}" title="Place ${color} ${role}: click squares; drag a piece off the board to remove it" style="background-image:${esc(img[`${color}-${role}`])}"></button>`).join('')}</div>`).join('');
   $('moves').innerHTML = `<div class="editor">
     <button class="btn ghost small" id="ed-preset-toggle">Endgame presets…</button>
     <label class="field hidden" id="ed-preset-field"><span class="label">Endgame presets</span>
@@ -2859,7 +2913,6 @@ function buildEditorPanel() {
       <button class="pal-mode" data-tool="remove">🗑 Remove</button>
     </div>
     ${tools}
-    <p class="hint">Pick a piece, then click squares to place it. Drag pieces to move them; drag one off the board to remove it.</p>
     <div class="field"><span class="label">Side to move</span>
       <div class="seg" id="ed-turn"><button data-turn="white">White</button><button data-turn="black">Black</button></div></div>
     <div class="play-buttons">
@@ -2922,19 +2975,19 @@ function updateEditor() {
   $('ed-turn').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.turn === ed.turn));
   if (document.activeElement !== $('ed-fen')) $('ed-fen').value = fen;
 
-  $('player-top').innerHTML = '<span class="demo-tag">Set-up board</span><span class="demo-sub">build any position, then play it or analyse it</span>';
+  $('player-top').innerHTML = '<span class="demo-tag">Set-up board</span>';
   $('player-bottom').innerHTML = '';
   document.body.classList.remove('demo-mode');
   document.body.classList.add('editor-mode');
   syncGameTitle();
-  $('game-info').textContent = '';  // the "Set-up board" tag above the board says it; a title here wrapped beside the buttons
-  $('board-sub').textContent = 'Great for endgame practice: set it up, then play it out against the bot.';
+  $('game-info').textContent = '';  // the "Set-up board" tag above the board says what this is
+  setFoot('');
   $('summary').innerHTML = `<div class="play-buttons">
       <button class="btn small" id="ed-play" ${problem ? 'disabled' : ''}>Play vs bot from here</button>
-      <button class="btn ghost small" id="ed-analyse" ${problem ? 'disabled' : ''}>Analyse</button>
+      <button class="btn ghost small" id="ed-analyse" ${problem ? 'disabled' : ''}>Analyze</button>
       <button class="btn ghost small" id="ed-save" ${problem ? 'disabled' : ''} title="Save this set-up to 📌 Positions">💾 Save</button>
       <button class="btn ghost small" id="ed-cancel">Cancel</button>
-    </div><div class="ed-status ${problem ? 'bad' : ''}" id="ed-status">${esc(problem || 'Position OK')}</div>`;
+    </div><div class="ed-status bad${problem ? '' : ' hidden'}" id="ed-status">${esc(problem || '')}</div>`;  // only what's wrong: a fine position needs no line (it pushed the board down)
   $('ed-play').onclick = () => { pendingFen = editorFen(); openPlayDialog(); };
   $('ed-analyse').onclick = analyseEditorPosition;
   $('ed-save').onclick = openSavePosition;
@@ -2959,7 +3012,7 @@ function updateEditor() {
     } catch (e) {
       if (token !== evalToken || !state.editor) return;
       $('ed-status').textContent = e.message;
-      $('ed-status').classList.add('bad');
+      $('ed-status').classList.remove('hidden');
       $('ed-play').disabled = $('ed-analyse').disabled = $('ed-save').disabled = true;
       $('engine-lines').innerHTML = '';
     }
@@ -3025,7 +3078,8 @@ async function playBotFromHere() {
   }
   const play = { color, level: level.id, levelName: level.name, startFen: review.start_fen,
     moves: prefix, prefix: prefix.length, view: prefix.length, over: null, thinking: false, clock: null,
-    ...(loaded ? { back: { game_id: r.game_id, ply: state.ply, color }, myElo: r[`${color}_elo_cc`] || undefined } : {}) };
+    ...(loaded ? { back: { game_id: r.game_id, ply: state.ply, color }, myElo: r[`${color}_elo_cc`] || undefined,
+      from: `${r.white} vs ${r.black}` } : {}) };
   setEngineVisible(recall('engineOn') !== '0');
   setReview(review, `Playing on from ${origin || 'this position'} against the ${level.name} bot. You have ${color}.`, play);
   if (playChess(play).turn() !== color[0]) botMove();
@@ -3786,7 +3840,7 @@ function studyCard(id) {
         + n.children.map((k) => n.children.length > 1
           ? `<button class="demo-btn study-try" data-try="${k}">${esc(studyNodes()[k].san)}${studyTryLabel(k)}</button>`
           : `<b>${esc(studyNodes()[k].san)}</b>`).join(' ')
-        + (n.children.length > 1 ? `<span class="card-sub">${n.maia ? `% = how often ~${st.data.human_rating} players play it · ` : ''}click one to see it, or let them choose</span>` : '') + '</div>');
+        + (n.children.length > 1 && n.maia ? `<span class="card-sub">% = how often ~${st.data.human_rating} players play it</span>` : '') + '</div>');
     }
   }
   if (st.mode === 'learn') {
@@ -3862,8 +3916,7 @@ const studyChipLive = (b) => !!state.study && !state.study.waiting && !state.dem
 
 function renderStudyInfo() {
   const st = state.study;
-  $('game-info').textContent = 'Opening lesson';
-  $('board-sub').textContent = `${st.data.name} (${st.data.eco}) · you play ${st.data.color}`;
+  setFoot(`Lesson · ${st.data.name}`, st.data.name);  // your side is on your name row
   const leaves = studyLeaves();
   const count = studyMasteredCount();
   let status = '';
@@ -3917,7 +3970,6 @@ async function requestOpening() {
   const hit = openingLines.get(key).filter((n) => n.ply <= now.at).pop();
   const tag = $('opening-tag');
   tag.classList.toggle('hidden', !hit);
-  pzSyncTacticsBtn(hit);
   if (!hit) return;
   tag.innerHTML = `<span class="ot-eco">${esc(hit.eco)}</span><span class="ot-name">${esc(hit.name)}</span>`;
   tag.title = `${hit.eco} · ${hit.name}`;
@@ -4416,8 +4468,11 @@ function reviewPlayedGame() {
 
 function renderPlayInfo() {
   const p = state.play;
-  $('game-info').textContent = 'Practice game vs bot';
-  $('board-sub').textContent = '';
+  // the bot and you are on the rows: here, what kind of game it is
+  const eg = p.endgame;
+  setFoot(eg ? `Endgame drill · ${EG_MODES[egModeFor(eg.spec, eg.mode)][0]} · ${eg.spec === 'pawns:even' ? 'Dead even' : egSpecLabel(eg.spec)}`
+    : p.backLesson ? `Played on from the ${p.backLesson.study.data.name} lesson`
+    : p.from ? `Playing on from ${p.from}` : 'Bot game');
   let status, cls = '';
   if (p.over) {
     status = p.over.text;
@@ -4630,7 +4685,7 @@ function renderEndgames() {
   const choice = (items, on, attr) => `<div class="eg-choices">${items.map(([k, label, sub]) =>
     `<button class="eg-choice${k === on ? ' on' : ''}" data-${attr}="${k}"><b>${esc(label)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</button>`).join('')}</div>`;
   if (egStep === 1) {
-    body.innerHTML = '<h3 class="eg-q">What do you want to practise?</h3>'
+    body.innerHTML = '<h3 class="eg-q">What do you want to practice?</h3>'
       + choice(Object.entries(EG_MODES).map(([k, [label, sub]]) => [k, label, sub]), mode, 'mode');
     body.querySelectorAll('[data-mode]').forEach((b) => {
       b.onclick = () => { egChoice.mode = b.dataset.mode; store('egMode', b.dataset.mode); egStep = 2; renderEndgames(); };
@@ -4672,8 +4727,7 @@ function renderEndgames() {
         : '<p class="hint">Stockfish at full strength (Maia isn\'t installed).</p>')
       + (human ? `<label class="eg-elo-row">Rating <select id="eg-elo" title="The human opponent's rating (chess.com rapid)">${
         humans.map((l) => `<option value="${l.elo}"${l === pick ? ' selected' : ''}>~${l.elo}</option>`).join('')}</select></label>` : '')
-      + `<div class="eg-start"><button class="btn" id="eg-go"${spec ? '' : ' disabled'}>Start drill</button></div>`
-      + '<p class="hint eg-foot">Every drill is a fresh random position with that material. Up to 7 pieces the result is exact (Lichess tablebase) and each of your moves is checked; bigger pawn set-ups use Stockfish. The eval bar is off.</p>';
+      + `<div class="eg-start"><button class="btn" id="eg-go"${spec ? '' : ' disabled'}>Start drill</button></div>`;
     body.querySelectorAll('[data-opp]').forEach((b) => {
       b.onclick = () => { egChoice.opp = b.dataset.opp; store('egOpp', b.dataset.opp); renderEndgames(); };
     });
@@ -4720,8 +4774,9 @@ async function startEndgame(spec, mode = egChoice.mode, pick = egChoice.color) {
   const play = { color, level: level.id, levelName: level.name, startFen: review.start_fen, moves: [], view: 0, over: null, thinking: false, clock: null,
     endgame: { spec, mode, pick, outcome: pos.outcome, expect: pos.outcome, source: pos.source, dtm: pos.dtm, mine: pos.mine, theirs: pos.theirs,
       points: pos.points, slips: 0, held: false, done: false } };
-  setEngineVisible(false);  // the eval bar would give the answer away; the toggle still turns it on
   setReview(review, `Endgame drill: ${egSpecLabel(spec)}, you have ${color}.`, play);
+  // after setReview: leaving a puzzle there turns the engine back on, which showed the eval bar in the drill
+  setEngineVisible(false);  // the eval bar would give the answer away; the toggle still turns it on
   egGoalCard(play, color);
   egProbe(review.start_fen);
 }
@@ -4885,30 +4940,6 @@ async function pzLoadTags() {
   return pzTags;
 }
 
-// "Queen's Pawn Game: London System" → "Queens_Pawn_Game_London_System", as Lichess tags puzzles
-const pzTagOf = (name) => name.replace(/[^A-Za-z0-9\- ]/g, '').trim().replace(/ /g, '_');
-
-// the puzzle topic for an ECO name: its variation group if the database has it, else its family
-function pzTopicFor(name) {
-  if (!pzTags) return null;
-  for (const part of [name.split(',')[0], name.split(':')[0]]) {
-    const tag = pzTagOf(part);
-    if (pzTags[tag]?.n >= 20) return { label: pzTags[tag].label, tags: [tag] };
-  }
-  return null;
-}
-
-// the "Tactics in this opening ›" link beside the page title
-function pzSyncTacticsBtn(hit) {
-  const t = hit && !state.puzzle ? pzTopicFor(hit.name) : null;
-  const btn = $('opening-tactics');
-  btn.classList.toggle('hidden', !t);
-  if (!t) return;
-  btn.textContent = 'Tactics in this opening ›';
-  btn.title = `${t.label}: the tactics that keep coming up, from ${pzTags[t.tags[0]].n.toLocaleString()} puzzles in real Lichess games`;
-  btn.onclick = () => openPuzzles(t);
-}
-
 // ---- the picker
 
 function pzSetTopic(t) {
@@ -4933,7 +4964,7 @@ function pzRenderSide() {
 function pzRenderLevel() {
   const n = +(recall('pzCount') || 0);
   $('pz-level').innerHTML = n ? `Your puzzle level: <b>${pzRating()}</b> after ${n} puzzle${n > 1 ? 's' : ''} (Lichess puzzle scale; <button class="link pz-reset">reset</button>).`
-    : `Puzzles start around ${PZ_START_RATING} on Lichess's puzzle scale and follow your results.`;
+    : `Your puzzle level: <b>${PZ_START_RATING}</b> (Lichess puzzle scale)`;
   const reset = $('pz-level').querySelector('.pz-reset');
   if (reset) reset.onclick = () => { store('pzRating'); store('pzCount'); pzRenderLevel(); };
 }
@@ -5033,11 +5064,11 @@ async function pzShowTopic() {
       + `${st ? `<span class="pz-st" title="Solved / tried">${st.solved}/${st.tries}</span>` : ''}</button>`;
   };
   const section = (title, sub, list) => (list.length
-    ? `<div class="pz-gh">${title}<span class="pz-ghs">${sub}</span></div><div class="pz-pats">${list.map(row).join('')}</div>` : '');
+    ? `<div class="pz-gh" title="${esc(sub)}">${title}</div><div class="pz-pats">${list.map(row).join('')}</div>` : '');  // explainer as a tooltip
   body.innerHTML = `<div class="pz-topic-head"><button class="link" id="pz-back">‹ All openings</button><h3>${esc(t.label)}</h3>`
     + `<span class="pz-n">${pzCount(res.total)}${side ? ` where ${side} finds the tactic` : ''}${t.color ? ` · you play ${esc(t.color)}` : ''}</span>`
     + `${mine ? `<span class="pz-st">${mine.solved}/${mine.tries} solved</span>` : ''}</div>`
-    + `<div class="pz-go"><button class="btn" id="pz-mixed">Start: mixed puzzles</button><span class="hint">or drill one pattern below</span></div>`
+    + `<div class="pz-go"><button class="btn" id="pz-mixed">Start: mixed puzzles</button></div>`
     + section('Typical of this opening', 'comes up here at least twice as often as in other openings', res.typical)
     + section('Common here, and everywhere', 'the mates and forks every opening has', res.common)
     + (!res.typical.length && !res.common.length ? '<p class="hint">Too few puzzles here for patterns; mixed puzzles still work.</p>' : '');
@@ -5065,7 +5096,7 @@ async function pzShowMine() {
   };
   const kind = (k, sub) => {
     const gs = res.groups.filter((g) => g.kind === k);
-    return gs.length ? `<div class="pz-gh">${esc(gs[0].title)}<span class="pz-ghs">${sub}</span></div><div class="pz-pats">${gs.map(row).join('')}</div>` : '';
+    return gs.length ? `<div class="pz-gh" title="${esc(sub)}">${esc(gs[0].title)}</div><div class="pz-pats">${gs.map(row).join('')}</div>` : '';
   };
   $('pz-side').classList.add('hidden');  // no sides here: missed = yours, allowed = theirs
   // the footer is about the Lichess puzzles (and the puzzle level, which these don't move)
@@ -5076,16 +5107,17 @@ async function pzShowMine() {
     .filter(Boolean).join(' and ');
   const checkLine = job?.status === 'running'
     ? `<p class="hint pz-job">${esc(job.phase)}…${job.total ? ` ${job.done}/${job.total}` : ''}</p>`
-    : `<div class="pz-update"><button class="btn ghost small pz-mine-run"${who ? '' : ' disabled'}>Update from my games</button>`
-      + `<span class="hint">${who ? `Fetches the last ${PZ_UPDATE_GAMES} games of ${esc(who)}, reviews the new ones and looks for tactics (~30 s per new game).`
-        : 'Enter your chess.com or Lichess name in Find games first.'}`
-      + `${job?.status === 'done' ? ` Last update: ${job.new_games} new game${job.new_games === 1 ? '' : 's'}, ${job.new_puzzles} new puzzle${job.new_puzzles === 1 ? '' : 's'}.` : ''}`
-      + `${res.pending && job?.status !== 'running' ? ` ${res.pending} reviewed game${res.pending > 1 ? 's' : ''} not checked yet.` : ''}</span></div>`
+    // no explainer beside the button (user's call, 2026-10-10): what it does is its tooltip; only state shows here
+    : `<div class="pz-update"><button class="btn ghost small pz-mine-run"${who ? '' : ' disabled'} title="${who
+        ? esc(`Fetches the last ${PZ_UPDATE_GAMES} games of ${who}, reviews the new ones and looks for tactics (~30 s per new game)`) : ''}">Update from my games</button>`
+      + `<span class="hint">${who ? '' : 'Enter your chess.com or Lichess name in Find games first.'}`
+      + `${job?.status === 'done' ? `Last update: ${job.new_games} new game${job.new_games === 1 ? '' : 's'}, ${job.new_puzzles} new puzzle${job.new_puzzles === 1 ? '' : 's'}. ` : ''}`
+      + `${res.pending && job?.status !== 'running' ? `${res.pending} reviewed game${res.pending > 1 ? 's' : ''} not checked yet.` : ''}</span></div>`
       + (job?.status === 'error' ? `<p class="hint pz-err">Update failed: ${esc(job.error)}</p>` : '')
       + (job?.warnings?.length && job.status !== 'running' ? job.warnings.map((w) => `<p class="hint pz-err">${esc(w)}</p>`).join('') : '');
   body.innerHTML = `<div class="pz-topic-head"><button class="link" id="pz-back">‹ All openings</button><h3>Your mistakes</h3>`
     + `<span class="pz-n">${pzCount(res.n)} from ${res.games} of your reviewed games</span></div>${checkLine}`
-    + `<div class="pz-go"><button class="btn" id="pz-mixed">Start: mixed</button><span class="hint">or pick a kind below</span></div>`
+    + `<div class="pz-go"><button class="btn" id="pz-mixed">Start: mixed</button></div>`
     + kind('missed', 'your turn: one move won, you played another')
     + kind('allowed', "your move handed them a tactic: find it from their side")
     + (!res.n ? '<p class="hint">No missed tactics found in your reviewed games yet.</p>' : '');
@@ -5146,6 +5178,7 @@ async function startPuzzle(pattern = null) {
   }
   if (token !== pzToken) return;
   if ($('dlg-puzzles').open) $('dlg-puzzles').close();
+  closeGpDropdown();  // its Maia and explorer lists are off during a puzzle; open, they showed stale moves
   const first = !state.puzzle;
   setReview(res.review, first ? `Opening puzzles: ${topic.label}. Their move plays first; then find the tactic.` : null, null, { keepChat: !first });
   pzBegin(res.puzzle, topic, pattern);
@@ -5339,8 +5372,8 @@ function pzExit() {
 function renderPuzzleInfo() {
   const pz = state.puzzle;
   const { p } = pz;
-  $('game-info').textContent = 'Opening puzzle';
-  $('board-sub').textContent = p.mine ? `Your game vs ${p.opponent} · ${p.variation}` : `${p.variation} · ~${p.rating}`;
+  // the opening is in the pill above the board; here, where the puzzle comes from
+  setFoot(p.mine ? `From your game vs ${p.opponent}` : `Lichess puzzle · rated ~${p.rating}`);
   const side = p.solver === 'white' ? 'White' : 'Black';
   const status = pz.done ? (pz.failed ? 'Over: look around, or the next one.' : 'Solved ✓') : pz.waiting ? 'Their move…' : `${side} to play`;
   const hint = !pz.done && pz.hint ? ['', pzHintText(p), 'The circled piece moves', 'The arrow shows the move'][pz.hint] : '';
@@ -5488,79 +5521,288 @@ async function openSavedPosition(p) {
 
 $('nav-save').onclick = openSavePosition;
 
-// ---------------------------------------------------------------- opening files
+// ---------------------------------------------------------------- explore lines
 // The lines in data/openings.md and data/openings/*.md, grouped by the header they sit under (same header in
-// two files = one group). Read-only: a line opens on the demo board (◀ ▶ step through it, Back to my game
-// returns). Sections fill in only when opened, since there are thousands of lines.
+// two files = one group). "Explore lines" in the side nav shows them in the scoreboard's place (body.rep-mode;
+// the phone's middle tab reads "Lines"); the ‹ in the panel header switches back.
+// Remembered per browser. While it's on the scoreboard doesn't search or render (repMode() gates
+// requestScoreboard / renderKeyCard / requestMaiaLines), so stepping through a line costs the engines nothing;
+// leaving re-runs update(), which asks for the board's position again.
+// Read-only: a line opens on the demo board (◀ ▶ step through it, Back to my game returns). The list is fetched
+// once in the background at page load, and groups fill in only when opened, since there are thousands of lines.
 
-let repSections = null;
+let repSections = null, repOpenKey = null;
+let repFetch = null;
+const repMode = () => document.body.classList.contains('rep-mode');
 
-async function openRepertoire() {
-  $('dlg-repertoire').showModal();
-  if (repSections) return renderRepertoire();
-  $('rep-list').innerHTML = '<div class="card-sub">Loading…</div>';
-  try { repSections = (await api('/api/repertoire')).sections; } catch (e) { return void ($('rep-list').textContent = e.message); }
-  renderRepertoire();
+function repLoad() {
+  repFetch ??= api('/api/repertoire').then((r) => { repSections = r.sections; repBuildIndex(); }).catch((e) => { repFetch = null; throw e; });
+  return repFetch;
 }
 
-function repMoveText(moves) {
-  return moves.map((san, i) => (i % 2 ? san : `${i / 2 + 1}.${san}`)).join(' ');
+// Explore lines is a mode of its own (user's call): entering it leaves whatever was open for a fresh analysis
+// board, and anything else that takes the board (a game, a bot game, puzzles, a lesson, endgames, the editor)
+// ends it: setReview() and openEditor() call repApply(false) unless told to keep it. ‹ also ends it, leaving the
+// board as it is.
+function repApply(on, { animate = true } = {}) {
+  if (animate) {
+    // replay the fade on whichever body comes in (the class restarts the animation)
+    document.body.classList.remove('rep-swap');
+    void document.body.offsetWidth;
+    document.body.classList.add('rep-swap');
+  }
+  document.body.classList.toggle('rep-mode', on);
+  $('btn-repertoire').classList.toggle('on', on);
+  $('score-hide').title = on ? 'Hide the lines' : 'Hide the scoreboard';
+  $('score-tab').title = on ? 'Show the lines' : 'Show the scoreboard';
+  store('repMode', on ? '1' : '0');
 }
 
-const repMoveNo = (ply) => `${Math.floor(ply / 2) + 1}.${ply % 2 ? '..' : ''}`;
+async function setRepMode(on, { restoring = false } = {}) {
+  if (!on) {
+    repApply(false);
+    return void update();  // the scoreboard searches the board again
+  }
+  repApply(true, { animate: !restoring });
+  if (document.body.classList.contains('hide-score')) setPanelHidden('score', false);
+  if (!restoring) {
+    if (PHONE.matches) setPhonePage('moves');
+    closeGpDropdown();  // it hangs over this panel (the editor opens it for its palette)
+    let review;
+    try { review = await api('/api/analysis', {}); } catch (e) { repApply(false); return void alert(e.message); }
+    setReview(review, null, null, { keepMode: true });
+  }
+  if (!repSections) {
+    $('rep-list').innerHTML = '<div class="card-sub">Loading…</div>';
+    try { await repLoad(); } catch (e) { return void ($('rep-list').textContent = e.message); }
+  }
+  if (!$('rep-list').querySelector('.rep-group, .rep-sec')) renderRepertoire();  // already built: keep scroll and open groups
+  if (!TOUCH && !restoring) $('rep-q').focus({ preventScroll: true });
+}
 
-function repLabel(ln) {
-  return ln.name || ln.eco || repMoveText(ln.moves.slice(0, 6));
+
+// ---- search: words match the names (typo-tolerant), move tokens match the moves (in order, sloppy notation ok)
+
+// "Nxd4+" → "nd4", "0-0" / "O-O" → "oo", "1...c5" → "c5": the same key for the line's SAN and whatever was typed
+const repMoveKey = (t) => t.toLowerCase().replace(/^\d+\.+/, '').replace(/[x+#!?=]/g, '').replace(/0/g, 'o').replace(/-/g, '');
+const REP_MOVE = /^([kqrbn]?[a-h]?[1-8]?[a-h][1-8][qrbn]?|oo|ooo)$/;
+// "Maróczy" → "maroczy", "King's" → "kings", hyphens and punctuation split words
+const repWords = (t) => (t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/['’]/g, '')
+  .split(/[^a-z0-9]+/).filter(Boolean);
+
+let repIndex = [];  // one entry per line: where it is, its move keys, its words by field
+
+function repBuildIndex() {
+  repIndex = [];
+  repSections.forEach((sec, si) => sec.groups.forEach((g, gi) => g.lines.forEach((ln, li) => {
+    repIndex.push({ si, gi, li, moves: ln.moves.map(repMoveKey),
+      label: repWords(g.label), eco: repWords(`${ln.eco || ''} ${ln.name || ''}`), sec: repWords(sec.title) });
+  })));
+}
+
+// optimal string alignment distance, capped: is `a` within one edit (incl. a swapped pair: "nadjorf") of `b`?
+function repNear(a, b) {
+  if (Math.abs(a.length - b.length) > 1) return false;
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length] <= 1;
+}
+
+// a typed word against one field's words: a word's start ("sicil"), the field run together ("counterattack" vs
+// "Counter Attack"), or one typo away for words of 5+ letters
+function repWordIn(w, words) {
+  if (words.some((x) => x.startsWith(w)) || words.join('').includes(w)) return true;
+  return w.length >= 5 && words.some((x) => repNear(w, x) || (x.length > w.length && repNear(w, x.slice(0, w.length))));
+}
+
+// the typed moves in order inside the line: 3 = the line starts with them, 2 = all in a row somewhere, 1 = in
+// order with other moves between (the tightest such stretch counts). → {tier, span, end} or null
+function repMoveMatch(q, moves) {
+  if (q.every((m, i) => moves[i] === m)) return { tier: 3, span: q.length, end: q.length - 1 };
+  let best = null;
+  for (let s = 0; s < moves.length; s++) {
+    if (moves[s] !== q[0]) continue;
+    let k = 1, i = s + 1;
+    for (; i < moves.length && k < q.length; i++) if (moves[i] === q[k]) k++;
+    if (k < q.length) break;  // later starts can't finish either
+    const span = i - s, tier = span === q.length ? 2 : 1;
+    if (!best || tier > best.tier || (tier === best.tier && span < best.span)) best = { tier, span, end: i - 1 };
+  }
+  return best;
+}
+
+function repSearch(query) {
+  const toks = query.split(/[\s,]+/).map((t) => t.trim()).filter(Boolean);
+  const q = [], words = [];
+  for (const t of toks) {
+    const m = repMoveKey(t);
+    if (!m) continue;  // a bare move number ("1.", "2...")
+    if (REP_MOVE.test(m)) q.push(m); else words.push(...repWords(t));
+  }
+  if (!q.length && !words.length) return null;
+  const groups = new Map();
+  for (const e of repIndex) {
+    let score = 0, end = null;
+    if (q.length) {
+      const m = repMoveMatch(q, e.moves);
+      if (!m) continue;
+      score += m.tier * 1000 - m.span * 5 - e.moves.length * 0.1;  // ties: the shorter line is closer to what was typed
+      end = m.end;
+    }
+    let ok = true;
+    for (const w of words) {
+      if (repWordIn(w, e.label)) score += 30;
+      else if (repWordIn(w, e.eco)) score += 20;
+      else if (repWordIn(w, e.sec)) score += 10;
+      else { ok = false; break; }
+    }
+    if (!ok) continue;
+    const key = `${e.si}:${e.gi}`;
+    const g = groups.get(key) || { si: e.si, gi: e.gi, score: -Infinity, lines: [] };
+    g.score = Math.max(g.score, score);
+    g.lines.push({ li: e.li, score, end });
+    groups.set(key, g);
+  }
+  const out = [...groups.values()];
+  out.forEach((g) => g.lines.sort((a, b) => b.score - a.score || a.li - b.li));
+  return out.sort((a, b) => b.score - a.score || a.si - b.si || a.gi - b.gi);
+}
+
+// ---- the list
+
+const REP_MAX_RESULTS = 80;
+const repOpenSecs = new Set(), repOpenGroups = new Set();
+let repLastQuery = '';
+
+const REP_CHEV = '<svg class="rep-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6.5L15 12l-5.5 5.5"/></svg>';
+
+// one opening row; a group of one line opens it, a bigger group folds its lines out. `only` = the lines to list
+// (search results), each {li, end}. No counts or trap tags on the rows (user's call): names only; traps show on
+// the board when the line reaches them.
+function repGroupHtml(si, gi, only, withSection) {
+  const sec = repSections[si], g = sec.groups[gi];
+  const items = only || g.lines.map((_, li) => ({ li, end: null }));
+  const key = `${si}:${gi}`;
+  const single = items.length === 1;
+  const open = !single && repOpenGroups.has(key);
+  const on = single && repOpenKey === `${key}:${items[0].li}`;
+  const act = single ? `line:${items[0].li}:${items[0].end ?? ''}` : 'fold';
+  const lead = single ? '<span class="rep-lead"></span>' : REP_CHEV;
+  // search results come from every header, so each says which one (and, for one line of a bigger group, its branch)
+  const branch = single && g.lines.length > 1 ? g.lines[items[0].li].div : null;
+  const under = withSection ? `<span class="rep-under">${esc(sec.title)}${branch ? ` · ${esc(branch)}` : ''}</span>` : '';
+  return `<div class="rep-group${open ? ' open' : ''}" data-key="${key}">
+    <button class="rep-row${on ? ' on' : ''}" data-act="${act}">${lead}<span class="rep-text"><span class="rep-name">${esc(g.label)}</span>${under}</span></button>
+    ${open ? repSubsHtml(si, gi, items) : ''}</div>`;
+}
+
+function repSubsHtml(si, gi, items) {
+  const g = repSections[si].groups[gi];
+  return `<div class="rep-subs">${items.map(({ li, end }) => `<button class="rep-row sub${repOpenKey === `${si}:${gi}:${li}` ? ' on' : ''}" data-act="line:${li}:${end ?? ''}">${esc(g.lines[li].div || 'Line')}</button>`).join('')}</div>`;
 }
 
 function renderRepertoire() {
-  const q = $('rep-q').value.trim().toLowerCase();
-  const shown = repSections.map((sec, si) => {
-    const hitTitle = !q || sec.title.toLowerCase().includes(q);
-    const lines = sec.lines.map((ln, li) => ({ ln, li })).filter(({ ln }) => hitTitle
-      || [ln.name, ln.eco, repMoveText(ln.moves)].join(' ').toLowerCase().includes(q));
-    return { sec, si, lines };
-  }).filter((x) => x.lines.length);
-  if (!repSections.length) return void ($('rep-list').innerHTML = '<div class="card-sub">No opening files: put markdown files in data/openings/.</div>');
-  if (!shown.length) return void ($('rep-list').innerHTML = '<div class="card-sub">Nothing matches.</div>');
-  $('rep-list').innerHTML = shown.map(({ sec, si, lines }) => {
-    const traps = lines.filter(({ ln }) => ln.trap).length;
-    return `<details class="rep-sec" data-si="${si}"${q ? ' open' : ''}><summary><span class="rep-title">${esc(sec.title)}</span>
-      <span class="card-sub">${lines.length} line${lines.length === 1 ? '' : 's'}${traps ? ` · ${traps} with a trap` : ''}</span></summary>
-      <div class="rep-lines"></div></details>`;
-  }).join('');
-  $('rep-list').querySelectorAll('.rep-sec').forEach((el) => {
-    const { sec, lines } = shown.find((x) => x.si === +el.dataset.si);
-    const fill = () => {
-      const box = el.querySelector('.rep-lines');
-      if (box.childElementCount) return;
-      box.innerHTML = lines.map(({ ln, li }) => {
-        const trap = ln.trap ? `<span class="rep-trap" title="A known trap from your files: this move loses">trap: ${esc(repMoveNo(ln.trap.ply))}${esc(ln.trap.move)}??</span>` : '';
-        return `<button class="rep-line" data-li="${li}" title="${esc(repMoveText(ln.moves))}">
-          <div class="rep-name">${esc(repLabel(ln))}${trap}</div>
-          ${ln.name && ln.eco ? `<div class="rep-moves">${esc(ln.eco)}</div>` : ''}
-          <div class="rep-moves">${esc(repMoveText(ln.moves))}</div></button>`;
-      }).join('');
-      box.querySelectorAll('.rep-line').forEach((b) => { b.onclick = () => openRepLine(sec, sec.lines[+b.dataset.li]); });
-    };
-    if (el.open) fill();
-    el.addEventListener('toggle', () => { if (el.open) fill(); });
-  });
+  if (!repSections) return;
+  const box = $('rep-list');
+  if (!repSections.length) return void (box.innerHTML = '<div class="card-sub">No lines yet: put markdown files in data/openings/.</div>');
+  const query = $('rep-q').value.trim();
+  if (query !== repLastQuery) { repOpenGroups.clear(); repLastQuery = query; }
+  const results = query ? repSearch(query) : null;
+  if (results) {
+    if (!results.length) return void (box.innerHTML = '<div class="rep-empty">Nothing matches. Try fewer words, or moves in the order they’re played.</div>');
+    const nLines = results.reduce((n, g) => n + g.lines.length, 0);
+    const shown = results.slice(0, REP_MAX_RESULTS);
+    // a short list: fold the openings out, so the lines are one click away
+    if (results.length <= 3) shown.forEach((g) => { if (g.lines.length > 1) repOpenGroups.add(`${g.si}:${g.gi}`); });
+    box.innerHTML = `<div class="rep-note">${nLines} line${nLines === 1 ? '' : 's'} in ${results.length} opening${results.length === 1 ? '' : 's'}${results.length > shown.length ? `, best ${shown.length} shown: add a move or a word to narrow it` : ''}</div>`
+      + shown.map((g) => repGroupHtml(g.si, g.gi, g.lines, true)).join('');
+    repResults = new Map(shown.map((g) => [`${g.si}:${g.gi}`, g.lines]));
+  } else {
+    repResults = null;
+    box.innerHTML = repSections.map((sec, si) => {
+      return `<details class="rep-sec" data-si="${si}"${repOpenSecs.has(si) ? ' open' : ''}><summary>${REP_CHEV}<span class="rep-title">${esc(sec.title)}</span></summary>
+        <div class="rep-groups">${repOpenSecs.has(si) ? sec.groups.map((_, gi) => repGroupHtml(si, gi, null, false)).join('') : ''}</div></details>`;
+    }).join('');
+    box.querySelectorAll('.rep-sec').forEach((el) => el.addEventListener('toggle', () => {
+      const si = +el.dataset.si;
+      if (el.open) {
+        repOpenSecs.add(si);
+        const inner = el.querySelector('.rep-groups');
+        if (!inner.childElementCount) inner.innerHTML = repSections[si].groups.map((_, gi) => repGroupHtml(si, gi, null, false)).join('');
+      } else repOpenSecs.delete(si);
+    }));
+  }
 }
 
-function openRepLine(sec, ln) {
+let repResults = null;  // search results on screen: "si:gi" → the matching lines
+
+// one listener for the whole list (rows are re-rendered often)
+$('rep-list').addEventListener('click', (e) => {
+  const row = e.target.closest('.rep-row');
+  if (!row) return;
+  const groupEl = row.closest('.rep-group');
+  const [si, gi] = groupEl.dataset.key.split(':').map(Number);
+  const act = row.dataset.act;
+  if (act === 'fold') {
+    const key = groupEl.dataset.key;
+    const open = !repOpenGroups.has(key);
+    if (open) repOpenGroups.add(key); else repOpenGroups.delete(key);
+    groupEl.classList.toggle('open', open);
+    groupEl.querySelector('.rep-subs')?.remove();
+    if (open) {
+      const items = repResults?.get(key) || repSections[si].groups[gi].lines.map((_, li) => ({ li, end: null }));
+      groupEl.insertAdjacentHTML('beforeend', repSubsHtml(si, gi, items));
+    }
+    return;
+  }
+  const [, li, end] = act.split(':');
+  $('rep-list').querySelectorAll('.rep-row.on').forEach((x) => x.classList.remove('on'));
+  row.classList.add('on');
+  repOpenKey = `${si}:${gi}:${li}`;
+  openRepLine(si, gi, +li, end === '' ? null : +end);
+});
+
+// Enter opens the best result (or folds it out when it's several lines)
+$('rep-q').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('rep-q').value) { e.stopPropagation(); $('rep-clear').click(); }
+  if (e.key === 'Enter') $('rep-list').querySelector('.rep-group .rep-row')?.click();
+});
+
+// on the demo board from the start; a move search stops there (where the typed moves end) instead of playing on
+function openRepLine(si, gi, li, end) {
+  const sec = repSections[si], g = sec.groups[gi], ln = g.lines[li];
   const notes = ln.moves.map(() => '');
   if (ln.trap) {
     const t = ln.trap;
     notes[t.ply] = `Trap: this move loses${t.punish.length ? `, ${t.punish[0]} punishes it` : ''}.`;
   }
-  $('dlg-repertoire').close();
-  openDemo({ title: `${sec.title} · ${repLabel(ln)}`, start_fen: START_FEN, moves: ln.moves, notes,
-    sub: 'A line from your opening files. Step through it, or move pieces to try something else.' });
+  if (PHONE.matches) setPhonePage('board');
+  const name = ln.name || ln.eco || g.label;
+  const branch = g.lines.length > 1 && ln.div ? ` ${ln.div}` : '';
+  // a named line's name goes under the board, so the top row only adds which branch it is
+  openDemo({ title: `${name}${branch}`, short: ln.name ? branch.trim() : `${g.label}${branch}`, fileName: ln.name,
+    start_fen: START_FEN, moves: ln.moves, notes, explore: true, section: sec.title });
+  if (end != null) demoStep(end + 1);
 }
 
-$('btn-repertoire').onclick = openRepertoire;
-$('rep-q').oninput = renderRepertoire;
+// like the other mode buttons it only enters; already in it, it just brings the list forward (the phone's tab, the search box)
+$('btn-repertoire').onclick = () => {
+  if (!repMode()) return void setRepMode(true);
+  if (PHONE.matches) setPhonePage('moves');
+  if (!TOUCH) $('rep-q').focus({ preventScroll: true });
+};
+$('rep-close').onclick = () => setRepMode(false);
+$('rep-q').oninput = () => { $('rep-clear').classList.toggle('hidden', !$('rep-q').value); renderRepertoire(); };
+$('rep-clear').onclick = () => { $('rep-q').value = ''; $('rep-clear').classList.add('hidden'); renderRepertoire(); $('rep-q').focus(); };
+if (recall('repMode') === '1') setRepMode(true, { restoring: true });
+else setTimeout(() => repLoad().catch(() => {}), 3000);  // in the background, so the first click is instant
 
 // ---------------------------------------------------------------- recording a game
 // ⏺ under the board starts a recording from the line on the board now (the moves that led here included). From
@@ -5668,8 +5910,7 @@ function recStart() {
   rec = { startFen: b.start_fen, moves: b.moves.slice() };
   recStore();
   recSync();
-  addMsg('system', `⏺ Recording${rec.moves.length ? ` (with the ${rec.moves.length} move${rec.moves.length === 1 ? '' : 's'} already on the board)` : ''}. `
-    + 'Every move played from here is added; click ⏺ under the board to see it, title it and save.');
+  addMsg('system', `⏺ Recording${rec.moves.length ? `, ${rec.moves.length} move${rec.moves.length === 1 ? '' : 's'} so far` : ''}. ⏺ again to save it.`);
 }
 
 function recDefaults() {
@@ -5843,7 +6084,7 @@ $('pz-side').querySelectorAll('button').forEach((b) => {
     if (!$('pz-q').value.trim() && pzTopic && $('pz-body').querySelector('.pz-topic-head')) pzShowTopic();
   };
 });
-pzLoadTags().then(() => requestOpening());  // the "Tactics in this opening" link needs the tag list
+requestOpening();
 $('auto-coach').checked = autoCoach();
 $('auto-coach').onchange = (e) => store('autoCoach', e.target.checked ? '1' : '0');
 
@@ -6067,6 +6308,9 @@ document.addEventListener('keydown', (e) => {
   $('evalbar').classList.toggle('off', !engineOn);
   $('engine-lines').classList.toggle('hidden', !engineOn);
   const review = await api('/api/review');
+  // Explore lines runs on an analysis board: if the server now holds a game (loaded on another device or tab),
+  // the game wins and the scoreboard comes back
+  if (repMode() && review.moves.length) repApply(false, { animate: false });
   const linked = +(location.hash.match(/ply=(\d+)/)?.[1] || 0);
   if (restoreBoard(review)) {
     if (!cfg.coach_ready) addMsg('system', esc('Coach offline: set ANTHROPIC_API_KEY and restart the server to chat. Board and engine work without it.'));
@@ -6074,6 +6318,6 @@ document.addEventListener('keydown', (e) => {
   }
   // no intro text in the chat; only the warning when the coach can't answer
   setReview(review, cfg.coach_ready ? null
-    : 'Coach offline: set ANTHROPIC_API_KEY and restart the server to chat. Board and engine work without it.');
+    : 'Coach offline: set ANTHROPIC_API_KEY and restart the server to chat. Board and engine work without it.', null, { keepMode: true });
   if (linked) goTo(linked);
 })();

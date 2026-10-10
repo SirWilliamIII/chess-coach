@@ -51,8 +51,7 @@ terminal version.
   patterns: the ones **typical** of it ("after …Nxe5, dxe5 forks" in the London) apart from the mates
   every opening has; drill one pattern or mix them. The opponent's mistake plays first, then you find
   the tactic (hint ladder: the theme, the piece, the move); your puzzle level follows your results.
-  **Tactics in this opening ›** beside the opening name opens the current opening's list. One-time
-  setup, ~1.5 min and ~420 MB:
+  One-time setup, ~1.5 min and ~420 MB:
   `curl -L -o data/puzzles/lichess_db_puzzle.csv.zst https://database.lichess.org/lichess_db_puzzle.csv.zst`
   then `.venv/bin/python -m scripts.puzzles_import` (needs `zstd`: `brew install zstd`).
 - **⚡ GM alerts**: Stockfish checks each position where it's your turn in bot games and replays for

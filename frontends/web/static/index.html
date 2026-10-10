@@ -28,7 +28,7 @@
     <div class="nav-sec"><div class="nav-h">Learn</div>
       <button id="btn-study" class="nav-item" data-tip="Learn openings"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7C10 5.5 7.25 5 4 5.5v12.75c3.25-.5 6 0 8 1.5 2-1.5 4.75-2 8-1.5V5.5C16.75 5 14 5.5 12 7z"/><path d="M12 7v12.75"/></svg><span class="nav-label">Learn openings</span></button>
       <button id="btn-puzzles" class="nav-item" data-tip="Puzzles"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3.5L6 13.5h5.5L10.5 20.5l7.5-10.5h-5.5z"/></svg><span class="nav-label">Puzzles</span></button>
-      <button id="btn-repertoire" class="nav-item" data-tip="Opening files"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h7.5l4.5 4.5v12.5h-12z"/><path d="M14 3.5V8h4.5"/><path d="M9 12.5h6M9 16h6"/></svg><span class="nav-label">Opening files</span></button>
+      <button id="btn-repertoire" class="nav-item" data-tip="Explore lines"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h7.5l4.5 4.5v12.5h-12z"/><path d="M14 3.5V8h4.5"/><path d="M9 12.5h6M9 16h6"/></svg><span class="nav-label">Explore lines</span></button>
       <button id="btn-endgames" class="nav-item" data-tip="Endgames"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 17l-1.25-9.5 4.75 3.75L12 5.5l3.5 5.75 4.75-3.75L19 17z"/><path d="M5.5 20h13"/></svg><span class="nav-label">Endgames</span></button>
     </div>
     <button class="nav-item nav-collapse" id="nav-collapse" data-tip="Expand the menu"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.5 17l-5-5 5-5M18 17l-5-5 5-5"/></svg><span class="nav-label">Collapse</span></button>
@@ -52,7 +52,7 @@
         <div class="evalbar" id="evalbar"><div class="fill" id="evalfill"></div><span id="evaltext"></span></div>
         <div class="board-wrap" id="board-wrap">
           <div id="board"></div>
-          <div class="overlay hidden" id="overlay"><div class="spinner"></div><div id="overlay-text">Analysing…</div></div>
+          <div class="overlay hidden" id="overlay"><div class="spinner"></div><div id="overlay-text">Analyzing…</div></div>
         </div>
       </div>
       <!-- under the board: the bottom name, then the game's title and result (☆; double-click to title it) and the
@@ -64,9 +64,6 @@
           <div class="game-title" id="game-title"></div>
           <div class="game-info" id="game-info"></div>
           <div class="board-sub" id="board-sub"></div>
-          <!-- the opening's typical tactics (core/puzzles.py), when the puzzle database has the opening; out of the
-               opening pill so the name gets its width (user's call, 2026-10-09) -->
-          <button class="ot-tactics hidden" id="opening-tactics" title="The tactics that keep coming up in this opening, from real Lichess games">Tactics in this opening ›</button>
         </div>
         <div class="board-foot-right">
           <div class="game-panel">
@@ -125,16 +122,24 @@
     <div class="side" id="side">
       <div class="side-resize" id="side-resize" title="Drag to size the board; double-click to reset"></div>
       <section class="panel score-panel" id="score-panel">
-        <header class="panel-head"><span class="panel-title">Scoreboard</span>
+        <header class="panel-head"><span class="panel-title"><button class="panel-back rep-only" id="rep-close" title="Back to the scoreboard"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6.5L9 12l5.5 5.5"/></svg></button><span class="sb-only">Scoreboard</span><span class="rep-only">Explore lines</span></span>
           <span class="panel-tools">
-            <label class="sb-rating hidden" id="sb-rating"><span>Players</span><select id="kc-rating"></select></label>
-            <button class="panel-hide" data-hide="score" title="Hide the scoreboard"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 12h11"/></svg></button>
+            <button class="panel-hide" data-hide="score" id="score-hide" title="Hide the scoreboard"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 12h11"/></svg></button>
           </span></header>
         <div class="score-body">
           <div class="key-card hidden" id="key-card"></div>
         </div>
+        <!-- "Explore lines" (side nav) puts the lines of data/openings*.md here in place of the scoreboard -->
+        <div class="rep-body">
+          <div class="search-box rep-search">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg>
+            <input id="rep-q" aria-label="Search lines" autocomplete="off" spellcheck="false">
+            <button class="rep-clear hidden" id="rep-clear" title="Clear the search"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
+          </div>
+          <div id="rep-list" class="rep-list"></div>
+        </div>
       </section>
-      <button class="panel-tab tab-score" data-show="score" title="Show the scoreboard"><span>Scoreboard</span></button>
+      <button class="panel-tab tab-score" data-show="score" id="score-tab" title="Show the scoreboard"><span class="sb-only">Scoreboard</span><span class="rep-only">Explore lines</span></button>
       <div class="side-split" id="side-split" title="Drag to share the space; double-click to reset"></div>
 
       <section class="panel chat-panel">
@@ -158,14 +163,13 @@
        board kept hitting it; no page scrolling at all). Hidden above 760 px -->
   <nav class="m-tabs" id="m-tabs">
     <button data-page="board" class="on">Board</button>
-    <button data-page="moves">Moves</button>
+    <button data-page="moves"><span class="sb-only">Moves</span><span class="rep-only">Lines</span></button>
     <button data-page="coach">Coach</button>
   </nav>
 
   <dialog id="dlg-study">
     <form method="dialog" class="dlg-head"><h2>Learn an opening</h2><button class="link">Close</button></form>
-    <p class="hint">Lines come from master games, every move is checked by the engine, and the coach writes the notes. A lesson is built once (a few minutes, a few cents), then learning and drilling it is free.</p>
-    <div class="row"><input id="study-q" placeholder="Search: najdorf, dragon, caro-kann, london…" autocomplete="off"></div>
+    <div class="row"><div class="search-box"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg><input id="study-q" aria-label="Search openings" autocomplete="off"></div></div>
     <div id="study-list" class="games-list study-picker"></div>
     <p class="hint" id="study-status"></p>
     <div class="row end"><button class="btn" id="study-go" disabled>Pick an opening</button></div>
@@ -183,21 +187,21 @@
   <dialog id="dlg-puzzles" class="wide">
     <form method="dialog" class="dlg-head"><h2>Puzzles</h2><button class="link">Close</button></form>
     <div class="pz-opts">
-      <input id="pz-q" type="search" placeholder="Search an opening: London, Dutch, Najdorf…" autocomplete="off">
+      <div class="search-box"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg><input id="pz-q" type="search" aria-label="Search openings" autocomplete="off"></div>
       <div class="seg" id="pz-side" title="Whose tactics: puzzles where this side finds the tactic">
         <button data-side="">Both sides</button><button data-side="w">White</button><button data-side="b">Black</button>
       </div>
     </div>
     <div id="pz-body" class="pz-body"></div>
-    <p class="hint pz-foot"><span id="pz-level"></span> Puzzles come from real Lichess games in that opening (the Lichess puzzle database, moves 1-19). A pattern is <b>typical</b> when it comes up here at least twice as often as in other openings.</p>
+    <p class="hint pz-foot"><span id="pz-level"></span></p>
   </dialog>
 
   <dialog id="dlg-games">
     <form method="dialog" class="dlg-head"><h2>Find game by username</h2><button class="link">Close</button></form>
     <div class="seg" id="games-tabs">
-      <button data-tab="chesscom" class="on">From chess.com</button>
-      <button data-tab="lichess">From Lichess</button>
-      <button data-tab="saved">Saved on this device (offline)</button>
+      <button data-tab="chesscom" class="on">chess.com</button>
+      <button data-tab="lichess">Lichess</button>
+      <button data-tab="saved" title="Games already analyzed here: they open without internet">Saved</button>
       <button data-tab="favorites">★ Favorites</button>
     </div>
     <div id="tab-chesscom">
@@ -223,11 +227,9 @@
       <div id="games-list-lichess" class="games-list"></div>
     </div>
     <div id="tab-favorites" class="hidden">
-      <p class="hint">Games you starred. Double-click a game's name line (or the space next to “Chess Coach”) to give it a title.</p>
       <div id="fav-list" class="games-list"></div>
     </div>
     <div id="tab-saved" class="hidden">
-      <p class="hint">Games already analysed on this Pi. These open without internet (the coach chat still needs it).</p>
       <div id="saved-list" class="games-list"></div>
     </div>
   </dialog>
@@ -254,7 +256,6 @@
       </div>
     </div>
     <label class="toggle"><input type="checkbox" id="play-engine"> Show engine eval during the game</label>
-    <p class="hint">Ask the coach for ideas and plans at any point. It will teach the idea rather than just give away the move, unless you ask for the move.</p>
     <div class="field" id="play-continue-row"></div>
     <div class="row end"><button class="btn" id="play-go">Start game</button></div>
   </dialog>
@@ -267,7 +268,7 @@
       <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Start / last move</td></tr>
       <tr><td><kbd>f</kbd></td><td>Flip the board</td></tr>
       <tr><td><kbd>s</kbd></td><td>Save this position</td></tr>
-      <tr><td><kbd>Esc</kbd></td><td>Clear marked squares, close a demo board, or stop a replay</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Clear marked squares, or close a demo board</td></tr>
       <tr><td><kbd>?</kbd></td><td>This list</td></tr>
       <tr><th colspan="2">Drawing on the board</th></tr>
       <tr><td>Right-drag</td><td>Arrow (orange)</td></tr>
@@ -316,24 +317,15 @@
   <dialog id="dlg-positions" class="wide">
     <form method="dialog" class="dlg-head"><h2>📌 Saved positions</h2><button class="link">Close</button></form>
     <div class="row pos-tools">
-      <input id="pos-q" placeholder="Filter by title, opening or game…" autocomplete="off">
+      <div class="search-box"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg><input id="pos-q" aria-label="Filter positions" autocomplete="off"></div>
       <button class="btn ghost small" id="pos-save-current">💾 Save current position</button>
     </div>
     <div id="pos-list" class="pos-list"></div>
   </dialog>
 
-  <!-- the lines in data/openings*.md, grouped by the header they sit under (core/repertoire.py browse()) -->
-  <dialog id="dlg-repertoire" class="wide">
-    <form method="dialog" class="dlg-head"><h2>Opening files</h2><button class="link">Close</button></form>
-    <div class="row pos-tools"><input id="rep-q" placeholder="Filter by header, line name, opening or move…" autocomplete="off"></div>
-    <div id="rep-list" class="rep-list"></div>
-  </dialog>
-
   <dialog id="dlg-load">
     <form method="dialog" class="dlg-head"><h2>Load a game</h2><button class="link">Close</button></form>
-    <p class="hint">Paste a chess.com or Lichess game link or PGN text, or upload a PGN file
-      (chess.com: game page → Share → Download PGN).</p>
-    <textarea id="load-text" rows="8" placeholder="https://www.chess.com/game/live/…  (or drop a .pgn file here)"></textarea>
+    <textarea id="load-text" rows="8" placeholder="chess.com or Lichess game link, or PGN"></textarea>
     <div id="pgn-games" class="games-list hidden"></div>
     <div class="row">
       <label class="btn ghost small file-btn">📄 Upload PGN file<input type="file" id="load-file" accept=".pgn,.txt,application/x-chess-pgn,text/plain" hidden></label>

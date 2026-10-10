@@ -117,11 +117,63 @@ def parse(text: str, default_section: str = "") -> list[dict]:
 _browse: tuple[str, dict | None, list[dict]] | None = None   # (source hash, trap index used, sections)
 
 
+def _compact(text: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def _clean_title(title: str) -> str:
+    """'sicilian-defense-accelerated-dragon' -> 'Sicilian Defense Accelerated Dragon', 'E4 / E5 MASTERFILE' ->
+    'E4 / E5 Masterfile' (only all-letter shouting words, so move names like E4 stay)."""
+    if " " not in title and "-" in title:
+        title = title.replace("-", " ").title()
+    return " ".join(w.capitalize() if len(w) >= 4 and w.isalpha() and w.isupper() else w for w in title.split(" "))
+
+
+GENERIC_WORDS = {"defense", "defence", "variation", "game", "opening", "system", "line", "the"}
+
+
+def _short_name(eco_name: str, section: str) -> str:
+    """The ECO name without the parts the header already says: under "Scotch Game", "Scotch Game: Classical
+    Variation" is "Classical Variation"; under "Sicilian Kan", "Sicilian Defense: Kan Variation, Knight
+    Variation" is "Knight Variation"; under "Traxler Counter Attack", "Italian Game: Two Knights Defense,
+    Traxler Counterattack, Knight Sacrifice Line" is "Knight Sacrifice Line". A part counts as said when its
+    words (minus Defense/Variation/…) are all header words, or it's the header run together. A name the
+    header doesn't share stays whole."""
+    parts = re.split(r": |, ", eco_name)
+
+    def words_of(text: str) -> list[str]:  # plurals folded: "Practical Sicilians" says "Sicilian"
+        return [w[:-1] if len(w) > 3 and w.endswith("s") else w for w in re.findall(r"[a-z0-9]+", text.lower().replace("'", ""))]
+    sec, sec_words = _compact(section), set(words_of(section))
+
+    def said(part: str) -> bool:
+        words = [w for w in words_of(part) if w not in GENERIC_WORDS]
+        return bool(words) and (all(w in sec_words for w in words) or _compact(part) in sec or sec in _compact(part))
+    hit = max((i for i, part in enumerate(parts) if said(part)), default=None)
+    if hit is None:
+        return eco_name
+    return ", ".join(parts[hit + 1:]) or parts[hit]
+
+
+def _numbered(moves: list[str], start: int) -> str:
+    """SAN moves from ply `start`, numbered: (4, [Ng5, d5]) -> '3.Ng5 d5'; (5, [d5]) -> '3...d5'."""
+    out = []
+    for i, san in enumerate(moves, start):
+        if i % 2 == 0:
+            out.append(f"{i // 2 + 1}.{san}")
+        else:
+            out.append(f"{i // 2 + 1}...{san}" if not out else san)
+    return " ".join(out)
+
+
 def browse() -> list[dict]:
-    """Every line, grouped by the header it sits under, for viewing: [{title, lines: [{name, eco,
-    moves, trap}]}]. Headers with the same title in different files are merged; order is file order.
-    `trap` = {ply, move, punish, setter} for the first known trap move along the line (None while the
-    index is still being built)."""
+    """Every line for viewing, grouped twice: by the header it sits under (same title in different files =
+    one section; titles tidied), then by its name within that section (the line's own "name", else the
+    ECO name shortened against the header):
+      [{title, groups: [{label, lines: [{name, eco, moves, trap, div}]}]}]
+    `div` tells a group's lines apart without the whole move list: a few moves from where the line leaves
+    its closest sibling (None for a group of one). `trap` = {ply, move, punish, setter}, the first known
+    trap move along the line (None while the trap index is still being built). A line that is only the
+    start of another line in the same section, with no name of its own, is left out."""
     global _browse
     src = _source_hash()
     if src is None:
@@ -141,10 +193,42 @@ def browse() -> list[dict]:
                         trap = {"ply": i, "move": san, "punish": hit["punish"], "setter": hit["setter"]}
                 b.push(mv)
                 eco_name = (eco.lookup(b) or {}).get("name", eco_name)
-            sec = sections.setdefault(ln["section"].lower(), {"title": ln["section"], "lines": []})
+            title = _clean_title(ln["section"])
+            sec = sections.setdefault(_compact(title), {"title": title, "lines": []})
             sec["lines"].append({"name": ln["name"], "eco": eco_name, "moves": ln["moves"], "trap": trap})
-    _browse = (src, idx, list(sections.values()))
-    return _browse[2]
+
+    out = []
+    for sec in sections.values():
+        starts = {tuple(ln["moves"][:k]) for ln in sec["lines"] for k in range(1, len(ln["moves"]))}
+        groups: dict[str, list[dict]] = {}
+        for ln in sec["lines"]:
+            if ln["name"] is None and tuple(ln["moves"]) in starts:
+                continue
+            label = ln["name"] or (_short_name(ln["eco"], sec["title"]) if ln["eco"] else _numbered(ln["moves"][:4], 0))
+            groups.setdefault(label, []).append(ln)
+        for lines in groups.values():
+            # move order, so lines that share a start sit together and each label reads as a branch
+            lines.sort(key=lambda ln: ln["moves"])
+            for i, ln in enumerate(lines):
+                if len(lines) == 1:
+                    ln["div"] = None
+                    continue
+                shared = max(_common(ln["moves"], other["moves"]) for other in lines[max(0, i - 1):i + 2] if other is not ln)
+                ln["div"] = (f"…{_numbered(ln['moves'][shared:shared + 3], shared)}" if shared < len(ln["moves"])
+                             else f"stops at {_numbered(ln['moves'][-1:], len(ln['moves']) - 1)}")
+                ln["_at"] = shared
+            # shown by where each line branches off (earliest first), the labels are worked out in move order above
+            lines.sort(key=lambda ln: (ln.pop("_at", 0), ln["moves"]))
+        out.append({"title": sec["title"], "groups": [{"label": k, "lines": v} for k, v in groups.items()]})
+    _browse = (src, idx, out)
+    return out
+
+
+def _common(a: list[str], b: list[str]) -> int:
+    n = 0
+    while n < len(a) and n < len(b) and a[n] == b[n]:
+        n += 1
+    return n
 
 
 def _load_evals() -> dict[str, int]:
