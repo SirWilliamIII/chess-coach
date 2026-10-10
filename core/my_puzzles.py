@@ -6,6 +6,13 @@ yours lost ≥ MIN_LOST win % and the tactics finder (core/tactics.py) sees one 
 - allowed: your move handed the opponent one. The puzzle starts at your move, and you find *their* tactic (the
   board turns to their side): the "watch out" habit.
 
+Not every hit is a puzzle (user, 2026-10-09: "hanging a queen should never be a tactic or a puzzle", "the best
+and coolest tactics may not yield the biggest swing"). A free piece (tactics.py kind "free") is dropped, and the
+rest are scored by `spice()`: how rarely a player at your rating finds the first move (Maia), a sacrifice, a quiet
+first move, how many moves the forced line runs, a named idea. Under MIN_SPICE is dropped; the best are served
+first. Mates are looked for even when your move barely lost win % (you were already winning: a missed mate costs
+little win % but is the best puzzle there is).
+
 Mined offline, incrementally per game (`python -m core.my_puzzles`), into data/my_puzzles.json; served by the same
 puzzle mode as the Lichess ones (core/puzzles.py), with no rating. The solution runs on while each of the solver's
 moves is again the one clearly winning move (find() at the same depth), up to MAX_SOLVER_MOVES; a mate runs to the
@@ -13,6 +20,7 @@ end of the engine's line.
 """
 
 import json
+import math
 import os
 import random
 import re
@@ -22,16 +30,26 @@ from pathlib import Path
 
 import chess
 
-from . import eco, tactics
+from . import eco, maia as maia_mod, tactics
 from .engine import Engine
+from .gm_moments import _see
+from .features import VALUES
 from .puzzles import MOTIF_LABEL
 
 ROOT = Path(__file__).resolve().parent.parent
 REVIEWS = ROOT / "data" / "reviews"
 OUT = ROOT / "data" / "my_puzzles.json"
 
-VERSION = 1             # bump to re-mine every game after a change here
-MIN_LOST = 10           # win % your move lost: smaller slips are rarely a missed tactic
+VERSION = 2             # bump to re-mine every game after a change here (2: spice, no free pieces, mates when winning)
+MIN_LOST = 10           # win % your move lost: smaller slips are rarely a missed tactic (mates are checked anyway)
+# spice(): first guesses, set by looking at the user's games (2026-10-09), not tuned on solving data
+MIN_SPICE = 1.0
+SAC_BONUS = 1.0         # a piece offered: the solver gives material first
+QUIET_BONUS = 0.7       # the first move is no capture, check or promotion, and under QUIET_PCT find it
+QUIET_PCT = 40          # (a quiet move most players play anyway, like a pawn push, isn't the hard part)
+DEPTH_BONUS = 0.4       # per solver move after the first
+IDEA_BONUS = 0.3        # a named idea beyond the outcome (fork, pin, skewer, discovered attack, removing a defender)
+NO_MAIA_HARD = 0.6      # findability when Maia isn't installed: neutral, so the board features decide
 MAX_SOLVER_MOVES = 3
 MATE_PLIES = 9          # a mate in up to 5 is played out to the end
 # tactics.py motif → the Lichess theme name the puzzle mode labels with (MOTIF_LABEL)
@@ -132,7 +150,7 @@ def _solution(engine: Engine, board: chess.Board, first: dict, pv: list[str]) ->
     clearly winning move. A mate is played out."""
     m = re.match(r"#(\d+)", first["eval_white"].lstrip("+-").replace("#-", "#"))
     if "mate" in first["motifs"] and m and 2 * int(m.group(1)) - 1 <= MATE_PLIES:
-        return pv[:2 * int(m.group(1)) - 1]
+        return _to_mate(engine, board, pv[:2 * int(m.group(1)) - 1], 2 * int(m.group(1)) - 1)
     out = [pv[0]]
     b = board.copy()
     b.push_uci(pv[0])
@@ -148,6 +166,21 @@ def _solution(engine: Engine, board: chess.Board, first: dict, pv: list[str]) ->
     return out
 
 
+def _to_mate(engine: Engine, board: chess.Board, line: list[str], plies: int) -> list[str]:
+    """The mating line played out: Stockfish's pv often stops short of the mate it announces."""
+    b = board.copy()
+    for u in line:
+        b.push_uci(u)
+    line = list(line)
+    while len(line) < plies and not b.is_game_over():
+        nxt = engine.lines(b, multipv=1, seconds=tactics.SEARCH_SECONDS, depth=tactics.SEARCH_DEPTH)
+        if not nxt:
+            break
+        line.append(nxt[0]["uci"])
+        b.push_uci(nxt[0]["uci"])
+    return line
+
+
 def _opening(review: dict, ply: int) -> str | None:
     b = chess.Board(review["start_fen"])
     name = None
@@ -159,15 +192,51 @@ def _opening(review: dict, ply: int) -> str | None:
     return name or review.get("opening")
 
 
-def _puzzle(review: dict, kind: str, trigger_ply: int, t: dict, solution: list[str], mine: dict) -> dict:
+def _sacrifice(board: chess.Board, solution: list[str]) -> bool:
+    """One of the solver's moves leaves the piece it moved where they win material by taking it (net of what the
+    move itself took), short of mate: Bxh7+ Kxh7, a knight dropped on d5."""
+    b = board.copy(stack=False)
+    for i, u in enumerate(solution):
+        mv = chess.Move.from_uci(u)
+        if mv not in b.legal_moves:
+            break
+        took = (1 if b.is_en_passant(mv) else VALUES[b.piece_at(mv.to_square).piece_type]) if b.is_capture(mv) else 0
+        b.push(mv)
+        if i % 2 == 0 and not b.is_checkmate() and _see(b, mv.to_square) - took >= 2:
+            return True
+    return False
+
+
+def spice(board: chess.Board, solution: list[str], t: dict, maia, rating: int) -> dict:
+    """How much of a puzzle this is: {spice, pct, tags}. `board` is the solver's position with the game's history
+    (Maia reads it). pct = Maia's chance a ~`rating` player plays the first move (None without Maia); a move under
+    Maia's top 10 counts as half the 10th's chance."""
+    first = chess.Move.from_uci(solution[0])
+    pct = None
+    if maia:
+        cands = maia.moves(board, rating, rating, top=maia_mod.TOP_MOVES)
+        pct = next((c["pct"] for c in cands if c["uci"] == solution[0]), (cands[-1]["pct"] / 2) if cands else None)
+    hard = math.log10(100 / max(pct, 0.5)) if pct is not None else NO_MAIA_HARD  # 50% → 0.3, 10% → 1, 1% → 2
+    sac = _sacrifice(board, solution)
+    quiet = (not board.is_capture(first) and not board.gives_check(first) and not first.promotion
+             and (pct is None or pct < QUIET_PCT))
+    moves = (len(solution) + 1) // 2
+    idea = any(m in t["motifs"] for m in ("fork", "pin", "skewer", "discovered", "defender"))
+    score = hard + SAC_BONUS * sac + QUIET_BONUS * quiet + DEPTH_BONUS * (moves - 1) + IDEA_BONUS * idea
+    tags = (["sacrifice"] if sac else []) + (["quiet move"] if quiet else []) + ([f"{moves} moves deep"] if moves > 1 else [])
+    if pct is not None and pct < 10:
+        tags.append(f"~{max(1, round(pct))}% of ~{rating} players find it")
+    return {"spice": round(score, 2), "pct": pct, "tags": tags}
+
+
+def _puzzle(review: dict, kind: str, trigger_ply: int, t: dict, solution: list[str], mine: dict, flavour: dict) -> dict:
     """trigger_ply: the game's ply of the trigger move (1-based); the puzzle's FEN is the position before it"""
     gid = review["game_id"]
     trig = review["moves"][trigger_ply - 1]
     me = mine["side"]
     opp = "black" if me == "white" else "white"
     nxt = review["moves"][trigger_ply] if trigger_ply < len(review["moves"]) else None
-    # a free piece is filed as a loose piece whatever else the line does (tactics.py "kind")
-    motif = "hanging" if t.get("kind") == "free" else t["motifs"][0] if t["motifs"] else "other"
+    motif = t["motifs"][0] if t["motifs"] else "other"
     m = re.search(r"#-?(\d+)", t["eval_white"])
     return {"id": f"{gid}-{trigger_ply}-{kind}", "kind": kind, "game_id": gid, "ply": trigger_ply,
             "fen": trig["fen_before"], "moves": [trig["uci"], *solution],
@@ -177,31 +246,52 @@ def _puzzle(review: dict, kind: str, trigger_ply: int, t: dict, solution: list[s
             "game_move": nxt["san"] if nxt else None, "found": bool(nxt and nxt["uci"] == solution[0]),
             "lost": mine["lost"], "your_move": mine["san"],
             "opponent": review[opp], "date": review.get("date"), "opening": _opening(review, trigger_ply),
-            "url": _url(gid, trigger_ply + 1)}
+            "url": _url(gid, trigger_ply + 1), **flavour}
 
 
-def mine_game(engine: Engine, review: dict, me: set[str]) -> list[dict]:
+def _mate_for(ev: str | None, color: str) -> bool:
+    """A review eval (White's view: "#3", "#-2") says `color` mates"""
+    return bool(ev) and ev.startswith("#") and ev.startswith("#-") == (color == "black")
+
+
+def _keep(engine: Engine, review: dict, kind: str, trigger_ply: int, b: chess.Board, hit, mine: dict,
+          maia, rating: int) -> dict | None:
+    t, pv = hit
+    if t["kind"] == "free":  # taking a hanging piece isn't a puzzle
+        return None
+    solution = _solution(engine, b, t, pv)
+    flavour = spice(b, solution, t, maia, rating)
+    if flavour["spice"] < MIN_SPICE:
+        return None
+    return _puzzle(review, kind, trigger_ply, t, solution, mine, flavour)
+
+
+def mine_game(engine: Engine, review: dict, me: set[str], maia=None, rating: int | None = None) -> list[dict]:
     side = "white" if review["white"].lower() in me else "black" if review["black"].lower() in me else None
     if not side:
         return []
+    opp = "black" if side == "white" else "white"
+    rating = rating or maia_mod.player_rating()
     out = []
     for i, m in enumerate(review["moves"]):
-        if m["color"] != side or not isinstance(m.get("win_pct_lost"), (int, float)) or m["win_pct_lost"] < MIN_LOST:
+        if m["color"] != side or not isinstance(m.get("win_pct_lost"), (int, float)):
             continue
+        big = m["win_pct_lost"] >= MIN_LOST
         ply = i + 1          # this move is the game's ply-th
         mine = {"side": side, "lost": round(m["win_pct_lost"]), "san": m["san"]}
         # missed: your turn (after the opponent's move, ply - 1), a tactic you didn't play
-        if ply > 1:
+        if ply > 1 and (big or (_mate_for(m.get("eval_before"), side) and not m.get("played_best"))):
             b = _board_at(review, ply - 1)
             hit = _tactic(engine, b)
             if hit and hit[0]["uci"] != m["uci"]:
-                out.append(_puzzle(review, "missed", ply - 1, hit[0], _solution(engine, b, *hit), mine))
+                out.append(_keep(engine, review, "missed", ply - 1, b, hit, mine, maia, rating))
         # allowed: after your move, their tactic
-        b = _board_at(review, ply)
-        hit = _tactic(engine, b)
-        if hit:
-            out.append(_puzzle(review, "allowed", ply, hit[0], _solution(engine, b, *hit), mine))
-    return out
+        if big or (_mate_for(m.get("eval_after"), opp) and not _mate_for(m.get("eval_before"), opp)):
+            b = _board_at(review, ply)
+            hit = _tactic(engine, b)
+            if hit:
+                out.append(_keep(engine, review, "allowed", ply, b, hit, mine, maia, rating))
+    return [p for p in out if p]
 
 
 def _todo(data: dict) -> list[dict]:
@@ -224,7 +314,7 @@ def pending() -> int:
 
 
 def mine_all(me: list[str], progress=lambda i, n, msg: print(msg, flush=True), threads: int = 4,
-             engine: Engine | None = None) -> dict:
+             engine: Engine | None = None, maia=None) -> dict:
     data = _load()
     if me:
         data["me"] = sorted({n.lower() for n in me})
@@ -234,10 +324,12 @@ def mine_all(me: list[str], progress=lambda i, n, msg: print(msg, flush=True), t
     todo = _todo(data)
     own = engine is None
     engine = engine or Engine(threads=threads, hash_mb=256)
+    if maia is None and maia_mod.available():
+        maia = maia_mod.Maia()
     t0 = time.monotonic()
     try:
         for i, r in enumerate(todo, 1):
-            found = mine_game(engine, r, names)
+            found = mine_game(engine, r, names, maia)
             data["games"][r["game_id"]] = {"version": VERSION, "puzzles": found}
             _save(data)  # after every game, so a stopped run keeps what it has
             progress(i, len(todo), f"[{i}/{len(todo)}] {r['white']} vs {r['black']}: {len(found)} puzzle(s) ({time.monotonic() - t0:.0f} s)")
@@ -265,9 +357,14 @@ def summary() -> dict:
 
 def pick(group: str | None, exclude: list[str]) -> dict | None:
     ps = [p for p in _all() if not group or p["kind"] == group or f"{p['kind']}|{p['motif']}" == group]
-    fresh = [p for p in ps if p["id"] not in set(exclude)]
+    seen = set(exclude)
+    fresh = [p for p in ps if p["id"] not in seen]
     pool = fresh or ps          # everything seen: start over
-    return _public(random.choice(pool)) if pool else None
+    if not pool:
+        return None
+    # the spiciest first; a random one of the top few so a restart isn't the same order
+    top = sorted(pool, key=lambda p: -p.get("spice", 0))[:3]
+    return _public(random.choice(top))
 
 
 def _public(p: dict) -> dict:
@@ -279,7 +376,7 @@ def _public(p: dict) -> dict:
         b.push(mv)
     return {**p, "sans": sans, "rating": None, "themes": [p["motif"]], "motif_label": MOTIF_LABEL.get(p["motif"], p["motif"]),
             "pattern": f"{p['kind']}|{p['motif']}", "variation": p["opening"] or "your game", "family": None,
-            "game_url": p["url"], "mine": True}
+            "game_url": p["url"], "mine": True, "flavour": p.get("tags") or []}
 
 
 if __name__ == "__main__":

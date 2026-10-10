@@ -51,6 +51,25 @@ MIN_POPULARITY = 60
 MIN_PLAYS = 30
 RATING_STEPS = (100, 200, 400, 4000)   # the band around your level, widened until something is left
 
+# Which puzzles are worth serving (user, 2026-10-09: "hanging a queen should never be a tactic or a puzzle"; "the
+# best and coolest tactics may not yield the biggest swing"). Lame: one move, or nothing to it but taking a loose
+# piece (Lichess's motif hangingPiece, or no motif at all). Spicy: a theme where the move is hard to see. A pick
+# prefers spicy, then plain, near your rating; lame ones only when nothing else is left, or their own pattern.
+LAME_MOTIFS = ("hangingPiece", "other")
+SPICY_THEMES = {"sacrifice": "sacrifice", "quietMove": "quiet move", "deflection": "deflection",
+                "attraction": "decoy", "clearance": "clearance", "interference": "interference",
+                "intermezzo": "in-between move", "xRayAttack": "x-ray", "capturingDefender": "remove the defender",
+                "doubleCheck": "double check", "trappedPiece": "trapped piece", "zugzwang": "zugzwang",
+                "defensiveMove": "defensive move", "underPromotion": "underpromotion"}
+
+
+def _has(theme: str) -> str:
+    return f"(' ' || themes || ' ') LIKE '% {theme} %'"
+
+
+_LAME = "(" + " OR ".join([_has("oneMove")] + [f"pattern LIKE '%|{m}'" for m in LAME_MOTIFS]) + ")"
+_SPICY = "(" + " OR ".join(_has(t) for t in SPICY_THEMES) + ")"
+
 _lock = threading.Lock()
 _cache: dict = {}
 
@@ -228,7 +247,7 @@ def patterns(tags: list[str], side: str | None = None) -> dict:
     rows = []
     for p, detail in by_pattern.items():
         n = len(detail)
-        if n < need:
+        if n < need or p.split("|")[1] in LAME_MOTIFS:  # "take the loose piece" isn't a pattern worth learning
             continue
         # lift against every *other* puzzle: a huge family like the Sicilian is a big part of the whole
         # baseline, so comparing it with a baseline that includes itself would flatten every lift toward 1
@@ -281,14 +300,16 @@ def pick(tags: list[str], side: str | None, rating: int, pattern: str | None = N
     if exclude:
         where += f" AND id NOT IN ({','.join('?' * len(exclude))})"
         args += exclude
+    # nearness to your rating first, then spicy over plain; lame and unpopular ones only when nothing else is left
+    good = f" AND popularity >= {MIN_POPULARITY} AND plays >= {MIN_PLAYS}"
+    tries = [(step, f"{good} AND NOT {_LAME} AND {s}") for step in RATING_STEPS for s in (_SPICY, f"NOT {_SPICY}")]
+    tries += [(step, good) for step in RATING_STEPS] + [(step, "") for step in RATING_STEPS]
     with _db() as con:
-        for quality in (True, False):
-            q = f" AND popularity >= {MIN_POPULARITY} AND plays >= {MIN_PLAYS}" if quality else ""
-            for step in RATING_STEPS:
-                row = con.execute(f"SELECT * FROM puzzles WHERE {where}{q} AND rating BETWEEN ? AND ? ORDER BY RANDOM() LIMIT 1",
-                                  [*args, rating - step, rating + step]).fetchone()
-                if row:
-                    return _public(dict(row))
+        for step, q in tries:
+            row = con.execute(f"SELECT * FROM puzzles WHERE {where}{q} AND rating BETWEEN ? AND ? ORDER BY RANDOM() LIMIT 1",
+                              [*args, rating - step, rating + step]).fetchone()
+            if row:
+                return _public(dict(row))
     return None
 
 
@@ -313,4 +334,9 @@ def _public(row: dict) -> dict:
             "mate_in": next((int(t[6:]) for t in themes if re.fullmatch(r"mateIn\d", t)), None),
             "solver": "white" if row["solver"] == "w" else "black", "pattern": row["pattern"],
             "family": label(row["family"]), "variation": label(row["variation"]), "game_url": row["game_url"],
-            "plays": row["plays"], "popularity": row["popularity"]}
+            "plays": row["plays"], "popularity": row["popularity"], "flavour": _flavour(themes, len(moves) // 2)}
+
+
+def _flavour(themes: list[str], solver_moves: int) -> list[str]:
+    """What makes it worth solving, for the result card (same shape as my_puzzles' tags)"""
+    return [SPICY_THEMES[t] for t in themes if t in SPICY_THEMES] + ([f"{solver_moves} moves deep"] if solver_moves > 1 else [])

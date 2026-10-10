@@ -4931,6 +4931,7 @@ const pzCount = (n) => `${n.toLocaleString()} puzzle${n === 1 ? '' : 's'}`;
 async function pzSearch(q) {
   const body = $('pz-body');
   $('pz-side').classList.remove('hidden');
+  document.querySelector('#dlg-puzzles .pz-foot').classList.remove('hidden');
   let res;
   try {
     res = await api(`/api/puzzles/openings?q=${encodeURIComponent(q)}`);
@@ -5055,6 +5056,8 @@ async function pzShowMine() {
     return gs.length ? `<div class="pz-gh">${esc(gs[0].title)}<span class="pz-ghs">${sub}</span></div><div class="pz-pats">${gs.map(row).join('')}</div>` : '';
   };
   $('pz-side').classList.add('hidden');  // no sides here: missed = yours, allowed = theirs
+  // the footer is about the Lichess puzzles (and the puzzle level, which these don't move)
+  document.querySelector('#dlg-puzzles .pz-foot').classList.add('hidden');
   const job = pzMineJob;
   const names = pzAccounts(res.accounts, res.gone);
   const who = [names.chesscom.length && `${names.chesscom.join(', ')} (chess.com)`, names.lichess.length && `${names.lichess.join(', ')} (Lichess)`]
@@ -5149,7 +5152,7 @@ function pzBegin(p, topic, pattern) {
     : `${side} to play after their move: find the tactic`;
   addMsg('coach sb-msg', `<div class="eg-card pz-card"><div class="eg-ch"><span class="sb-al">Puzzle</span><span class="pz-n">${pzWhere(p)}</span></div>`
     + `<div class="eg-goal">${esc(goal)}</div>`
-    + `<div class="card-sub">${esc(p.variation)}${pattern ? ` · drilling ${esc(pattern.title)}` : ''}</div></div>`);
+    + `<div class="card-sub">${esc(p.variation)}${pattern ? ` · drilling ${esc(pattern.title)}` : ''}${p.mine ? pzGameLink(p, ' · ') : ''}</div></div>`);
   pzReply(PZ_TRIGGER_MS);
 }
 
@@ -5196,7 +5199,7 @@ function onPuzzleMove(orig, dest) {
 }
 
 // where a puzzle comes from: its Lichess rating, or the game of yours it's from
-const pzWhere = (p) => (p.mine ? `vs ${esc(p.opponent)}${p.date ? ` · ${esc(p.date.replaceAll('.', '-'))}` : ''}` : `~${p.rating}`);
+const pzWhere = (p) => (p.mine ? `Your game vs ${esc(p.opponent)}${p.date ? ` · ${esc(p.date.replaceAll('.', '-'))}` : ''}` : `~${p.rating}`);
 
 function pzHintText(p) {
   if (p.motif === 'mate') return p.mate_in ? `There's mate in ${p.mate_in}` : 'Look for checkmate';
@@ -5255,10 +5258,11 @@ function pzFinish() {
     + `<div class="pz-line"><span class="pz-k">They played</span>${esc(pzNumbered(p.fen, [p.sans[0]]))}</div>`
     + `<div class="pz-line"><span class="pz-k">Tactic</span><b>${esc(pzNumbered(g.fen(), p.sans.slice(1)))}</b></div>`
     + (p.mine ? `<div class="pz-line"><span class="pz-k">In the game</span>${esc(pzGameText(p))}</div>` : '')
+    + (p.flavour?.length ? `<div class="pz-line"><span class="pz-k">Why</span>${esc(p.flavour.join(' · '))}</div>` : '')
     + `<div class="card-sub">${esc(p.motif_label)} · ${esc(p.variation)} · ${p.mine ? pzWhere(p) : `puzzle ~${p.rating} · your level ${pzRating()}`}</div>`
     + '<div class="eg-actions"><button class="btn small" data-a="next">Next puzzle</button><button class="btn ghost small" data-a="retry">Try again</button>'
     + `<button class="btn ghost small" data-a="why" title="Asks the coach (paid)">Explain it</button>`
-    + (p.mine ? '<button class="btn ghost small" data-a="game">Open the game here</button>'
+    + (p.mine ? `<button class="btn ghost small" data-a="game">Open the game here</button>${pzGameLink(p, '', 'btn ghost small')}`
       : p.game_url ? `<a class="btn ghost small" href="${esc(p.game_url)}" target="_blank" rel="noopener">The game on Lichess</a>` : '')
     + '<button class="btn ghost small" data-a="patterns">Patterns</button></div></div>');
   msg.querySelector('[data-a=next]').onclick = () => startPuzzle(pz.pattern);
@@ -5266,6 +5270,13 @@ function pzFinish() {
   msg.querySelector('[data-a=why]').onclick = () => pzExplain(pz);
   msg.querySelector('[data-a=patterns]').onclick = () => openPuzzles();
   msg.querySelector('[data-a=game]')?.addEventListener('click', () => pzOpenGame(p));
+}
+
+// your game on chess.com / Lichess, at the puzzle's move (opens in a new tab)
+function pzGameLink(p, before, cls = '') {
+  if (!p.game_url) return '';
+  const site = p.game_url.includes('lichess') ? 'Lichess' : 'chess.com';
+  return `${before}<a${cls ? ` class="${cls}"` : ''} href="${esc(p.game_url)}" target="_blank" rel="noopener">The game on ${site} ↗</a>`;
 }
 
 function pzGameText(p) {
@@ -5317,7 +5328,7 @@ function renderPuzzleInfo() {
   const pz = state.puzzle;
   const { p } = pz;
   $('game-info').textContent = 'Opening puzzle';
-  $('board-sub').textContent = p.mine ? `${p.variation} · vs ${p.opponent}` : `${p.variation} · ~${p.rating}`;
+  $('board-sub').textContent = p.mine ? `Your game vs ${p.opponent} · ${p.variation}` : `${p.variation} · ~${p.rating}`;
   const side = p.solver === 'white' ? 'White' : 'Black';
   const status = pz.done ? (pz.failed ? 'Over: look around, or the next one.' : 'Solved ✓') : pz.waiting ? 'Their move…' : `${side} to play`;
   const hint = !pz.done && pz.hint ? ['', pzHintText(p), 'The circled piece moves', 'The arrow shows the move'][pz.hint] : '';

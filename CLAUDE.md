@@ -524,7 +524,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
 ### Tactics finder (`core/tactics.py`, "Tactics finder" in `app.js`, 2026-10-07)
 
 - **Detector:** a tactic = one clearly best move: win % gap between Stockfish's #1 and #2 ≥ `MIN_GAP` 20 and
-  the mover ≥ `MIN_WIN` 60 after it. Board geometry along the best line names it (`motifs()`: mate, fork,
+  the mover ≥ `MIN_WIN` 60 after it, or the only mating move whatever the gap (2026-10-09: from +5 a mate barely
+  moves win %, so those were invisible; this also fires the live alert when you're already winning). Board geometry along the best line names it (`motifs()`: mate, fork,
   skewer, pin, discovered, hanging = a capture netting ≥ 2); headline = mate, else the motif on the earliest
   move. A plain trade-back recapture is skipped (needs the board's move history). `find()` searches itself
   (depth 16 / 2 s, multipv 2); `from_lines()` reuses lines, and `scoreboard.build()` returns `tactic` from its
@@ -575,7 +576,11 @@ file says what is true now. Last full cleanup: 2026-10-03.
   typical patterns are still mates on specific squares; no hand check of the patterns beyond those examples.
   Template titles ("…Bg5 pin", "Qxh7#"); the Claude naming pass is not built.
 - **Picking:** `pick()` widens the rating band (±100/200/400/any) and drops the quality filter (popularity ≥ 60,
-  plays ≥ 30) last; skips the last 300 ids (localStorage `pzSeen`). `/api/puzzles/next` also starts a fresh
+  plays ≥ 30) last. Within each band it prefers *spicy* (a `SPICY_THEMES` tag: sacrifice, quiet move, deflection,
+  decoy, clearance…) over plain, and serves *lame* ones (`oneMove`, or motif hangingPiece/other: take the loose
+  piece) only when nothing else is left (2026-10-09, user: "hanging a queen should never be a tactic or a puzzle").
+  Lame motifs are also left out of the pattern lists. Tested: 30 Sicilian picks at 1000, all spicy, 0.11 s each.
+  The result card's "Why" line lists the spicy themes and the length (`flavour`); skips the last 300 ids (localStorage `pzSeen`). `/api/puzzles/next` also starts a fresh
   analysis board at the puzzle's FEN (before the trigger) with a coach note that says not to give the answer.
 - **Puzzle mode** (`state.puzzle`): trigger plays after 0.7 s, replies after 0.45 s; the solution's exact move
   or any mate is accepted. A wrong move = missed (circle, then arrow); Hint ladder: theme (free), piece, move
@@ -589,8 +594,19 @@ file says what is true now. Last full cleanup: 2026-10-03.
   `data/reviews/` that lost ≥ `MIN_LOST` 10 win % gets two checks with the tactics finder (depth 16 / 2 s, board
   with history): *missed* (on your turn one move clearly won and you played another; trigger = their previous move,
   you solve) and *allowed* (after your move they had one; trigger = your move, you solve from their side, board
-  flipped). The solution runs on while each next solver move is again the finder's one clear move, up to 3; a mate
-  ≤ 5 runs to the end of the PV. Stored per game with `VERSION` (bump to re-mine) in `data/my_puzzles.json`, with
+  flipped). Mates are also checked when your move lost little (the review's eval says you had mate, or your move
+  allowed one). The solution runs on while each next solver move is again the finder's one clear move, up to 3; a
+  mate ≤ 5 is played out to mate (`_to_mate()`: Stockfish's PV often stops short).
+  **What's kept (VERSION 2, 2026-10-09; user: "hanging a queen should never be a tactic or a puzzle", "the coolest
+  tactics may not yield the biggest swing"):** free pieces (tactics `kind` "free") never; the rest by `spice()`:
+  log10(100 / Maia's % for the first move at `PLAYER_RATING`) + sacrifice 1.0 + quiet first move 0.7 (only under
+  40% find it) + 0.4 per extra solver move + 0.3 for a named idea; under `MIN_SPICE` 1.0 dropped; `pick()` serves
+  the highest first (random among the top 3). Weights are first guesses from a 30-game dry run. Re-mine 2026-10-09:
+  233 puzzles from 612 games (142 missed, 91 allowed; 56 missed mates; 25 sacrifices, 126 quiet first moves), 89 min
+  at 8 threads; VERSION 1 had 283 from 379 (backup `data/my_puzzles.v1.json`). The result card's "Why" line shows
+  the tags. Cards say "Your game vs X" and link the game on chess.com/Lichess at that move (`pzGameLink()`, start
+  and result card; whether chess.com lands on the move isn't checked); the dialog's Lichess footer is hidden on
+  this screen (it made the user think these were Lichess puzzles). Stored per game with `VERSION` (bump to re-mine) in `data/my_puzzles.json`, with
   the user's names and accounts. **The user's chess.com account was renamed `sirwill3rd` → `O-O-O-F4ce`** (found
   2026-10-08: chess.com's live-game endpoint names the same player differently; the old name 404s on the API). Older
   reviews say sirwill3rd, newer ones O-O-O-F4ce. **Accounts (user, 2026-10-08): chess.com `O-O-O-F4ce` and

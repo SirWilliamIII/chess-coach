@@ -999,8 +999,9 @@ def _mine_job(accounts: dict):
 
         def progress(i, n, msg):
             MINE_JOB.update(phase="Looking for tactics in them", done=i, total=n)
-        my_puzzles.mine_all([], progress, engine=engine)
-        MINE_JOB.update(status="done", new_puzzles=my_puzzles.summary()["n"] - before)
+        my_puzzles.mine_all([], progress, engine=engine, maia=S.maia if maia.available() else None)
+        # a re-mine after a VERSION bump can keep fewer than before
+        MINE_JOB.update(status="done", new_puzzles=max(0, my_puzzles.summary()["n"] - before))
     except BaseException as e:  # SystemExit from mine_all when it has no names
         MINE_JOB.update(status="error", error=str(e))
     finally:

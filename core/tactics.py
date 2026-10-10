@@ -1,7 +1,8 @@
 """Tactics finder: does the side to move have a tactic here, which move starts it, and what kind is it.
 
 Two steps. (1) The engine decides whether there is one: a tactic is a position where one move is clearly better
-than every other (win % gap between Stockfish's #1 and #2) and leaves the mover better off. That's roughly how
+than every other (win % gap between Stockfish's #1 and #2) and leaves the mover better off, or the only move
+that mates (whatever the gap). That's roughly how
 Lichess picks puzzles from games. (2) Board geometry names it, walking the mover's moves in the best line:
 mate, fork, pin, skewer, discovered attack, removing the defender, hanging piece. Geometry is microseconds; the
 cost is the search. (3) The kind: "free" when the whole profit is the first move's own exchange (a piece left
@@ -211,6 +212,10 @@ def find(engine: Engine, board: chess.Board, depth: int = SEARCH_DEPTH, seconds:
     return from_lines(board, engine.lines(board, multipv=2, seconds=seconds, depth=depth))
 
 
+def _mates(line: dict, mover: chess.Color) -> bool:
+    return abs(line["cp_white"]) >= MATE_CP - 1000 and (line["cp_white"] > 0) == (mover == chess.WHITE)
+
+
 def from_lines(board: chess.Board, lines: list[dict]) -> dict | None:
     """find() on engine lines someone already has (the scoreboard's deep top 5: its #1 and #2 are all this
     needs, so the live check costs no extra search). `lines` as Engine.lines returns them, with "pv"."""
@@ -230,11 +235,15 @@ def from_lines(board: chess.Board, lines: list[dict]) -> dict | None:
         return None
     mover = board.turn
     best = lines[0]
-    w1 = _win(best["cp_white"], mover)
-    w2 = _win(lines[1]["cp_white"], mover) if len(lines) > 1 else 0.0  # only one legal move: not a tactic
-    if len(lines) < 2 or w1 - w2 < MIN_GAP or w1 < MIN_WIN:
+    if len(lines) < 2:  # only one legal move: not a tactic
         return None
-    mate = abs(best["cp_white"]) >= MATE_CP - 1000 and (best["cp_white"] > 0) == (mover == chess.WHITE)
+    w1 = _win(best["cp_white"], mover)
+    w2 = _win(lines[1]["cp_white"], mover)
+    mate = _mates(best, mover)
+    # the only mate counts whatever the win % gap: from +5 a mating attack barely moves win %, and those are the
+    # finest combinations (user, 2026-10-09: "the coolest tactics may not yield the biggest swing")
+    if not (mate and not _mates(lines[1], mover)) and (w1 - w2 < MIN_GAP or w1 < MIN_WIN):
+        return None
     pv = [chess.Move.from_uci(u) for u in best["pv"]]
     kind = kind_of(board, pv, mate)
     found = motifs(board, pv, mate)
