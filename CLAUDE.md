@@ -480,6 +480,13 @@ file says what is true now. Last full cleanup: 2026-10-03.
   scoreboard chat card (your/their move alerts, next-play alerts, big plays). `alerts()` on the server stays,
   unused; the endgame trainer still uses the `.sb-msg`/`.sb-alert` card styles.
 - **Thresholds are first guesses** (tiers 5/15/30 win %, "holds" < 5), not tuned on games.
+- **Do the row numbers mean "the score if played"?** (`python -m scripts.scoreboard_eval [--positions 30]`, ~9 min;
+  user, 2026-10-09: "a good move near the game score turned out a blunder when clicked"). Each shown move is played
+  and the next position searched as the app does. 30 positions from the user's games: mean gap shown vs real 1.2
+  win % (deep top 5), 2.1 (depth-10 rest), 2.1 (the quick 0.5 s Maia scores before the deep search lands); "looked
+  fine (< 5 lost) but lost ≥ 15" in 4 of 376 rows, all one lost endgame (−4 shown, mated in fact). Not reproduced.
+  Suspected instead (not checked on a real case): grades are win % lost, steep near equality (+0.37 → +1.20 for
+  Black reads "near" in pawns but is a Mistake). Waiting on a screenshot of a real case.
 
 ### Game report (`core/report.py`, `GET /api/report`, "game report" in `app.js`, 2026-10-09)
 
