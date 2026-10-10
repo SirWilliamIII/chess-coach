@@ -698,10 +698,22 @@ function setEvalBar(quick) {
   if (!deep && !quick) return;
   const ev = deep || quick.eval;
   const cp = deep ? (deep.startsWith('#') ? (deep.includes('-') ? -10000 : 10000) : Math.round(parseFloat(deep) * 100)) : quick.cp;
-  $('evalfill').style.height = `${winPct(Math.max(-1500, Math.min(1500, cp)))}%`;
-  $('evalbar').classList.toggle('flipped', state.orientation === 'black');
+  const w = winPct(Math.max(-1500, Math.min(1500, cp)));
+  $('evalfill').style.width = `${w}%`;
   $('evalbar').classList.toggle('black-better', cp < 0);
-  $('evaltext').textContent = ev.replace('+', '');
+  $('evaltext').textContent = evalBarWords(ev, w);
+  $('evalbar').title = fmtEval(ev);
+}
+
+// The bar's words, banded by White's win % (first guesses, 2026-10-09; Chessiro's own cut-offs aren't public)
+function evalBarWords(ev, w) {
+  if (ev.startsWith('#')) {
+    const n = +ev.replace(/[^0-9]/g, '');
+    return n ? `${ev.includes('-') ? 'Black' : 'White'} mates in ${n}` : 'Checkmate';
+  }
+  const d = Math.abs(w - 50);
+  if (d < 5) return 'Equal';
+  return `${w > 50 ? 'White' : 'Black'} ${d < 15 ? 'slightly better' : d < 30 ? 'better' : d < 42 ? 'crushing' : 'dominating'}`;
 }
 
 function showEval(data) {
@@ -1213,6 +1225,85 @@ function sbAfter(L, k, u) {
     + `<div class="sb-rankbar">${ticks}</div>${facts ? `<div class="sb-facts">${facts}</div>` : ''}</section>`;
 }
 
+// ---- game report (core/report.py, GET /api/report): eval graph, accuracy, move grades, practice from this game.
+// Loaded games only; from the saved review, so free and instant.
+const reportCache = new Map();  // game_id → report, or 'loading' / 'failed'
+const REPORT_GRADES = [['book', 'Book'], ['best', 'Best'], ['excellent', 'Excellent'], ['good', 'Good'],
+  ['inaccuracy', 'Inaccuracy'], ['mistake', 'Mistake'], ['blunder', 'Blunder']];
+const reportOpen = () => recall('reportOpen') === '1';
+
+function reportGame() {
+  const r = state.review;
+  return r?.moves.length && !state.play && !state.study && !state.puzzle && !state.demo ? r : null;
+}
+
+function getReport() {
+  const r = reportGame();
+  if (!r) return null;
+  const hit = reportCache.get(r.game_id);
+  if (hit === undefined) {
+    reportCache.set(r.game_id, 'loading');
+    api('/api/report')
+      .then((rep) => { reportCache.set(rep.game_id, rep); if (rep.game_id === reportGame()?.game_id) renderKeyCard(); })
+      .catch(() => reportCache.set(r.game_id, 'failed'));
+  }
+  return typeof hit === 'object' ? hit : null;
+}
+
+// White's win % over the game: White's share filled from the bottom, mistakes as dots, the shown move as a line
+function reportGraph(rep, tall) {
+  const w = rep.wins;
+  const n = w.length - 1;
+  const pts = w.map((v, i) => `${(100 * i / n).toFixed(2)},${(100 - v).toFixed(2)}`).join(' ');
+  const dots = rep.marks.map((m) => `<button class="rp-dot ${m.grade}" data-ply="${m.ply}" style="left:${100 * m.ply / n}%;top:${100 - w[m.ply]}%"`
+    + ` title="${esc(`${m.label}${m.san}: ${m.grade}`)}"></button>`).join('');
+  const now = Math.min(n, state.ply + state.extra.length);
+  return `<div class="rp-graph${tall ? ' tall' : ''}" data-n="${n}"><svg viewBox="0 0 100 100" preserveAspectRatio="none">`
+    + `<polygon points="0,100 ${pts} 100,100" class="rp-white"/><line x1="0" y1="50" x2="100" y2="50" class="rp-mid"/></svg>`
+    + `<i class="rp-now" style="left:${100 * now / n}%"></i>${dots}</div>`;
+}
+
+function reportStrip(rep) {
+  if (!rep) return '<section class="sb-card report-strip"><div class="rp-graph skel"></div></section>';
+  const a = (c) => rep.sides[c].accuracy ?? '–';
+  return `<section class="sb-card report-strip">${reportGraph(rep, false)}<div class="rp-strip-row">`
+    + `<span>Accuracy <b>${a('white')}</b> · <b>${a('black')}</b></span><button class="rp-toggle">▸ Game report</button></div></section>`;
+}
+
+function reportFull(rep, closable) {
+  const r = state.review;
+  const head = `<div class="sb-head rp-head"><b>Game report</b>${closable ? '<button class="rp-toggle">▾ Hide</button>' : ''}</div>`;
+  if (!rep) return `<section class="sb-card report">${head}<div class="rp-graph tall skel"></div></section>`;
+  const you = r.player_color;
+  const name = (c) => `<span class="rp-name">${esc(r[c])}${you === c ? ' <i>(you)</i>' : ''}</span>`;
+  const rows = REPORT_GRADES.map(([g, label]) => `<div class="rp-row"><span class="rp-n">${rep.sides.white.counts[g]}</span>`
+    + `<span class="rp-g ${g}"><i></i>${label}</span><span class="rp-n">${rep.sides.black.counts[g]}</span></div>`).join('');
+  const pr = rep.practice;
+  const practice = !pr.mined ? '<p class="hint">Tactics not looked for in this game yet: "Update from my games" in Puzzles.</p>'
+    : !pr.groups.length ? '<p class="hint">No missed or allowed tactics found in this game.</p>'
+    : pr.groups.map((g) => `<div class="rp-practice"><button class="btn ghost small" data-practice="${esc(g.key)}">${esc(g.title)}</button>`
+      + g.plies.map((p) => `<button class="rp-at" data-ply="${p}">${esc(r.moves[p - 1].label + r.moves[p - 1].san)}</button>`).join('') + '</div>').join('');
+  return `<section class="sb-card report">${head}${reportGraph(rep, true)}`
+    + `<div class="rp-row rp-names">${name('white')}<span></span>${name('black')}</div>`
+    + `<div class="rp-row rp-acc"><b>${rep.sides.white.accuracy ?? '–'}</b><span>Accuracy</span><b>${rep.sides.black.accuracy ?? '–'}</b></div>`
+    + `<div class="rp-grades">${rows}</div>`
+    + `<div class="sb-sub-h"><span>Practice from this game</span></div>${practice}</section>`;
+}
+
+function wireReport(box) {
+  box.querySelectorAll('.rp-graph:not(.skel)').forEach((g) => {
+    g.onclick = (e) => {
+      const ply = e.target.dataset.ply ?? Math.round(+g.dataset.n * (e.clientX - g.getBoundingClientRect().left) / g.clientWidth);
+      goTo(Math.max(0, Math.min(+g.dataset.n, +ply)));
+    };
+  });
+  box.querySelectorAll('.rp-at').forEach((b) => { b.onclick = () => goTo(+b.dataset.ply); });
+  box.querySelectorAll('.rp-toggle').forEach((b) => { b.onclick = () => { store('reportOpen', reportOpen() ? '0' : '1'); renderKeyCard(); }; });
+  box.querySelectorAll('[data-practice]').forEach((b) => {
+    b.onclick = () => { pzSetTopic(PZ_MINE); startPuzzle({ key: b.dataset.practice }); };
+  });
+}
+
 function renderKeyCard() {
   const box = $('key-card');
   const sfOn = state.engineOn;
@@ -1235,10 +1326,17 @@ function renderKeyCard() {
   const { now, k } = sbTargets(L);
   // what just happened on top, what to do now below
   const cards = [];
-  if (k && sfOn) cards.push(sbAfter(L, k, u));
-  if (now != null) cards.push(sbBefore(L, now, u));
-  else if (!currentGame().isGameOver()) cards.push(sbWaiting());
+  // a loaded game's report: the whole card at its start (user's call, 2026-10-09), a strip above the cards after
+  const rg = reportGame();
+  const atStart = rg && state.ply === 0 && !state.extra.length;
+  if (rg) cards.push(atStart || reportOpen() ? reportFull(getReport(), !atStart) : reportStrip(getReport()));
+  if (!atStart) {
+    if (k && sfOn) cards.push(sbAfter(L, k, u));
+    if (now != null) cards.push(sbBefore(L, now, u));
+    else if (!currentGame().isGameOver()) cards.push(sbWaiting());
+  }
   box.innerHTML = cards.join('');
+  wireReport(box);
   box.querySelectorAll('.sb-tac-btn').forEach((b) => {
     b.onclick = () => {
       const t = tacticHere();

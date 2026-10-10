@@ -119,10 +119,10 @@ main {
   --gap: 20px; --pad-x: 24px;
   --side-w: clamp(320px, 26vw, 400px);
   --board-max: var(--board-user, 880px);  /* --board-user: set by dragging the handle beside the board */
-  --strip: 46px;  /* eval bar (28) + the gap that holds the rank labels (18) */
-  /* the board: as big as the height allows (196 px: padding, the two rows above, the name and buttons below,
-     the file letters, the row gaps), within the width left beside the nav and the side column */
-  --board-w: min(var(--board-max), calc(100vh - var(--head-h, 0px) - 196px),
+  --strip: 18px;  /* the gap left of the board that holds the rank labels (the eval bar is above the board since 2026-10-09) */
+  /* the board: as big as the height allows (222 px: padding, the two rows above, the eval bar, the name and buttons
+     below, the file letters, the row gaps), within the width left beside the nav and the side column */
+  --board-w: min(var(--board-max), calc(100vh - var(--head-h, 0px) - 222px),
     calc(100vw - var(--nav-w) - var(--side-w) - 2 * var(--pad-x) - var(--gap) - var(--strip)));
   /* the side column takes whatever the board leaves: --side-w is only its minimum (the board's width formula
      uses it), so a height-bound board or a hidden panel gives the panels the room instead of empty margins */
@@ -177,7 +177,7 @@ body.hide-score .score-panel, body.hide-chat .chat-panel { display: none; }
 body.hide-score .tab-score, body.hide-chat .tab-chat { display: flex; }
 
 /* ---------- board ---------- */
-.board-row { display: flex; gap: 18px; }
+.board-row { display: flex; flex-direction: column; gap: 6px; padding-left: var(--strip); }
 .board-wrap {
   position: relative;
   width: var(--board-w);
@@ -209,18 +209,17 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 .cg-wrap coords coord { color: var(--muted); }
 
 .evalbar {
-  position: relative; width: 28px; border-radius: 3px; overflow: hidden;
+  position: relative; width: var(--board-w); height: 20px; border-radius: 4px; overflow: hidden;
   background: #403d39; flex: none;
 }
-.evalbar .fill { position: absolute; left: 0; right: 0; bottom: 0; height: 50%; background: #fff; transition: height .35s ease; }
-.evalbar.flipped .fill { bottom: auto; top: 0; }
+/* horizontal, in words (user's call, 2026-10-09, after Chessiro): White's share fills from the left whichever way
+   the board faces; the number is only in the tooltip */
+.evalbar .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 50%; background: #f1eee6; transition: width .35s ease; }
 .evalbar span {
-  position: absolute; left: 0; right: 0; bottom: 4px; text-align: center;
-  font-size: 11px; font-weight: 700; color: #403d39; z-index: 1;
+  position: absolute; top: 0; bottom: 0; left: 10px; display: flex; align-items: center;
+  font-size: 12px; font-weight: 600; color: #2b2a27; z-index: 1; white-space: nowrap;
 }
-.evalbar.black-better span { bottom: auto; top: 4px; color: #fff; }
-.evalbar.flipped span { bottom: auto; top: 4px; }
-.evalbar.flipped.black-better span { top: auto; bottom: 4px; }
+.evalbar.black-better span { left: auto; right: 10px; color: #f1eee6; }
 .evalbar.off { visibility: hidden; }
 
 /* max-width = eval bar strip (--strip, same as padding-left) + board, so a right-aligned item lines up with the board's right edge */
@@ -498,7 +497,10 @@ dialog textarea { width: 100%; resize: vertical; }
   .nav-sec { flex-direction: row; gap: 2px; }
   .nav-sec + .nav-sec { border-left: 1px solid var(--line); padding-left: 4px; }
   .nav-item { width: 40px; height: 40px; padding: 0; justify-content: center; }
-  main { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; padding: 12px 16px; --board-w: calc(100vw - 32px - var(--strip)); }
+  /* phones: the rank labels go inside the board so it sits centred (user's call, 2026-10-09) */
+  main { --strip: 0px; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; padding: 12px 16px; --board-w: calc(100vw - 32px); }
+  .cg-wrap coords.ranks { left: 2px; width: 10px; }
+  .cg-wrap coords.ranks coord { justify-content: flex-start; align-items: flex-start; padding-top: 2px; font-size: 10px; color: rgba(0, 0, 0, .45); }
   .board-col { grid-row: auto; display: flex; flex-direction: column; gap: 6px; }
   .side { grid-column: 1; grid-row: auto; contain: none; grid-template-rows: auto 16px 520px; }
   .side-split, .side-resize { display: none; }
@@ -1132,3 +1134,37 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .pz-update { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .pz-update .hint { margin: 0; flex: 1 1 260px; }
 .pz-job { color: #f2d06b; }
+
+/* Game report (reportFull / reportStrip in app.js) */
+.rp-graph { position: relative; height: 44px; margin: 4px 0 6px; border-radius: 6px; overflow: hidden; background: #262522; cursor: pointer; }
+.rp-graph.tall { height: 110px; }
+.rp-graph.skel { cursor: default; }
+.rp-graph svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.rp-white { fill: #e8e4da; }
+.rp-mid { stroke: #888; stroke-width: 0.6; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; }
+.rp-now { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--accent, #6ea8fe); pointer-events: none; }
+.rp-dot { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; padding: 0; border: 1.5px solid #1b1b1b;
+  border-radius: 50%; cursor: pointer; }
+.rp-dot.inaccuracy, .rp-g.inaccuracy i { background: var(--t1); }
+.rp-dot.mistake, .rp-g.mistake i { background: var(--t2); }
+.rp-dot.blunder, .rp-g.blunder i { background: var(--t3); }
+.rp-g.best i, .rp-g.excellent i, .rp-g.good i { background: var(--t0); }
+.rp-g.book i { background: var(--muted); }
+.rp-strip-row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
+.rp-strip-row b { color: var(--text); }
+.rp-toggle { border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.rp-toggle:hover { color: var(--text); }
+.rp-head { display: flex; align-items: center; justify-content: space-between; }
+.rp-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; padding: 3px 0; }
+.rp-row > :first-child { text-align: right; }
+.rp-names { font-weight: 600; margin-top: 4px; }
+.rp-names i { font-style: normal; font-weight: 400; color: var(--muted); }
+.rp-acc b { font-size: 22px; font-weight: 300; }
+.rp-acc span { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.rp-grades { margin: 6px 0 10px; }
+.rp-n { font-variant-numeric: tabular-nums; }
+.rp-g { display: flex; align-items: center; gap: 7px; min-width: 104px; font-size: 13px; color: var(--muted); }
+.rp-g i { width: 9px; height: 9px; border-radius: 50%; }
+.rp-practice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; }
+.rp-at { border: 0; background: var(--inset); color: var(--text); border-radius: 99px; padding: 2px 8px; font: inherit; font-size: 12px; cursor: pointer; }
+.rp-at:hover { background: var(--hover); }

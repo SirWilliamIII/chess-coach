@@ -330,8 +330,14 @@ file says what is true now. Last full cleanup: 2026-10-03.
     (favourites, hidden when empty), `#game-info` (☆ names · result, shrinks first), `#board-sub`, and Moves &
     engine in `.board-head-right`; then `.top-row` = the top name (`#player-top`) with `.head-row` (`#summary`:
     Replay as / game status and buttons / the editor's buttons, `#pb-takeback`).
-  - **Sizes:** `--board-w` = min(`--board-max` 880, `100vh - --head-h - 196px`, the width left beside the nav and
-    `--side-w`); `--strip` (eval bar + rank labels, 46 px). 1440×900: 704 px (height-bound); 1920×1080: 880.
+  - **Sizes:** `--board-w` = min(`--board-max` 880, `100vh - --head-h - 222px`, the width left beside the nav and
+    `--side-w`); `--strip` (rank labels only, 18 px; 0 on phones, where the labels sit inside the board so it's
+    centred). 1440×900: 678 px (height-bound); 1920×1080: 880.
+  - **Eval bar** (2026-10-09, user's call after Chessiro; the vertical one left the board off-centre on a phone):
+    horizontal, 20 px, above the board inside `.board-row`, White's share filling from the left whichever way the
+    board faces, words instead of a number (`evalBarWords()`: banded by White's win %, < 5 Equal, < 15 slightly
+    better, < 30 better, < 42 crushing, else dominating, mates as "White mates in N"; first guesses). The number is
+    in its tooltip. Not the same as the older `evalWords()` (pawn bands, eval-pill tooltips and replay cards).
   - **Colour tokens** (`:root`): `--inset`, `--hover`/`--hover-2`, `--faint`, `--maia`, and one severity scale
     `--t0..--t3` (+ `--t3-text`) for win chance lost (< 5, 5-15, 15-30, 30+), used by every scoreboard mark.
   - **Moves & engine** (`.game-panel`, dropdown `#gp-details`) sits at the board's top right in every mode
@@ -464,6 +470,21 @@ file says what is true now. Last full cleanup: 2026-10-03.
   scoreboard chat card (your/their move alerts, next-play alerts, big plays). `alerts()` on the server stays,
   unused; the endgame trainer still uses the `.sb-msg`/`.sb-alert` card styles.
 - **Thresholds are first guesses** (tiers 5/15/30 win %, "holds" < 5), not tuned on games.
+
+### Game report (`core/report.py`, `GET /api/report`, "game report" in `app.js`, 2026-10-09)
+
+- User's pick from looking at Chessiro/Chessvia/Aimchess (none of them teach openings; their strength is the
+  post-game report). For loaded games only: at move 0 the scoreboard panel shows the whole report instead of the
+  cards; after it, a strip (graph + accuracies, "▸ Game report" opens it above the cards, localStorage `reportOpen`).
+- From the saved review, no engine: White's win % graph (click anywhere or a dot to jump; dots = inaccuracy and
+  worse), accuracy per side (Lichess's formula written from memory, not checked against lila's source; reviews are
+  0.3 s/position, so it won't match Lichess's number for the same game either), counts per grade on the
+  scoreboard's scale (`sbGrade()`: Best / Excellent < 2 / Good < 5 / Inaccuracy < 15 / Mistake < 30 / Blunder),
+  plus Book = moves while every position so far is in the ECO table. "Practice from this game": the game's
+  missed/allowed groups from `data/my_puzzles.json` (button = that group in Your mistakes, chips jump to the move);
+  games the miner hasn't seen say so.
+- Not built: grade icons on the board, a time graph (reviews keep no clock times; chess.com PGNs have `%clk`, not
+  checked), a game rating estimate (declined: a guess on a guess).
 
 ### Tactics finder (`core/tactics.py`, "Tactics finder" in `app.js`, 2026-10-07)
 

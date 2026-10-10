@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import eco, endgames, favorites, gm_moments, library, maia, my_puzzles, openings, opening_quips, opponent_card, positions, puzzles, ratings, repertoire, scoreboard, study, tablebase, usage
+from core import eco, endgames, favorites, gm_moments, library, maia, my_puzzles, openings, opening_quips, opponent_card, positions, puzzles, ratings, report, repertoire, scoreboard, study, tablebase, usage
 from core import org_spend as org_spend_mod
 from core.coach import Coach, prompt_hash
 from core.engine import BOT_LEVELS, Bot, Engine, check_position
@@ -755,6 +755,14 @@ def library_delete(entry_id: int):
 @app.get("/api/review")
 def current_review():
     return public_review()
+
+
+@app.get("/api/report")
+def game_report():
+    """The loaded game's report (core/report.py): from the saved review, no engine."""
+    if not S.review or not S.review["moves"]:
+        raise HTTPException(404, "No game loaded.")
+    return report.build(S.review)
 
 
 @app.get("/api/org-spend")
