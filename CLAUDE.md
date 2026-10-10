@@ -77,8 +77,11 @@ file says what is true now. Last full cleanup: 2026-10-03.
   serve config persists in tailscaled; `tailscale serve status` / `tailscale serve reset`. There is no auth: every device shares the one global state (below),
   coach questions bill your API key, and `/usage` + `/lessons` expose org spend and saved answers.
 - **The server does not hot-reload Python.** Restart after editing `core/*.py` or `server.py`; `prompts/` and
-  `static/` are re-read live. Its output goes to the terminal that started it (`/tmp/chess-coach-server.log`
-  is stale).
+  `static/` are re-read live. Its output goes to the terminal that started it and, through `./start` (2026-10-09),
+  is appended to `data/logs/server-<day it started>.log` (`tee`, `PYTHONUNBUFFERED`); a server started some other
+  way logs nowhere (`/tmp/chess-coach-server.log` is stale). uvicorn runs at `log_level="warning"`, so there are no
+  per-request lines: the log holds coach timing lines, job progress, warnings and tracebacks. The Claude calls
+  themselves are in `data/usage.sqlite` (`calls`, the `/usage` page).
 - **Testing without touching the running server:** start a second instance on another port
   (`(set -a; . ./.env; set +a; .venv/bin/python -m frontends.web.server --port 8011 &)`). To keep its writes
   out of the real `data/library.sqlite`, run it from a wrapper that sets `core.library.DB_PATH` to a copy

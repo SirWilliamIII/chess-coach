@@ -5,6 +5,8 @@
 #   ./start --host 0.0.0.0  reachable from other devices on your network (flags beat .env)
 #   ./start cli review 1 --me <user>   terminal version instead
 #
+# The web server's output is also appended to data/logs/server-YYYY-MM-DD.log.
+#
 # Secrets can live in a .env file next to this script, e.g.
 #   ANTHROPIC_API_KEY=sk-ant-...
 #   CHESS_USER=yourname
@@ -42,5 +44,13 @@ if [[ "${1:-}" == "cli" ]]; then
   shift
   exec .venv/bin/python cli.py "$@"
 fi
+# Everything the server prints also goes to data/logs/server-<day it started>.log (appended; data/ is gitignored),
+# so requests, coach timings, job progress and errors outlive the terminal. Unbuffered, or Python holds lines back
+# once its output is a pipe instead of a terminal.
+mkdir -p data/logs
+log="data/logs/server-$(date +%F).log"
+echo "=== $(date '+%F %T') ./start $* ===" >> "$log"
+exec > >(tee -a "$log") 2>&1
+export PYTHONUNBUFFERED=1
 # .env defaults first: argparse keeps the last value, so flags given to ./start still win
 exec .venv/bin/python -m frontends.web.server --host "${CHESS_HOST:-127.0.0.1}" --port "${CHESS_PORT:-8000}" "$@"
