@@ -326,6 +326,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
     also ≤ `100svh - --m-rest` (330 px, 372 ≤ 360 px wide where the rows wrap; measured iPhone 13 334 px board, SE 196,
     Pixel 7 380). Panel hide buttons, tabs and the split handle don't apply on phones. The game line (☆ names ·
     result) is hidden there. User checked on a real phone 2026-10-09: taps "pretty dang good", the board fits.
+    Puzzles on phones (2026-10-10): the top row is name + buttons, then one fixed line (`.pz-status`) for the status
+    or the hint (the hint replaces "Black to play"), opening pill hidden, so a hint or a miss never moves the board.
   - **Breakpoints:** ≥ 1680 px: board | scoreboard | coach. 761-1679 px: board | one column with the scoreboard
     over the coach and a drag handle between them (`#side-split`, `setSplit()`, share 0.25-0.85 in localStorage
     `sideSplit`, default 0.66, double-click resets). ≤ 1360 px the nav is an icon rail by itself. ≤ 760 px: one

@@ -5333,7 +5333,8 @@ function renderPuzzleInfo() {
   const status = pz.done ? (pz.failed ? 'Over: look around, or the next one.' : 'Solved ✓') : pz.waiting ? 'Their move…' : `${side} to play`;
   const hint = !pz.done && pz.hint ? ['', pzHintText(p), 'The circled piece moves', 'The arrow shows the move'][pz.hint] : '';
   const ladder = !pz.done ? `<button class="btn ghost small" id="pz-hint"${pz.waiting || pz.hint >= 3 ? ' disabled' : ''}>${['Hint', 'Which piece?', 'Show move', 'Show move'][pz.hint]}</button>` : '';
-  $('summary').innerHTML = `<span class="label">${esc(status)}</span>${hint ? `<span class="label pz-hint">${esc(hint)}</span>` : ''}${ladder}`
+  $('summary').innerHTML = `<span class="pz-status" title="${esc(hint || status)}"><span class="label">${esc(status)}</span>`
+    + `${hint ? `<span class="label pz-hint">${esc(hint)}</span>` : ''}</span>${ladder}`
     + `<button class="btn ghost small" id="pz-next">${pz.done ? 'Next' : 'Skip'}</button><button class="btn ghost small" id="pz-exit">Exit</button>`;
   $('pz-hint')?.addEventListener('click', pzHint);
   // skipping an unsolved puzzle counts as a miss, like giving up on Lichess

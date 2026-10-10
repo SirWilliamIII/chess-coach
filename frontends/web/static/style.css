@@ -1129,6 +1129,18 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .pz-delta.down { color: var(--t3-text); }
 .pz-result .eg-actions a.btn { text-decoration: none; }
 #summary .pz-hint { color: #f2d06b; }
+.pz-status { display: flex; flex-wrap: wrap; gap: 6px; }
+/* phones: puzzles keep the top row a fixed shape (name + buttons, then one line for the status or the hint), so a
+   hint or a miss never pushes the board down. The opening pill makes way (the variation is under the board) */
+@media (max-width: 760px) {
+  .top-row:has(.pz-status) .opening-slot { display: none; }
+  .top-row:has(.pz-status) .head-row, .top-row:has(.pz-status) #summary { display: contents; }
+  .top-row:has(.pz-status) .player.top { flex: 1 1 0; min-width: 0; flex-wrap: nowrap; overflow: hidden; }
+  .top-row:has(.pz-status) .btn { flex: none; }
+  .top-row .pz-status { order: 3; flex: 0 0 100%; display: block; height: 28px; line-height: 28px; font-size: 13px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pz-status:has(.pz-hint) .label:first-child { display: none; }  /* the hint replaces "Black to play" */
+}
 .sb-off { margin: 16px; }
 .pz-chip.mine { border-color: #7fd36a; }
 .pz-dot.mine { background: #7fd36a; border-color: #7fd36a; }
