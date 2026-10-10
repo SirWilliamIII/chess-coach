@@ -112,6 +112,15 @@
         <button class="navbtn" id="nav-next" title="Forward (→)" data-tip="Forward (→)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6.5l6.5 5.5L9 17.5z"/></svg></button>
         <button class="navbtn" id="nav-end" title="End (End)" data-tip="End (End)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 6v12M6.5 6.5L13 12l-6.5 5.5z"/></svg></button>
         <button class="navbtn" id="nav-flip" title="Flip board (f)" data-tip="Flip board (f)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4.5v15M4.5 8L8 4.5 11.5 8M16 19.5v-15M12.5 16l3.5 3.5 3.5-3.5"/></svg></button>
+        <!-- board overlays: captures, checks, threats as coloured arrows on whatever board is showing -->
+        <div class="ov-wrap" id="ov-wrap">
+          <button class="navbtn" id="nav-ov" title="Show captures, checks, threats (v)" data-tip="Overlays (v)" aria-expanded="false"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.75 12S6.25 5.75 12 5.75 21.25 12 21.25 12 17.75 18.25 12 18.25 2.75 12 2.75 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+          <div class="ov-menu hidden" id="ov-menu" role="menu">
+            <label class="ov-opt"><input type="checkbox" data-ov="checks"><i class="ov-sw ov-checks"></i>Checks</label>
+            <label class="ov-opt"><input type="checkbox" data-ov="captures"><i class="ov-sw ov-captures"></i>Captures</label>
+            <label class="ov-opt"><input type="checkbox" data-ov="threats"><i class="ov-sw ov-threats"></i>Threats</label>
+          </div>
+        </div>
         <button class="navbtn" id="nav-save" title="Save this position (s)" data-tip="Save position (s)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-3.75L7 20z"/></svg></button>
         <button class="navbtn" id="nav-rec" title="Record a game" data-tip="Record a game"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle class="rec-dot" cx="12" cy="12" r="3.5"/></svg><span class="rec-count" id="rec-count"></span></button>
       </div>
@@ -268,6 +277,7 @@
       <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Start / last move</td></tr>
       <tr><td><kbd>f</kbd></td><td>Flip the board</td></tr>
       <tr><td><kbd>s</kbd></td><td>Save this position</td></tr>
+      <tr><td><kbd>v</kbd></td><td>Overlays: captures, checks, threats</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>Clear marked squares, or close a demo board</td></tr>
       <tr><td><kbd>?</kbd></td><td>This list</td></tr>
       <tr><th colspan="2">Drawing on the board</th></tr>

@@ -303,6 +303,21 @@ file says what is true now. Last full cleanup: 2026-10-03.
   it to 1 and every non-draw brush carries the 0.6 in its own opacity.
 - **Not verified: fn** (macOS rarely reports it; Playwright can't press it). ⌃ needs a real right-click
   (two-finger); ⌃+click arrives as a left click. `defaultSnapToValidMove: false` (snapping moved arrow ends).
+- **Board overlays** (2026-10-10, the eye button `#nav-ov` in the row under the board, key `v`): a dropdown of three
+  checkboxes, localStorage `overlays`; `overlayShapes()` runs first in `baseShapes()` (and in the editor's
+  `renderBoard()`). The usual analysis colours (user's call): checks red `ovCheck`, captures green `ovCap`, threats
+  orange `ovThreat`, bright and translucent so they read apart from right-drag drawings (whose modifier keys were left
+  alone, user's call). **All three are your moves, whoever's turn it is; nothing points at your pieces** (user: playing
+  Black, White's captures showed as yours; then "need not have red arrows point at threats against us"). Your side =
+  `sbUser()`, else the side at the bottom (⇅ flips them on the analysis board); on their turn, from the same FEN
+  with you to move. One rule for what's worth showing (meant for late middlegames and puzzles): a capture when the
+  piece is undefended or worth more than the taker (`ovWorthIt()`); a check when it mates, takes something worth more,
+  or the checker is safe where it lands (`ovCheckWorthIt()` → `ovSafe()`: no attacker, or you defend it and every
+  attacker is worth ≥ it; their king can't take a defended piece); a checking capture draws once, as a check. Threats:
+  quiet moves after which a piece of theirs becomes winnable that wasn't (`ovTargets()` before vs after, so forks and
+  discovered attacks count) with the moved piece safe. Not built: mating-net threats (a quiet move threatening mate).
+  "Defended" = any attacker of that square, so pins and x-rays aren't weighed. Any board, including the set-up board
+  (once its FEN is valid); off while a puzzle is live. Not tested: Safari/Firefox, a real touch screen.
 - **No hover arrows on the board** (user's call): hovering pieces draws nothing. Board arrows come from
   right-clicks/drags, the lesson guide, the coach's demos, and hovering a scoreboard row (user's call,
   2026-10-04: rows are the exception).

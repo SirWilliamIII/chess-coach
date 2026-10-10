@@ -134,6 +134,14 @@ const cg = Chessground($('board'), {
       sbCap:     { key: 'sbCap',     color: '#d32f2f', opacity: 0.85, lineWidth: 9 },
       sbMoveMid: { key: 'sbMoveMid', color: '#2a6fdb', opacity: 0.85, lineWidth: 9 },
       sbCapMid:  { key: 'sbCapMid',  color: '#d32f2f', opacity: 0.85, lineWidth: 9 },
+      // board overlays (nav-ov), the usual analysis colours (user, 2026-10-10): checks red, captures green, threats
+      // orange; brighter and translucent so they read apart from your own drawings (style.css .ov-sw swatches match)
+      ovCap:      { key: 'ovCap',      color: '#3ddc84', opacity: 0.75, lineWidth: 8 },
+      ovCheck:    { key: 'ovCheck',    color: '#ff4d4f', opacity: 0.75, lineWidth: 8 },
+      ovThreat:   { key: 'ovThreat',   color: '#ff9f1a', opacity: 0.75, lineWidth: 8 },
+      ovCapMid:   { key: 'ovCapMid',   color: '#3ddc84', opacity: 0.75, lineWidth: 8 },
+      ovCheckMid: { key: 'ovCheckMid', color: '#ff4d4f', opacity: 0.75, lineWidth: 8 },
+      ovThreatMid:{ key: 'ovThreatMid',color: '#ff9f1a', opacity: 0.75, lineWidth: 8 },
       // first legs of L-shaped (knight) drawings: no arrowhead, see marker[id$="Mid"] in style.css
       greenMid:    { key: 'greenMid',    color: '#15781B', opacity: 0.6, lineWidth: 10 },
       drawNoneMid: { key: 'drawNoneMid', color: '#d35400', opacity: 1, lineWidth: 6 },
@@ -253,7 +261,7 @@ function renderBoard() {
       movable: { free: true, color: 'both', dests: undefined },
       draggable: { deleteOnDropOff: true },
     });
-    cg.setAutoShapes([]);
+    cg.setAutoShapes(overlayShapes());
     return null;
   }
   const c = currentGame();
@@ -2153,6 +2161,124 @@ function renderShapes() {
   cg.setAutoShapes([...baseShapes(), ...heldThreats]);
 }
 
+// ---- board overlays (the eye button under the board), from your side whoever's turn it is (user, 2026-10-10:
+// "I'm playing black", and on White's turn White's captures showed in gold): every capture and every check you
+// have that win something (the piece is undefended or worth more than the taker), and your threats: quiet moves that
+// set one up for next move. Nothing points at your own pieces (user, 2026-10-10).
+// Your side = the bot game's colour or the loaded game's, else the side at the bottom of the board.
+// Any board: games, analysis, demos, lessons, the set-up board. Off while a puzzle is live (it would give the
+// answer away). Remembered per browser.
+const OV_VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
+let overlays = {};
+try { overlays = JSON.parse(recall('overlays') || '{}'); } catch {}
+
+function overlayGame() {
+  if (state.editor) {
+    const fen = editorFen();
+    return editorProblem(fen) ? null : new Chess(fen);
+  }
+  return state.review || state.demo ? currentGame() : null;
+}
+
+// one rule for captures and threats (user, 2026-10-10): a capture is worth showing when nothing defends the piece,
+// or the piece is worth more than the one taking it. An en passant pawn is never "defended" here: its square is empty
+const ovWorthIt = (c, sq, victim, taker, defender) =>
+  !c.attackers(sq, defender).length || OV_VALUE[victim] > OV_VALUE[taker];
+
+// their pieces you could win right now: undefended, or attacked by something of yours worth less (kings excluded:
+// that's a check, not a target)
+function ovTargets(c, me, them) {
+  const out = new Set();
+  for (const row of c.board()) for (const pc of row) {
+    if (!pc || pc.color !== them || pc.type === 'k') continue;
+    const atk = c.attackers(pc.square, me);
+    if (atk.length && atk.some((sq) => ovWorthIt(c, pc.square, pc.type, c.get(sq).type, them))) out.add(pc.square);
+  }
+  return out;
+}
+
+// they can't win your piece on `sq`: nothing attacks it, or you defend it and every attacker is worth at least as
+// much (their king can't take a defended piece)
+const ovSafe = (c, sq, piece, me, them) => {
+  const atk = c.attackers(sq, them);
+  return !atk.length || (c.attackers(sq, me).length > 0 && atk.every((a) => OV_VALUE[c.get(a).type] >= OV_VALUE[piece]));
+};
+
+// a check is worth showing when it mates, when they can't win the checking piece (nothing attacks it, or you defend it
+// and everything that attacks it is worth at least as much; their king can't take a defended piece), or when it
+// takes something worth more than the checker. Judged after the move, so lines it opens or closes count
+function ovCheckWorthIt(c, m, me, them) {
+  c.move(m);
+  try {
+    if (c.isCheckmate()) return true;
+    return ovSafe(c, m.to, m.piece, me, them) || (!!m.captured && OV_VALUE[m.captured] > OV_VALUE[m.piece]);
+  } finally { c.undo(); }
+}
+
+function overlayShapes() {
+  if (!(overlays.captures || overlays.checks || overlays.threats) || puzzleLive()) return [];
+  let c;
+  try { c = overlayGame(); } catch { return []; }
+  if (!c || c.isGameOver()) return [];
+  const me = sbUser() || state.orientation[0], them = me === 'w' ? 'b' : 'w';
+  const shapes = [];
+  const arrow = (from, to, brush, knight) => shapes.push(...(knight ? knightShapes(from, to, brush) : [{ orig: from, dest: to, brush }]));
+  // your moves on their turn: the same position with you to move (no en passant, it belongs to the real mover)
+  let mine = c;
+  if (c.turn() !== me) {
+    const f = c.fen().split(' ');
+    f[1] = me; f[3] = '-';
+    try { mine = new Chess(f.join(' ')); } catch { mine = null; }
+  }
+  // a capture that also checks is drawn once, as a check (the more forcing of the two); never "taking" the king
+  // (their king can stand in your check on their turn)
+  for (const m of mine ? mine.moves({ verbose: true }) : []) {
+    if (m.captured === 'k') continue;
+    const check = /[+#]/.test(m.san);
+    const capture = m.flags.includes('c') || m.flags.includes('e');
+    if (overlays.checks && check) { if (ovCheckWorthIt(mine, m, me, them)) arrow(m.from, m.to, 'ovCheck', m.piece === 'n'); }
+    else if (overlays.captures && capture && ovWorthIt(mine, m.to, m.captured, m.piece, them)) arrow(m.from, m.to, 'ovCap', m.piece === 'n');
+  }
+  // threats: your quiet moves (no capture, no check) after which you'd win something next move: a piece of theirs
+  // that wasn't winnable before now is (undefended, or worth more than one of yours attacking it), the moved piece
+  // itself safe where it lands. Discovered attacks count: any of your pieces can be the new attacker
+  if (overlays.threats && mine) {
+    const before = ovTargets(mine, me, them);
+    for (const m of mine.moves({ verbose: true })) {
+      if (m.captured || /[+#]/.test(m.san)) continue;
+      mine.move(m);
+      try {
+        const fresh = [...ovTargets(mine, me, them)].some((sq) => !before.has(sq));
+        if (fresh && ovSafe(mine, m.to, m.piece, me, them)) arrow(m.from, m.to, 'ovThreat', m.piece === 'n');
+      } finally { mine.undo(); }
+    }
+  }
+  return shapes;
+}
+
+function setOverlay(key, on) {
+  overlays = { ...overlays, [key]: on };
+  store('overlays', JSON.stringify(overlays));
+  syncOverlayButton();
+  if (state.editor) cg.setAutoShapes(overlayShapes());
+  else renderShapes();
+}
+
+function syncOverlayButton() {
+  $('nav-ov').classList.toggle('on', !!(overlays.captures || overlays.checks || overlays.threats));
+  $('ov-menu').querySelectorAll('[data-ov]').forEach((b) => { b.checked = !!overlays[b.dataset.ov]; });
+}
+
+function toggleOverlayMenu(open = $('ov-menu').classList.contains('hidden')) {
+  $('ov-menu').classList.toggle('hidden', !open);
+  $('ov-wrap').classList.toggle('open', open);
+  $('nav-ov').setAttribute('aria-expanded', String(open));
+}
+$('nav-ov').onclick = () => toggleOverlayMenu();
+$('ov-menu').querySelectorAll('[data-ov]').forEach((b) => { b.onchange = () => setOverlay(b.dataset.ov, b.checked); });
+document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#ov-wrap')) toggleOverlayMenu(false); });
+syncOverlayButton();
+
 // ---- your own arrows and circles (right-drag; modifier = colour). They belong to the position they
 // were drawn on: drawnShapes() drops them once the board shows anything else.
 
@@ -3163,7 +3289,7 @@ const studyMine = (fen) => fen.split(' ')[1] === state.study.data.color[0];
 // arrows that belong to the position rather than to a hover: the Learn guide (empty elsewhere), plus
 // the arrows you drew on it
 function baseShapes() {
-  return [...guideShapes(), ...tacticShapes(), ...drawnShapes()];
+  return [...overlayShapes(), ...guideShapes(), ...tacticShapes(), ...drawnShapes()];
 }
 
 function guideShapes() {
@@ -6291,6 +6417,8 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'End') $('nav-end').click();
   else if (e.key === 'f') $('nav-flip').click();
   else if (e.key === 's' && !e.metaKey && !e.ctrlKey) openSavePosition();
+  else if (e.key === 'v' && !e.metaKey && !e.ctrlKey) toggleOverlayMenu();
+  else if (e.key === 'Escape' && !$('ov-menu').classList.contains('hidden')) toggleOverlayMenu(false);
   else if (e.key === '?') $('dlg-keys').showModal();
   else if (e.key === 'Escape' && pinnedSquares.size) { pinnedSquares.clear(); paintSquares(); }
   else if (e.key === 'Escape' && state.demo) closeDemo();
