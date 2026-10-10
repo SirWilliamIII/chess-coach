@@ -4425,7 +4425,7 @@ function renderPlayInfo() {
   } else if (p.view < p.moves.length && !p.thinking) status = 'Viewing an earlier position; press → or ⏭ to return';
   const buttons = p.over
     ? `<button class="btn small" id="pb-review">Review this game</button>
-       <button class="btn ghost small" id="pb-again">New game</button>`
+       <button class="btn ghost small" id="pb-again">${p.endgame ? 'Try again' : 'New game'}</button>`
     : (p.thinking ? '<button class="btn ghost small" id="pb-stop">Stop bot</button>' : '');
   const back = p.back ? '<button class="btn ghost small" id="pb-back">Back to the game</button>'
     : p.backLesson ? '<button class="btn ghost small" id="pb-lesson">Back to the lesson</button>' : '';
@@ -4433,7 +4433,7 @@ function renderPlayInfo() {
   $('pb-back')?.addEventListener('click', backToGame);
   $('pb-lesson')?.addEventListener('click', backToLesson);
   $('pb-review')?.addEventListener('click', reviewPlayedGame);
-  $('pb-again')?.addEventListener('click', openPlayDialog);
+  $('pb-again')?.addEventListener('click', p.endgame ? () => egRetry(p) : openPlayDialog);
   $('pb-stop')?.addEventListener('click', stopBotThinking);
 }
 
@@ -4808,6 +4808,18 @@ function egFinish(p, ok, text) {
     + `<button class="btn ghost small" data-a="pick">Pick other material</button></div></div>`);
   msg.querySelector('[data-a=again]').onclick = () => startEndgame(eg.spec, eg.mode, eg.pick);
   msg.querySelector('[data-a=pick]').onclick = () => openEndgames(2);  // straight to the type step
+}
+
+// the same position from the start (the result card's "Another one" is a new position of the same material)
+function egRetry(p) {
+  const eg = p.endgame;
+  playToken++;
+  Object.assign(p, { moves: [], view: 0, over: null, thinking: false });
+  Object.assign(eg, { expect: eg.outcome, slips: 0, held: false, done: false, ok: undefined });
+  egRecord(`${eg.spec}|${eg.mode}`, 'tries');
+  playView(0);
+  egGoalCard(p, p.color);
+  if (playChess(p).turn() !== p.color[0]) botMove();
 }
 
 // called from endGame(): the drill's verdict on how the game ended

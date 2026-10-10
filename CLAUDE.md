@@ -651,7 +651,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - **During play** (tablebase only): each of your moves is looked up in the probe of the position before it
   (`egAfterMyMove()`); a move that drops win→draw or draw→loss gets a red card with the best moves. A takeback
   re-reads the goal from the tablebase (`egTakeback()`). Result card at the end (`egGameOver()`), Hold it also
-  completes after `EG_HOLD_MOVES` 30 of your moves; "Another one" repeats the same set. Stats per set + mode
+  completes after `EG_HOLD_MOVES` 30 of your moves; "Another one" repeats the same set; the game-over
+  row's "Try again" (`egRetry()`, 2026-10-10; was "New game", which opened the Play dialog) replays the same position. Stats per set + mode
   in localStorage `egStats` (done/tried on the tiles). Needs internet for the tablebase; offline, everything
   falls back to Stockfish.
 - Not built: curated classic positions (Lucena, Philidor, Réti… still only the editor's 7 presets), DTM-based
