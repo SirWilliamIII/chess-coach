@@ -20,14 +20,12 @@ file says what is true now. Last full cleanup: 2026-10-03.
   |---|---|---|---|---|---|
   | Najdorf (B) | 150 | ✓ | ✓ | ✓ | |
   | Vienna Game (W) | 134 | ✓ | ✓ | ✓ | |
-  | Caro-Kann (B) | 220 | ✓ | ✓ | | ✓ |
-  | Dutch (B) | 220 | ✓ | ✓ | | ✓ |
-  | Dragon, Accelerated Dragon, Nimzo, QGA (B); Catalan, English, Caro-Kann Modern, Vienna Gambit/Max Lange (W) | 23-90 | ✓ | ✓ | | |
-  | Catalan Open Defense Classical (B) | 64 | | ✓ | | |
+  | Caro-Kann (B), Dutch (B) | 220 | ✓ | ✓ | | ✓ |
+  | Scandinavian (B) | 150 | ✓ | ✓ | | ✓ |
+  | Dragon, Accelerated Dragon, Nimzo, QGA, Italian Two Knights (B); Catalan, English, Alapin Sicilian, Caro-Kann Modern, Vienna Gambit/Max Lange (W) | 23-90 | ✓ | ✓ | | |
+  | Catalan Open Defense Classical, English Anglo-Dutch (B); Dutch Leningrad Carlsbad (W) | 34-90 | | ✓ | | |
 
-  Still on disk but unreachable (built for the other colour before one-side-per-opening):
-  `queen-s-gambit-accepted-white`, `catalan-opening-open-defense-classical-line-white`. Notes read through by
-  the user: Najdorf and Dragon only.
+  Notes read through by the user: Najdorf and Dragon only.
 - **Human moves in lessons** (first version, Najdorf + Vienna Game only; see the lessons section). Not done:
   a live Learn session by the user, the masters/players toggle on the start card, notes for human nodes, and
   running it in `build()` for new lessons.
