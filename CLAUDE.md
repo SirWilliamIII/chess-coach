@@ -341,6 +341,11 @@ file says what is true now. Last full cleanup: 2026-10-03.
     (`FOLD_ROWS`).
   - **Static files aren't cache-busted:** no `Cache-Control`, so a browser can keep an old `style.css`/`app.js`
     after edits. Ask for a hard reload (⌘⇧R) before chasing a layout report that doesn't reproduce.
+- **Analysis board: "Play bot from here"** (2026-10-09, user's call: always there, the level beside it). In
+  `#summary` whenever the board has no game moves (FEN, 📌 position, editor's Analyse): `#ab-level` (the Play
+  dialog's levels shown as "Bot 1500", shared localStorage `botLevel`) + `playBotFromHere()`: you take the side at
+  the bottom, the line on the board becomes `play.prefix` (◀ walks it, Maia sees it), no clock; the bot moves first
+  if it's its turn. Loaded games keep "Replay as" instead.
 - **Position editor** ("Set up position", `openEditor()`): presets, side to move, FEN box; Play vs bot from
   here, Analyse, or Cancel. `editorFen()` infers castling from home squares and writes `- 0 1`. Not tested:
   opening it mid-lesson.
@@ -475,10 +480,19 @@ file says what is true now. Last full cleanup: 2026-10-03.
   whenever it fires; fires 92-100% per theme; headline right: mate 100, skewer 98, fork 95, hanging 87,
   discovered 74, pin 59; on untagged puzzles it still claims a motif 59% of the time (not checked by hand); 3%
   of game positions flagged (~2-3 per game), all six looked real by hand. ~9 min per run.
-- **UI:** on your turn (any turn on the analysis board), a "Tactic available" box at the top of the live card
+- **Free piece vs tactic** (2026-10-09; user: ~90% of alerts were hanging pieces, "that isn't a tactic", wanted
+  "capture X forces Y, then Z is free"): `kind_of()` → `kind` `mate` / `tactic` / `free`. Free = the first move is a
+  capture netting ≥ 2 by static exchange and the line (`_line_gain()`, mover's first 3 moves + replies, a cut
+  exchange settled by SEE) wins at most `FREE_SLACK` 1 more. A `tactic` drops the "hanging" motif. New motif
+  `defender` (removing the defender: a later capture wins on a square a piece of theirs defended at the start and
+  no longer does, taken or forced away). Eval run 2026-10-09: Lichess `hangingPiece` puzzles 60% free, every other
+  theme 0-5% (untagged 14%); `defender` (capturingDefender/deflection/overloading) named 60%, headlined right 10 of
+  12 times it was the headline (small sample); 300 game positions: 11 flagged, 2 free.
+- **UI:** a free piece is a one-line "Something's hanging" alert with Show (no ladder; lists blurred until Show),
+  "Took the free piece" / "Missed a free piece: X" after the move. Otherwise, on your turn (any turn on the analysis board), a "Tactic available" box at the top of the live card
   with a hint ladder (`sbTactic()`, `tacLevel` by FEN, per page load): what to look for → the piece (ringed,
   `tacticShapes()` in `baseShapes()`) → the move (arrow, line, eval). Only mate/fork/skewer/hanging are named
-  (`TAC_NAME`); pins and discovered attacks get "look for a forcing move". Until the move is shown the lists,
+  (`TAC_NAME`, plus removing the defender); pins and discovered attacks get "look for a forcing move". Until the move is shown the lists,
   the engine pill and the track are blurred (`.tac-hide`; Top bot moves' #1 is the answer). The after-move strip
   says "Found the fork" / "Missed a fork: Nxe2" in place of "Best was X" (`sbAfter()`).
 - **Known gaps:** the quick numbers (before the deep search lands, ~2 s) show the lists unblurred, so the answer

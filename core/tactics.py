@@ -3,7 +3,11 @@
 Two steps. (1) The engine decides whether there is one: a tactic is a position where one move is clearly better
 than every other (win % gap between Stockfish's #1 and #2) and leaves the mover better off. That's roughly how
 Lichess picks puzzles from games. (2) Board geometry names it, walking the mover's moves in the best line:
-mate, fork, pin, skewer, discovered attack, hanging piece. Geometry is microseconds; the cost is the search.
+mate, fork, pin, skewer, discovered attack, removing the defender, hanging piece. Geometry is microseconds; the
+cost is the search. (3) The kind: "free" when the whole profit is the first move's own exchange (a piece left
+hanging: counting attackers and defenders on one square sees it), else "tactic" (mate, or the line wins more than
+that first exchange: the profit comes later or on another square). User's call, 2026-10-09: ~90% of the alerts
+were hanging pieces, which aren't tactics; they keep a lighter alert.
 
 Validated against Lichess's puzzle database (theme tags as ground truth): scripts/tactics_eval.py.
 """
@@ -21,9 +25,12 @@ MIN_WIN = 60        # win % after the best move: the tactic leaves the mover bet
 MOVER_PLIES = 3     # how many of the mover's moves in the best line are checked for a motif
 KING_VALUE = 100    # a king outranks everything when deciding forks, pins and skewers
 WIN_MATERIAL = 2    # "hanging": the first move's capture nets at least this much (static exchange)
+FREE_SLACK = 1      # "free": the line may win this much more than the first exchange (a stray pawn) and stay free
+
+KINDS = ("mate", "tactic", "free")
 
 # The order a motif is reported in when a line has several (the first one is the headline)
-ORDER = ["mate", "fork", "discovered", "skewer", "pin", "hanging"]
+ORDER = ["mate", "fork", "discovered", "skewer", "defender", "pin", "hanging"]
 
 
 def _value(piece: chess.Piece) -> int:
@@ -101,6 +108,66 @@ def _discovered(before: chess.Board, after: chess.Board, move: chess.Move, mover
     return False
 
 
+def _material(b: chess.Board, color: chess.Color) -> int:
+    return sum(VALUES[p.piece_type] * (1 if p.color == color else -1) for p in b.piece_map().values())
+
+
+def _first_gain(board: chess.Board, mv: chess.Move) -> int:
+    """What this capture nets by itself: the piece taken minus what they win back on that square."""
+    if not board.is_capture(mv):
+        return 0
+    took = 1 if board.is_en_passant(mv) else VALUES[board.piece_at(mv.to_square).piece_type]
+    after = board.copy(stack=False)
+    after.push(mv)
+    return took - _see(after, mv.to_square)
+
+
+def _line_gain(board: chess.Board, pv: list[chess.Move]) -> int:
+    """Material the mover is up after their first MOVER_PLIES moves of `pv` and the replies, counted after an
+    opponent reply (so a pending recapture of theirs is in), plus a recapture of the mover's still pending."""
+    mover = board.turn
+    b = board.copy(stack=False)
+    start = _material(b, mover)
+    last, took = None, False
+    for mv in pv[:2 * MOVER_PLIES]:
+        if mv not in b.legal_moves:
+            break
+        took = b.is_capture(mv)
+        b.push(mv)
+        last = mv
+    gain = _material(b, mover) - start
+    if last and took:
+        # an exchange the line cut in the middle: whoever is to move takes back
+        gain += _see(b, last.to_square) * (1 if b.turn == mover else -1)
+    return gain
+
+
+def _defender(board: chess.Board, pv: list[chess.Move]) -> bool:
+    """Removing the defender: a later capture of the mover's wins material on a square that, at the start, one of
+    their pieces defended and no longer does (it was taken, or it moved: forced to recapture, lured away)."""
+    mover = board.turn
+    b = board.copy(stack=False)
+    for i, mv in enumerate(pv[:2 * MOVER_PLIES]):
+        if mv not in b.legal_moves:
+            return False
+        if i and i % 2 == 0 and b.is_capture(mv) and not b.is_en_passant(mv):
+            z = mv.to_square
+            gone = board.attackers(not mover, z) - b.attackers(not mover, z)
+            if gone and board.piece_at(z) == b.piece_at(z) and _first_gain(b, mv) >= WIN_MATERIAL:
+                return True
+        b.push(mv)
+    return False
+
+
+def kind_of(board: chess.Board, pv: list[chess.Move], mate: bool) -> str:
+    if mate:
+        return "mate"
+    first = _first_gain(board, pv[0]) if pv else 0
+    if first >= WIN_MATERIAL and _line_gain(board, pv) <= first + FREE_SLACK:
+        return "free"
+    return "tactic"
+
+
 def motifs(board: chess.Board, pv: list[chess.Move], mate: bool) -> list[str]:
     """Motifs along the mover's first MOVER_PLIES moves of `pv`. Mate first (it's the outcome); the rest by the
     move they happen on, earliest first (the headline is what the first move does), then by ORDER."""
@@ -129,14 +196,16 @@ def motifs(board: chess.Board, pv: list[chess.Move], mate: bool) -> list[str]:
             here.add("discovered")
         for m in here:
             first_at.setdefault(m, i)
+    if _defender(board, pv):
+        first_at["defender"] = 0  # the first move starts it (takes the defender, or forces it away)
     rest = sorted(first_at, key=lambda m: (first_at[m], ORDER.index(m)))
     return (["mate"] if mate else []) + rest
 
 
 def find(engine: Engine, board: chess.Board, depth: int = SEARCH_DEPTH, seconds: float = SEARCH_SECONDS) -> dict | None:
     """The tactic for the side to move, or None. Keys: move/uci/line (the best line), gap (win % over the second
-    best), win (win % after it), eval_white, motifs (may be empty: the engine sees one winning move, but none of
-    the geometry checks names it)."""
+    best), win (win % after it), eval_white, kind (KINDS: "free" is a hanging piece, not a tactic), motifs (may be
+    empty: the engine sees one winning move, but none of the geometry checks names it)."""
     if board.is_game_over():
         return None
     return from_lines(board, engine.lines(board, multipv=2, seconds=seconds, depth=depth))
@@ -167,5 +236,10 @@ def from_lines(board: chess.Board, lines: list[dict]) -> dict | None:
         return None
     mate = abs(best["cp_white"]) >= MATE_CP - 1000 and (best["cp_white"] > 0) == (mover == chess.WHITE)
     pv = [chess.Move.from_uci(u) for u in best["pv"]]
+    kind = kind_of(board, pv, mate)
+    found = motifs(board, pv, mate)
+    if kind == "tactic":
+        # the first capture wins something, but the line wins more: the loose piece isn't the point
+        found = [m for m in found if m != "hanging"]
     return {"move": best["move"], "uci": best["uci"], "line": best["line"], "eval_white": best["eval_white"],
-            "gap": round(w1 - w2, 1), "win": round(w1, 1), "motifs": motifs(board, pv, mate)}
+            "gap": round(w1 - w2, 1), "win": round(w1, 1), "kind": kind, "motifs": found}

@@ -36,10 +36,11 @@ MAX_SOLVER_MOVES = 3
 MATE_PLIES = 9          # a mate in up to 5 is played out to the end
 # tactics.py motif → the Lichess theme name the puzzle mode labels with (MOTIF_LABEL)
 THEME = {"mate": "mate", "fork": "fork", "pin": "pin", "skewer": "skewer", "discovered": "discoveredAttack",
-         "hanging": "hangingPiece"}
+         "hanging": "hangingPiece", "defender": "capturingDefender"}
 KIND_LABEL = {"missed": "Tactics you missed", "allowed": "Tactics you allowed"}
 PLURAL = {"mate": "Mates", "fork": "Forks", "pin": "Pins", "skewer": "Skewers", "discoveredAttack": "Discovered attacks",
-          "hangingPiece": "Loose pieces", "other": "Other tactics"}
+          "hangingPiece": "Loose pieces", "capturingDefender": "Defenders to remove",
+          "other": "Other tactics"}
 
 
 SITES = ("chesscom", "lichess")
@@ -165,7 +166,8 @@ def _puzzle(review: dict, kind: str, trigger_ply: int, t: dict, solution: list[s
     me = mine["side"]
     opp = "black" if me == "white" else "white"
     nxt = review["moves"][trigger_ply] if trigger_ply < len(review["moves"]) else None
-    motif = t["motifs"][0] if t["motifs"] else "other"
+    # a free piece is filed as a loose piece whatever else the line does (tactics.py "kind")
+    motif = "hanging" if t.get("kind") == "free" else t["motifs"][0] if t["motifs"] else "other"
     m = re.search(r"#-?(\d+)", t["eval_white"])
     return {"id": f"{gid}-{trigger_ply}-{kind}", "kind": kind, "game_id": gid, "ply": trigger_ply,
             "fen": trig["fen_before"], "moves": [trig["uci"], *solution],

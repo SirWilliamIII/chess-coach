@@ -25,7 +25,8 @@ from core import tactics
 from core.engine import Engine
 
 # our motif -> the Lichess theme tags that mean it
-TAGS = {"fork": {"fork"}, "pin": {"pin"}, "skewer": {"skewer"}, "hanging": {"hangingPiece"},
+TAGS = {"fork": {"fork"}, "pin": {"pin"}, "skewer": {"skewer"},
+        "defender": {"capturingDefender", "deflection", "overloading"}, "hanging": {"hangingPiece"},
         "discovered": {"discoveredAttack", "discoveredCheck", "doubleCheck"},
         "mate": {"mate", "mateIn1", "mateIn2", "mateIn3", "mateIn4", "mateIn5", "backRankMate", "smotheredMate"}}
 BUCKETS = list(TAGS) + ["other"]
@@ -91,16 +92,17 @@ def main():
         stats[b]["any_tag"] += any(p["themes"] & TAGS[m] for m in named)
         stats[b]["head_ok"] += bool(r["motifs"]) and bool(p["themes"] & TAGS[r["motifs"][0]])
         stats[b]["claimed"] += bool(r["motifs"])
+        stats[b]["free"] += r["kind"] == "free"
         said[b][r["motifs"][0] if r["motifs"] else "(unnamed)"] += 1
 
     print(f"\nPuzzles rated {a.min}-{a.max} ({time.monotonic() - t0:.0f} s)")
-    print(f"{'theme':<11}{'n':>4}{'fired':>8}{'move ok':>9}{'named':>8}{'headline':>10}{'claimed':>9}   headline we gave")
+    print(f"{'theme':<11}{'n':>4}{'fired':>8}{'move ok':>9}{'named':>8}{'headline':>10}{'claimed':>9}{'free':>7}   headline we gave")
     for b in BUCKETS:
         s = stats[b]
         n, fired = s["n"], s["fired"] or 1
         pct = lambda x, d: f"{100 * x / d:.0f}%" if d else "-"
         named = pct(s["named"], fired) if b != "other" else "-"
-        print(f"{b:<11}{n:>4}{pct(s['fired'], n):>8}{pct(s['move'], fired):>9}{named:>8}{pct(s['head_ok'], fired):>10}{pct(s['claimed'], fired):>9}   "
+        print(f"{b:<11}{n:>4}{pct(s['fired'], n):>8}{pct(s['move'], fired):>9}{named:>8}{pct(s['head_ok'], fired):>10}{pct(s['claimed'], fired):>9}{pct(s['free'], fired):>7}   "
               + ", ".join(f"{k} {v}" for k, v in said[b].most_common(5)))
 
     t1 = time.monotonic()
@@ -114,10 +116,12 @@ def main():
         if r:
             hits.append((p, r))
     found = sum(1 for p, r in hits if p["played"] == r["move"])
+    kinds = Counter(r["kind"] for p, r in hits)
     print(f"\nYour games: {len(hits)} of {len(pos)} positions flagged ({100 * len(hits) / max(1, len(pos)):.0f}%), "
-          f"found over the board {found} of {len(hits)} ({time.monotonic() - t1:.0f} s)")
-    for p, r in hits[:20]:
-        print(f"  {p['label']:<6} {r['move']:<7} {','.join(r['motifs']) or '(unnamed)':<22} gap {r['gap']:>4}  "
+          f"found over the board {found} of {len(hits)} ({time.monotonic() - t1:.0f} s); "
+          + ", ".join(f"{k} {v}" for k, v in kinds.most_common()))
+    for p, r in hits[:40]:
+        print(f"  {p['label']:<6} {r['move']:<7} {r['kind']:<7}{','.join(r['motifs']) or '(unnamed)':<22} gap {r['gap']:>4}  "
               f"played {p['played']:<7} {p['fen']}")
     sys.stdout.flush()  # os._exit skips it, and redirected output is buffered
     os._exit(0)  # the engine's thread keeps the process alive otherwise

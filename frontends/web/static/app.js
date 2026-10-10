@@ -552,7 +552,11 @@ function renderInfo() {
     $('game-info').textContent = '';  // a lesson or a puzzle may have labelled it
     $('board-sub').textContent = '';
     // no "I'm playing" toggle (removed 2026-10-07, user's call): the name labels (.you-pick) still pick your side
-    $('summary').innerHTML = '';
+    // "Play bot from here" with its level always beside it (user's call, 2026-10-09)
+    $('summary').innerHTML = `<div class="play-buttons"><button class="btn small" id="ab-play">Play bot from here</button>`
+      + `<select id="ab-level" title="Bot level (chess.com rapid)"></select></div>`;
+    $('ab-play').onclick = playBotFromHere;
+    fillBotLevels($('ab-level'));
     return;
   }
   $('game-info').innerHTML = `<button class="fav-btn${r.favorite ? ' on' : ''}" id="fav-btn"
@@ -1074,9 +1078,10 @@ const sbSkeleton = (rows) => `<div class="sb-table">${'<div class="sb-row skel">
 // the analysis board) a "Tactic available" box with a hint ladder: 1 the flag, 2 what to look for, 3 the piece
 // (ringed on the board), 4 the move (arrow). Until 4, the move lists are blurred: Top bot moves' #1 is the answer.
 // Motifs are only named where the detector was reliable on Lichess puzzles (headline right 87-100%: mate, fork,
-// skewer, hanging); pins (59%) and discovered attacks (74%) get the generic hint.
-const TAC_HINT = { fork: 'Look for a fork', skewer: 'Look for a skewer', hanging: 'Something is loose: look for material to win' };
-const TAC_NAME = { mate: 'mate', fork: 'fork', skewer: 'skewer', hanging: 'free material' };
+// skewer); pins (59%) and discovered attacks (74%) get the generic hint. A hanging piece (kind "free") isn't a
+// tactic (user's call, 2026-10-09): a one-line alert with a Show button, no ladder.
+const TAC_HINT = { fork: 'Look for a fork', skewer: 'Look for a skewer', defender: 'Look for a defender you can take or lure away' };
+const TAC_NAME = { mate: 'mate', fork: 'fork', skewer: 'skewer', defender: 'removing the defender' };
 const PIECE_NAME = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
 const tacLevel = new Map();  // fen → how far up the ladder (1-4); per page load
 
@@ -1104,15 +1109,20 @@ function tacHint(tac) {
 
 function sbTactic(t) {
   const { tac, level } = t;
+  const line = `<span class="sb-tac-line">${esc(tac.line.split(' ').slice(0, 5).join(' '))} · ${fmtEval(tac.eval_white)}</span>`;
+  if (tac.kind === 'free') {
+    return `<div class="sb-tactic free"><div class="sb-tac-head">${level < 4
+      ? `<b>Something's hanging</b><button class="sb-tac-btn" data-tac="show">Show</button>`
+      : `<b>Free piece: <span class="sb-tac-move">${esc(tac.move)}</span></b>`}</div>${level < 4 ? '' : `<div class="sb-tac-row">${line}</div>`}</div>`;
+  }
   const from = tac.uci.slice(0, 2);
   const piece = currentGame().get(from);
   const rows = [];
   if (level >= 2) rows.push(`<div class="sb-tac-row">${esc(tacHint(tac))}</div>`);
   if (level >= 3) rows.push(`<div class="sb-tac-row">Use your <b>${PIECE_NAME[piece?.type] || 'piece'}</b> on ${from}</div>`);
   if (level >= 4) {
-    const line = tac.line.split(' ').slice(0, 5).join(' ');
     rows.push(`<div class="sb-tac-row"><b class="sb-tac-move">${esc(tac.move)}</b>${tacMotif(tac) ? ` <span class="sb-tac-tag">${TAC_NAME[tacMotif(tac)]}</span>` : ''}`
-      + `<span class="sb-tac-line">${esc(line)} · ${fmtEval(tac.eval_white)}</span></div>`);
+      + `${line}</div>`);
   }
   const btns = level < 4
     ? `<button class="sb-tac-btn" data-tac="next">${['', 'Hint', 'Which piece?', 'Show move'][level]}</button><button class="sb-tac-btn quiet" data-tac="show">Show</button>`
@@ -1194,9 +1204,9 @@ function sbAfter(L, k, u) {
   const best = sb.all[0];
   // the tactic finder's verdict on this move, when the position had one ("Missed a fork: Nxe2")
   const tac = sb.tactic;
-  const tname = tac && (TAC_NAME[tac.motifs[0]] || 'tactic');
-  const facts = tac && tac.uci === p.uci ? `<span>Found the ${tname === 'free material' ? 'free material' : tname}</span>`
-    : tac ? `<span data-uci="${esc(tac.uci)}">Missed ${tname === 'free material' ? 'free material' : `a ${tname}`}: <b>${esc(tac.move)}</b></span>`
+  const tname = tac && (tac.kind === 'free' ? 'free piece' : TAC_NAME[tac.motifs[0]] || 'tactic');
+  const facts = tac && tac.uci === p.uci ? `<span>${tac.kind === 'free' ? 'Took the free piece' : `Found the ${tname}`}</span>`
+    : tac ? `<span data-uci="${esc(tac.uci)}">Missed ${tname === 'removing the defender' ? 'removing the defender' : `a ${tname}`}: <b>${esc(tac.move)}</b></span>`
     : row?.rank !== 1 ? `<span data-uci="${esc(best.uci)}">Best was <b>${esc(best.move)}</b></span>` : '';
   const ticks = sb.all.map((r) => `<i class="t${r.tier}${r.uci === p.uci ? ' me' : ''}" data-uci="${esc(r.uci)}"></i>`).join('');
   return `<section class="sb-card after ${g}"><div class="sb-eyebrow"><span>${label}</span><span class="sb-grade">${grade}</span></div>`
@@ -2979,6 +2989,38 @@ async function botLevelFor(color) {
   const last = botLevels.find((l) => String(l.id) === recall('botLevel'));
   if (last) return { level: last, why: "the level you last used, since the game has no ratings" };
   return { level: await levelForRating(1100), why: 'default, since the game has no ratings' };
+}
+
+// the analysis board's level picker: same list and remembered level as the Play dialog
+async function fillBotLevels(sel) {
+  botLevels ??= await api('/api/play/levels').catch(() => []);
+  sel.innerHTML = botLevels.map((l) => `<option value="${l.id}">${esc(l.name.replace(/^Maia \(~(\d+)\)$/, 'Bot $1'))}</option>`).join('');
+  sel.value = recall('botLevel') || '';
+  if (!sel.value && botLevels.length) sel.value = String((await levelForRating(1100)).id);
+  sel.onchange = () => store('botLevel', sel.value);
+}
+
+// analysis board → bot game from the shown position, you on the side at the bottom. The line played on the
+// board stays as the game's opening (prefix), so ◀ steps back through it and Maia sees the history.
+async function playBotFromHere() {
+  const sel = $('ab-level');
+  const level = botLevels?.find((l) => String(l.id) === sel.value);
+  if (!level) return;
+  const color = state.orientation;
+  const prefix = [...state.extra];
+  playToken++;
+  let review;
+  try {
+    review = await api('/api/play/new', { color, level: level.id, fen: baseFen() });
+  } catch (e) {
+    addMsg('error', esc(e.message));
+    return;
+  }
+  const play = { color, level: level.id, levelName: level.name, startFen: review.start_fen,
+    moves: prefix, prefix: prefix.length, view: prefix.length, over: null, thinking: false, clock: null };
+  setEngineVisible(recall('engineOn') !== '0');
+  setReview(review, `Playing on from this position against the ${level.name} bot. You have ${color}.`, play);
+  if (playChess(play).turn() !== color[0]) botMove();
 }
 
 // leave the replay for a live bot game from the current position, playing `first` (your move) at once.
