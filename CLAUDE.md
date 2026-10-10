@@ -49,7 +49,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   toggle removed from the analysis board.
 - **Built 2026-10-08, not yet used live by the user:** opening puzzles (see "Opening puzzles"): the Lichess puzzle
   database's opening-tagged part in `data/puzzles.sqlite`, a picker with each opening's recurring patterns, a puzzle
-  mode with a hint ladder and a puzzle level, and "Tactics in this opening ›" beside the opening name. Pattern names
+  mode with a hint ladder and a puzzle level, and "Tactics in this opening ›" at the right end of the row under the board. Pattern names
   are templates; the one-off Claude naming pass (top ~10 per opening, user reviews) waits for the user's verdict on
   which patterns are worth it.
 - **Built 2026-10-08, not yet used live:** puzzles from the user's own games ("Your mistakes" in Puzzles; see
@@ -209,7 +209,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   title, names, ratings, result, date, opening, full PGN from `pgn_of()`, so it outlives `data/reviews/`).
   `POST /api/favorites/{game_id}`: `{favorite}` toggles, `{title}` sets a title and favourites the game (""
   clears it); unstarring deletes the row, title included. ☆ sits before the names in `#game-info`;
-  double-clicking `#game-title` (first in `.board-head`, hidden when empty), `#board-sub` or `#game-info` edits the title in
+  double-clicking `#game-title` (in `.board-foot` under the board, hidden when empty), `#board-sub` or `#game-info` edits the title in
   place (`editTitle()`: saves on Enter, blur or any outside pointerdown, because chessground cancels mousedown
   so a board click never blurs). Opening a favourite whose review is gone re-analyses the stored PGN. Loaded
   games only (`canTitle()`): bot games and the analysis board have no game_id. Reviews carry `date` only from
@@ -300,11 +300,12 @@ file says what is true now. Last full cleanup: 2026-10-03.
   2026-10-04: rows are the exception).
 - **Layout** (2026-10-06 rework; user's calls: board and scoreboard are the focus, chat a narrow feed, panels
   level with the board, "components vertically symmetrical"):
-  - **One grid** (`main`): the board column is a **subgrid** of five rows (`.board-head`, `.top-row`, board,
-    bottom name, ◀ ▶ buttons); `.side` (scoreboard + coach) spans rows 3-5, so the panels start at the board's top
+  - **One grid** (`main`): the board column is a **subgrid** of four rows (`.top-row`, `.board-row` = eval bar +
+    board, `.bottom-row`, ◀ ▶ buttons; the `.board-head` row above the names was removed 2026-10-09, user's call: it
+    was empty in most modes); `.side` (scoreboard + coach) spans rows 2-4, so the panels start at the eval bar's top
     edge and end at the buttons' bottom edge by construction (no JS measuring). `.side` has `contain: size`, so
     its content never stretches those rows: the board decides the height, the panels scroll inside. Any new
-    direct child of `.board-col` needs a row (there are exactly five).
+    direct child of `.board-col` needs a row (there are exactly four).
   - **The side column fills the leftover width** (2026-10-09; user: with the scoreboard hidden on a laptop the
     coach stayed narrow): `minmax(var(--side-w), var(--side-max, 1200px))`, so `--side-w` is only its minimum
     (the board formula subtracts it) and a height-bound board or a hidden panel widens the panels instead of
@@ -326,13 +327,18 @@ file says what is true now. Last full cleanup: 2026-10-03.
     Hidden panel (`setPanelHidden()`, `body.hide-score` / `hide-chat`): a 44 px bar when stacked, a 40 px
     vertical tab when side by side (`.panel-tab`); the side column narrows and the board takes the room.
     In the side column the chat's chips are one scrolling line and "Asking about…" shows only while typing.
-  - **Above the board:** `.board-head` = `#opening-tag` (the page title, see "Opening name"), `#game-title`
-    (favourites, hidden when empty), `#game-info` (☆ names · result, shrinks first), `#board-sub`, and Moves &
-    engine in `.board-head-right`; then `.top-row` = the top name (`#player-top`) with `.head-row` (`#summary`:
-    Replay as / game status and buttons / the editor's buttons, `#pb-takeback`).
-  - **Sizes:** `--board-w` = min(`--board-max` 880, `100vh - --head-h - 222px`, the width left beside the nav and
+  - **Around the board:** `.bottom-row` = the bottom name (`#player-bottom`), then right-aligned `.board-foot` =
+    `#game-title`
+    (favourites, hidden when empty), `#game-info` (☆ names · result, muted, shrinks first), `#board-sub`, "Tactics in this opening ›"
+    (`#opening-tactics`, moved out of the opening pill so the name gets its width), and `.board-foot-right` (Moves & engine only while the scoreboard is hidden; its dropdown opens upwards there). Above
+    the board: then `.top-row` = the top name (`#player-top`), `.opening-slot`
+    (the opening pill: `#opening-tag` only, 2026-10-09, user's call; the slot takes the
+    leftover width with basis 0 so a long name shrinks instead of wrapping the row, the pill is centred in it and
+    hidden with no opening; its own line ≤ 760 px), and `.head-row` (`#summary`: Replay as / game status and
+    buttons / the editor's buttons, `#pb-takeback`).
+  - **Sizes:** `--board-w` = min(`--board-max` 880, `100vh - --head-h - 188px`, the width left beside the nav and
     `--side-w`); `--strip` (rank labels only, 18 px; 0 on phones, where the labels sit inside the board so it's
-    centred). 1440×900: 678 px (height-bound); 1920×1080: 880.
+    centred). 1440×900: 712 px (height-bound); 1920×1080: 880.
   - **Eval bar** (2026-10-09, user's call after Chessiro; the vertical one left the board off-centre on a phone):
     horizontal, 20 px, above the board inside `.board-row`, White's share filling from the left whichever way the
     board faces, words instead of a number (`evalBarWords()`: banded by White's win %, < 5 Equal, < 15 slightly
@@ -340,14 +346,18 @@ file says what is true now. Last full cleanup: 2026-10-03.
     in its tooltip. Not the same as the older `evalWords()` (pawn bands, eval-pill tooltips and replay cards).
   - **Colour tokens** (`:root`): `--inset`, `--hover`/`--hover-2`, `--faint`, `--maia`, and one severity scale
     `--t0..--t3` (+ `--t3-text`) for win chance lost (< 5, 5-15, 15-30, 30+), used by every scoreboard mark.
-  - **Moves & engine** (`.game-panel`, dropdown `#gp-details`) sits at the board's top right in every mode
-    (`dockGamePanel()`); the dropdown opens to its right, over the scoreboard column (the editor palette lives
-    in it; ≤ 760 px it drops down). Draggable/resizable (`position: fixed` on first drag), starts closed on
+  - **Moves & engine** (`.game-panel`, dropdown `#gp-details`) sits in the scoreboard's header, first in
+    `.panel-tools` (2026-10-09, user's call; `dockGamePanel()`, also on `setPanelHidden()`); while the scoreboard
+    is hidden it goes under the board (`.board-foot-right`). The panel is a size container: under 400 px the
+    "Players" label hides, under 340 px the button reads "Moves". In the header the
+    dropdown anchors to the panel (`.score-panel` is `overflow: visible`, the body keeps the rounded corners), right
+    edge, under the header, so it never covers the board (the editor palette lives in it). Draggable/resizable (`position: fixed` on first drag), starts closed on
     every load (only "Set up position" opens it), closes only with ✕, folds the moves list to 5 rows
     (`FOLD_ROWS`).
   - **Static files aren't cache-busted:** no `Cache-Control`, so a browser can keep an old `style.css`/`app.js`
     after edits. Ask for a hard reload (⌘⇧R) before chasing a layout report that doesn't reproduce.
-- **Analysis board: "Play bot from here"** (2026-10-09, user's call: always there, the level beside it). In
+- **Analysis board: "Play bot from here"** (2026-10-09, user's calls: always there; the level picker only after
+  it's clicked, then the button reads Start, ✕ cancels; `abPicking`, kept across re-renders). In
   `#summary` whenever the board has no game moves (FEN, 📌 position, editor's Analyse): `#ab-level` (the Play
   dialog's levels shown as "Bot 1500", shared localStorage `botLevel`) + `playBotFromHere()`: you take the side at
   the bottom, the line on the board becomes `play.prefix` (◀ walks it, Maia sees it), no clock; the bot moves first
@@ -459,7 +469,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   client-side (`sbCache`, by FEN) so stepping back is instant. The ladder's opponent is at the same rating,
   unlike the old `humans` list (`opp_rating`); the frontend no longer reads `humans`.
 - **Opening name** (`requestOpening()`, `POST /api/opening_line`: every ECO-named position along the line):
-  `#opening-tag`, the page's title (the chat banner was removed 2026-10-06) (first in `.board-head`, just above the name row; user's call,
+  `#opening-tag`, in a pill in the top name row since 2026-10-09 (before: the page's title, first in the old `.board-head` row;
   2026-10-05; `#board-sub` no longer repeats the review's opening, so a game the ECO table can't name shows
   none) shows
   the deepest name at or before the shown move, growing with variations (Caro-Kann → … Advance Variation →

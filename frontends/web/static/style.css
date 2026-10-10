@@ -120,18 +120,18 @@ main {
   --side-w: clamp(320px, 26vw, 400px);
   --board-max: var(--board-user, 880px);  /* --board-user: set by dragging the handle beside the board */
   --strip: 18px;  /* the gap left of the board that holds the rank labels (the eval bar is above the board since 2026-10-09) */
-  /* the board: as big as the height allows (222 px: padding, the two rows above, the eval bar, the name and buttons
-     below, the file letters, the row gaps), within the width left beside the nav and the side column */
-  --board-w: min(var(--board-max), calc(100vh - var(--head-h, 0px) - 222px),
+  /* the board: as big as the height allows (188 px: padding, the name row above, the eval bar, the name row and
+     buttons below, the file letters, the row gaps), within the width left beside the nav and the side column */
+  --board-w: min(var(--board-max), calc(100vh - var(--head-h, 0px) - 188px),
     calc(100vw - var(--nav-w) - var(--side-w) - 2 * var(--pad-x) - var(--gap) - var(--strip)));
   /* the side column takes whatever the board leaves: --side-w is only its minimum (the board's width formula
      uses it), so a height-bound board or a hidden panel gives the panels the room instead of empty margins */
-  display: grid; grid-template-columns: auto minmax(var(--side-w), var(--side-max, 1200px)); grid-template-rows: repeat(5, auto);
+  display: grid; grid-template-columns: auto minmax(var(--side-w), var(--side-max, 1200px)); grid-template-rows: repeat(4, auto);
   column-gap: var(--gap); row-gap: 6px; padding: 16px var(--pad-x); justify-content: center; align-items: start;
 }
-.board-col { grid-column: 1; grid-row: 1 / span 5; display: grid; grid-template-rows: subgrid; }
+.board-col { grid-column: 1; grid-row: 1 / span 4; display: grid; grid-template-rows: subgrid; }
 .side {
-  grid-column: 2; grid-row: 3 / span 3; align-self: stretch; contain: size; min-width: 0; position: relative;
+  grid-column: 2; grid-row: 2 / span 3; align-self: stretch; contain: size; min-width: 0; position: relative;
   display: grid; gap: 0; grid-template-columns: minmax(0, 1fr); --share: .66;
   grid-template-areas: "score" "split" "chat"; grid-template-rows: minmax(0, calc(var(--share) * (100% - 16px))) 16px minmax(0, 1fr);
 }
@@ -268,7 +268,7 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
   background: none; color: var(--muted); transition: background .12s, color .12s; }
 .panel-hide:hover { background: var(--hover-2); color: var(--text); }
 .panel-hide .ico { width: 18px; height: 18px; }
-/* the game panel sits above the board (.board-head-right): just the "Moves & engine" trigger, with
+/* the game panel (in the scoreboard's header, or .board-foot-right): just the "Moves & engine" trigger, with
    everything else in the #gp-details dropdown, which anchors to this (position: relative) wrapper */
 .game-panel { position: relative; }
 .game-info { padding: 12px 14px 4px; font-weight: 600; }
@@ -916,14 +916,18 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 
 /* above the board: title line (game, opening/title, Moves & engine), then the top name with the pickers,
    status and Takeback beside it. Both as wide as the board, starting at its left edge */
-.board-head, .top-row { display: flex; align-items: center; gap: 6px 12px; padding-left: var(--strip);
-  width: calc(var(--strip) + var(--board-w)); box-sizing: border-box; }
-.board-head { min-height: 28px; }
-.board-head .game-info { padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.board-head .board-sub { padding-left: 0; min-height: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.board-head-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
-.top-row { flex-wrap: wrap; min-height: 32px; }
-.player.bottom { min-height: 32px; }
+.top-row, .bottom-row { display: flex; align-items: center; gap: 6px 12px; padding-left: var(--strip);
+  width: calc(var(--strip) + var(--board-w)); box-sizing: border-box; min-height: 32px; }
+.top-row { flex-wrap: wrap; }
+.bottom-row .player.bottom { padding-left: 0; max-width: none; flex: 0 1 auto; min-height: 32px; }
+/* the game's line under the board: right-aligned, quieter than the names (they're already beside the board) */
+.board-foot { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.board-foot .game-title { font-size: 13px; }
+.board-foot .game-info { padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  font-size: 13px; font-weight: 500; color: var(--muted); }
+.board-foot .board-sub { padding-left: 0; min-height: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board-foot-right { display: flex; align-items: center; gap: 8px; flex: none; }
+.board-foot-right #gp-details { top: auto; bottom: 0; }  /* the row is near the bottom of the screen: open upwards */
 .top-row .player.top { padding-left: 0; max-width: none; flex: 0 1 auto; }
 .top-row .head-row { margin-left: auto; }
 .top-row .summary { padding: 0; position: relative; }
@@ -934,12 +938,19 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .auto-coach input { margin: 0; }
 
 
-/* the opening as the title, first in the row above the names (user's call, 2026-10-05) */
-.board-head .opening-tag { margin: 0; flex: 0 1 auto; font-size: 16px; font-weight: 500; color: var(--text);
+/* the opening in the top name row, centred in the room between the name and the buttons (user's call, 2026-10-09).
+   The slot takes the leftover width (basis 0, so a long name never wraps the row: it shrinks with an ellipsis);
+   the pill inside is only as wide as its content */
+.opening-slot { flex: 1 1 0; min-width: 0; display: flex; justify-content: center; }
+.opening-box { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; height: 28px; padding: 0 10px 0 4px;
+  background: var(--inset); border: 1px solid var(--line); border-radius: 8px; box-sizing: border-box; }
+.opening-box:not(:has(.opening-tag:not(.hidden))) { display: none; }
+.opening-box .opening-tag { margin: 0; flex: 0 1 auto; align-items: center; font-size: 13.5px; font-weight: 500; color: var(--text);
   -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-.board-head .opening-tag .ot-eco { align-self: center; }
-/* in a loaded game the names line (☆ White vs Black · result) gives way first: the opening is the title */
-.board-head .game-info { flex: 0 4 auto; min-width: 90px; }
+.board-foot .ot-tactics { margin: 0; padding: 0; flex: none; white-space: nowrap; }
+/* phones: the opening gets its own line under the name and the buttons */
+@media (max-width: 760px) { .opening-slot { order: 3; flex-basis: 100%; justify-content: flex-start; } }
+
 
 
 
@@ -1168,3 +1179,16 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .rp-practice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; }
 .rp-at { border: 0; background: var(--inset); color: var(--text); border-radius: 99px; padding: 2px 8px; font: inherit; font-size: 12px; cursor: pointer; }
 .rp-at:hover { background: var(--hover); }
+
+/* "Moves & engine" in the scoreboard's header (dockGamePanel()): the panel lets the dropdown out (it would clip it),
+   the body keeps the rounded bottom; the dropdown opens down from the button's right edge */
+.score-panel { overflow: visible; position: relative; }
+.score-panel .score-body { border-radius: 0 0 var(--radius) var(--radius); }
+.game-panel.in-panel { position: static; }  /* the dropdown anchors to the panel, not the button: it stays inside the panel's width */
+.game-panel.in-panel .gp-toggle { height: 28px; }
+.game-panel.in-panel #gp-details { top: 52px; left: auto; right: 8px; width: min(320px, calc(100% - 16px)); }
+/* a narrow scoreboard (phones, small laptops): Moves & engine and the rating picker don't fit beside the title with
+   the "Players" label; the picker's tooltip still says what it is */
+.score-panel { container-type: inline-size; }
+@container (max-width: 400px) { .sb-rating > span { display: none; } .panel-tools { gap: 6px; } }
+@container (max-width: 340px) { .gp-long { display: none; } }

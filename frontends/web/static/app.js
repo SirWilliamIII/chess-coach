@@ -455,11 +455,13 @@ setInterval(() => {
 }, 250);
 
 function dockGamePanel() {
-  // it lives above the board now (.board-head-right) in every mode; kept as a hook for the callers, and
-  // to put it back if anything moved it
+  // in the scoreboard's header (user's call, 2026-10-09); under the board (.board-foot-right) while the scoreboard
+  // is hidden, so the moves and the engine lines stay reachable
   const gp = document.querySelector('.game-panel');
-  const home = document.querySelector('.board-head-right');
-  if (gp.parentElement !== home) home.appendChild(gp);
+  const inPanel = !document.body.classList.contains('hide-score');
+  const home = inPanel ? document.querySelector('#score-panel .panel-tools') : document.querySelector('.board-foot-right');
+  if (gp.parentElement !== home) home.prepend(gp);
+  gp.classList.toggle('in-panel', inPanel);
 }
 
 // ---- favorite games + their titles (core/favorites.py). Only a loaded game has a game_id to key
@@ -532,6 +534,8 @@ function syncTakeback() {
   $('pb-takeback').disabled = !p || p.moves.length <= (p.prefix || 0);
 }
 
+let abPicking = false;  // the analysis board's "Play bot from here" is showing its level picker
+
 function renderInfo() {
   const r = state.review;
   dockGamePanel(!state.demo && !state.play && !state.study && !r.moves.length);
@@ -552,11 +556,18 @@ function renderInfo() {
     $('game-info').textContent = '';  // a lesson or a puzzle may have labelled it
     $('board-sub').textContent = '';
     // no "I'm playing" toggle (removed 2026-10-07, user's call): the name labels (.you-pick) still pick your side
-    // "Play bot from here" with its level always beside it (user's call, 2026-10-09)
-    $('summary').innerHTML = `<div class="play-buttons"><button class="btn small" id="ab-play">Play bot from here</button>`
-      + `<select id="ab-level" title="Bot level (chess.com rapid)"></select></div>`;
-    $('ab-play').onclick = playBotFromHere;
-    fillBotLevels($('ab-level'));
+    // "Play bot from here"; its level picker shows only once it's clicked, then Start (user's calls, 2026-10-09)
+    const hide = abPicking ? '' : ' hidden';
+    $('summary').innerHTML = `<div class="play-buttons"><button class="btn small" id="ab-play">${abPicking ? 'Start' : 'Play bot from here'}</button>`
+      + `<select id="ab-level" class="${hide}" title="Bot level (chess.com rapid)"></select>`
+      + `<button class="btn ghost small${hide}" id="ab-cancel" title="Cancel">✕</button></div>`;
+    $('ab-play').onclick = () => {
+      if (abPicking) return playBotFromHere();
+      abPicking = true;
+      renderInfo();
+    };
+    $('ab-cancel').onclick = () => { abPicking = false; renderInfo(); };
+    if (abPicking) fillBotLevels($('ab-level'));
     return;
   }
   $('game-info').innerHTML = `<button class="fav-btn${r.favorite ? ' on' : ''}" id="fav-btn"
@@ -3101,6 +3112,7 @@ async function fillBotLevels(sel) {
 // analysis board → bot game from the shown position, you on the side at the bottom. The line played on the
 // board stays as the game's opening (prefix), so ◀ steps back through it and Maia sees the history.
 async function playBotFromHere() {
+  abPicking = false;
   const sel = $('ab-level');
   const level = botLevels?.find((l) => String(l.id) === sel.value);
   if (!level) return;
@@ -5089,7 +5101,7 @@ function pzSyncTacticsBtn(hit) {
   const btn = $('opening-tactics');
   btn.classList.toggle('hidden', !t);
   if (!t) return;
-  btn.textContent = `Tactics in this opening ›`;
+  btn.textContent = 'Tactics in this opening ›';
   btn.title = `${t.label}: the tactics that keep coming up, from ${pzTags[t.tags[0]].n.toLocaleString()} puzzles in real Lichess games`;
   btn.onclick = () => openPuzzles(t);
 }
@@ -5955,12 +5967,14 @@ $('auto-coach').onchange = (e) => store('autoCoach', e.target.checked ? '1' : '0
 function setPanelHidden(which, hidden) {
   document.body.classList.toggle(`hide-${which}`, hidden);
   store(`hide-${which}`, hidden ? '1' : '0');
+  dockGamePanel();
   // the board changed size: chessground recomputes its square geometry
   requestAnimationFrame(() => { document.body.dispatchEvent(new Event('chessground.resize')); cg.redrawAll(); });
 }
 document.querySelectorAll('[data-hide]').forEach((b) => { b.onclick = () => setPanelHidden(b.dataset.hide, true); });
 document.querySelectorAll('[data-show]').forEach((b) => { b.onclick = () => setPanelHidden(b.dataset.show, false); });
 for (const w of ['score', 'chat']) if (recall(`hide-${w}`) === '1') document.body.classList.add(`hide-${w}`);
+dockGamePanel();
 // Stacked panels (below 1680 px): drag the handle between them to share the column; the scoreboard's share
 // (0.25-0.85 of the height) is remembered per browser.
 function setSplit(share) {
