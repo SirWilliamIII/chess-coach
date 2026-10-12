@@ -159,8 +159,12 @@ file says what is true now. Last full cleanup: 2026-10-03.
     their card is in the chat, `studyShown`) are buttons back to them (`studyGo`). Drill shows only the moves played
     in this run (user's call: it mustn't give the answers away). A play-on game shows the lesson with its leaf
     highlighted. Rebuilt only when the lesson, mode or mastery changes (`lnKey`), so the scroll survives each move.
-    Tested: 149/149 Najdorf moves, 32 branches, highlight follows, click back, Drill shows `1.e4` only. Not tested:
-    a family lesson (220 nodes, deep nesting), a phone.
+    Tested: 149/149 Najdorf moves, 32 branches, highlight follows, click back, Drill shows `1.e4` only.
+    **Main line first** (`lnBlock()`, user's pick 2026-10-12, after the Caro-Kann's main line sat several screens down
+    under ~20 White alternatives on move 2): a line runs straight through along its main moves, then its branches
+    follow grouped by the move they replace ("Instead of 2.d4", `.ln-group` / `.ln-instead`), each laid out the same
+    way. Tested: Caro-Kann 219/219 moves, the first line is exactly the lesson's main line (12 moves), 31 groups;
+    Najdorf 149/149, 20-move main line, 21 groups.
   - **Explore lines:** the open line as notation under the list (`renderLine()`, `#rep-line`): the board's move
     highlighted, a click goes there, moves you play off the line in italics from where you left it (`demo.line` keeps
     the file's moves).
@@ -507,8 +511,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
     Clear / Starting position / Kings only, FEN) sit in the scoreboard's place while editing (`body.editor-mode`, panel
     title "Set up"); on phones they go under the board (moved there by `openEditor()`), and the board screen scrolls
     while editing (an exception to the no-scroll rule: the tools don't fit; its parts don't shrink, or the eval bar
-    covered the wrapped Cancel/Analyze row). Seen, not fixed: in Set up on desktop the board sits 18 px lower than in
-    other modes (122 vs 104 at 1440×900); it did before this step too.
+    covered the wrapped Cancel/Analyze row). The ◀ ▶ row is `visibility: hidden` in Set up on desktop, not `display:
+    none`: losing its 36 px made the vertically centred column drop the board 18 px (fixed 2026-10-12).
     Step 6 ✓: the Full Explorer button, its floating/draggable box and everything only it used are gone (the old move
     list and its fold, the variation bar, the Engine lines list, `dockGamePanel()`, `closeGpDropdown()`, the drag and
     resize handles, `.board-foot-right`, their CSS). The engine on/off moved to an **Engine** switch in the scoreboard
@@ -966,21 +970,21 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 Add an entry the moment something is noticed, even when it's out of scope for the work at hand; delete it when fixed.
 
-- **Set up: the board sits 18 px lower than in other modes** on desktop (122 vs 104 px from the top at 1440×900).
-  Already there before the 2026-10-12 editor move; cause not looked at.
-- **The Lichess games section is below the fold at 1440×900 on a loaded game** (move strip, report strip, your-move
-  card and both lists come first). Options: put it higher during the opening, or shorten the lists while it shows.
-  User's call after seeing it live.
-- **Explorer request rate not checked against Lichess's real limit**: measured ~20 requests per game's opening read
-  slowly and uncached (2026-10-12). If "rate limited" comes back, raise `X_DWELL_MS` first.
-- **Not tested, from the section/panel work (2026-10-11/12):** a lesson's play-on and Back to the lesson, coming back
-  during a lesson build, a solved puzzle handing over to the scoreboard (same path as Exit), the 220-node lessons in
-  the notation panel, phone widths for the Drill/Puzzle/Lesson panels, loading a game through Paste PGN,
-  Safari/Firefox for everything since 2026-10-11.
-- **README.md describes removed features** (Replay mode, the 📚 Library dialog, Stockfish bot levels).
-- **With the scoreboard hidden, the Engine switch and the move strip are hidden too** (both live in that panel since
-  2026-10-12; the old dropdown moved under the board instead). The eval bar still shows; there's no way to turn the
-  engine off or see the move list until the panel is shown again.
+- **The Lichess games section is still partly below the fold at 1440×900 on a loaded game.** User picked "shorten the
+  lists" (2026-10-12): `sbRows()` gives Top bot / Top player moves 3 rows while the section shows. Fits on a fresh
+  board; on a loaded game (move strip + report strip + your-move card above) the heading and first row show and the
+  rest is ~80 px under the panel's edge (measured at ply 4). Next knobs: 3 Lichess rows (~50 px), or fold the
+  report strip during the opening. Ask before more layout changes.
+- **Explorer request rate:** ~20 requests per game's opening read slowly and uncached (measured 2026-10-12). Lichess
+  publishes no explorer limit; its guidance is one request at a time and a full minute's wait after a 429, which
+  `frontends/lichess/explorer.py` does (`RATE_LIMIT_WAIT` 61 s). Unofficial figures (~15/min anonymous, ~60/min with a
+  token) aren't from Lichess. If "rate limited" comes back, raise `X_DWELL_MS` first.
+- **Right-drag arrows in Safari not confirmed:** Playwright's WebKit drew no arrow on a right-drag (Chromium and
+  Firefox did); may be the test driver, not Safari. Check on a real Safari.
+- **Not tested on purpose:** coming back to /openings during a lesson build (a real build costs ~$0.25 and 4-6 min;
+  user's call 2026-10-12).
+- **Decided, left as is (user, 2026-10-12):** with the scoreboard hidden, the Engine switch and the move strip are
+  hidden too (hiding the panel means not wanting its contents).
 
 ### Tactics finder
 

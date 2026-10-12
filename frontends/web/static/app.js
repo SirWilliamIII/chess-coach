@@ -1203,7 +1203,7 @@ function sbBefore(L, now, u) {
     // quick numbers only: the candidates now, the strip and the track when the deep search lands
     const q = sbQuick(fen, turn);
     return `<section class="sb-card live">`
-      + (q ? sbCandidates(q.rows.filter((r) => r.rank).slice(0, 5), turn, q.best, 'Top bot moves', 'sf', busy) : `<div class="sb-table">${'<div class="sb-row skel"><span></span></div>'.repeat(5)}</div>`)
+      + (q ? sbCandidates(q.rows.filter((r) => r.rank).slice(0, sbRows(fen)), turn, q.best, 'Top bot moves', 'sf', busy) : `<div class="sb-table">${'<div class="sb-row skel"><span></span></div>'.repeat(5)}</div>`)
       + sbExplorer(fen) + `</section>`;
   }
   const pcts = sbPcts(sb, rating);
@@ -1211,9 +1211,9 @@ function sbBefore(L, now, u) {
   const engine = sb.all[0];
   // two lists (user's call): the absolute one (Stockfish's top 5, the same at any rating), then what players
   // at the chosen rating actually play, ranked by popularity and scored on the same columns
-  const best = sb.all.slice(0, 5).map(withPct);
+  const best = sb.all.slice(0, sbRows(fen)).map(withPct);
   const players = [...pcts.keys()].map((u) => sb.all.find((r) => r.uci === u)).filter(Boolean).map(withPct)
-    .sort((a, b) => b.pct - a.pct).slice(0, 5);
+    .sort((a, b) => b.pct - a.pct).slice(0, sbRows(fen));
   const open = mlOpen();
   mlShown = open && players.length ? { fen, ucis: players.map((r) => r.uci) } : null;
   const tac = tacticHere();
@@ -1527,6 +1527,10 @@ function requestExplorer(c) {
     if (token === xToken) renderKeyCard();
   }, X_DWELL_MS);
 }
+
+// 3 rows per list while Lichess games shows, 5 otherwise (user's call, 2026-10-12: at 1440×900 the section sat
+// below the fold; the 4th and 5th candidates matter least in the opening)
+const sbRows = (fen) => (sbExplorer(fen) ? 3 : 5);
 
 // the section under Top player moves: the moves Lichess players play here, how often, and how they score
 function sbExplorer(fen) {

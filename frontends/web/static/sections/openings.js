@@ -891,25 +891,44 @@ let lnKey = '';  // what the panel shows; rebuilt only when it changes, so its s
 // the lesson on the board, or the one a play-on game came from
 const lnStudy = () => state.study || state.play?.backLesson?.study || null;
 
+// studyLeaves() / studyProgress() read state.study, which a play-on game doesn't have: these take the lesson
+function lnLeaves(data) {
+  const N = data.nodes;
+  const walk = (id) => {
+    const n = N[id];
+    if (!n.children.length) return [id];
+    const mine = n.fen.split(' ')[1] === data.color[0];
+    return (mine && n.main !== null ? [n.main] : n.children).flatMap(walk);
+  };
+  return walk(data.root);
+}
+function lnProgress(data) {
+  try { return JSON.parse(localStorage.getItem(`study-m:${data.slug}`) || '{}') || {}; } catch { return {}; }
+}
+
 function lnMove(N, id, force, prog, leaves) {
   const n = N[id];
   const tick = leaves.has(id) && (prog[id] || 0) >= MASTERED ? '<span class="ln-tick" title="Mastered">✓</span>' : '';
   return `${moveNum(N[n.parent].fen, force)}<button class="ln-mv" data-id="${id}">${esc(n.san)}</button>${tick} `;
 }
 
-// the line on from node `pid`: its main move, then each other try as an indented branch, then on along the main move
-function lnFrom(N, pid, force, prog, leaves) {
-  let html = '';
-  for (let id = pid; N[id].children.length;) {
-    const n = N[id];
-    const main = n.main ?? n.children[0];
-    html += lnMove(N, main, force, prog, leaves);
-    const alts = n.children.filter((k) => k !== main);
-    html += alts.map((a) => `<div class="ln-var">${lnMove(N, a, true, prog, leaves)}${lnFrom(N, a, false, prog, leaves)}</div>`).join('');
-    force = alts.length > 0;
-    id = main;
-  }
-  return html;
+// Main line first (user's pick, 2026-10-12: in the 220-node Caro-Kann the standard layout listed every White
+// alternative on move 2 before the main line went on, several screens down): a line runs straight through along its
+// main moves, then its branches follow, grouped by the move they replace ("Instead of 2. d4"), each one laid out the
+// same way. `first` is the line's first move; `top` = the lesson's own main line (its first move has rivals too).
+function lnBlock(N, first, prog, leaves, top = false) {
+  const ids = [];
+  for (let id = first; id !== null && id !== undefined; id = N[id].children.length ? (N[id].main ?? N[id].children[0]) : null) ids.push(id);
+  const line = ids.map((id, i) => lnMove(N, id, i === 0, prog, leaves)).join('');
+  // a branch's first move: its rivals are the other branches of the same group, already listed beside it
+  const groups = ids.slice(top ? 0 : 1).map((id) => {
+    const alts = N[N[id].parent].children.filter((k) => k !== id);
+    if (!alts.length) return '';
+    const parentFen = N[N[id].parent].fen;
+    return `<div class="ln-group"><div class="ln-instead">Instead of ${moveNum(parentFen, true)}${esc(N[id].san)}</div>`
+      + alts.map((a) => `<div class="ln-var">${lnBlock(N, a, prog, leaves)}</div>`).join('') + '</div>';
+  }).join('');
+  return line + groups;
 }
 
 function renderNotation() {
@@ -933,12 +952,14 @@ function renderNotation() {
     notePanel.innerHTML = `<div class="ln-tree ln-drill">${played || '<span class="ln-num">…</span>'}</div>`;
     return;
   }
-  const prog = studyProgress();
-  const leaves = new Set(studyLeaves(st.data.root));
+  const prog = lnProgress(st.data);
+  const leaves = new Set(lnLeaves(st.data));
   const key = `learn|${st.data.slug}|${[...leaves].filter((l) => (prog[l] || 0) >= MASTERED).join(',')}`;
   if (key !== lnKey) {
     lnKey = key;
-    notePanel.innerHTML = `<div class="ln-tree">${lnFrom(N, st.data.root, true, prog, leaves)}</div>`;
+    const root = N[st.data.root];
+    const first = root.main ?? root.children[0];
+    notePanel.innerHTML = `<div class="ln-tree">${first === undefined ? '' : lnBlock(N, first, prog, leaves, true)}</div>`;
     notePanel.querySelector('.ln-tree').onclick = (e) => {
       const b = e.target.closest('.ln-mv.reach');
       if (b && state.study === st) studyGo(b.dataset.id);

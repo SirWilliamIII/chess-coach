@@ -519,7 +519,10 @@ body.editor-mode .score-body, body.editor-mode .move-strip { display: none; }
 .editor input { width: 100%; font-family: ui-monospace, monospace; font-size: 12px; }
 .ed-status { font-size: 12px; color: var(--accent); margin-top: 6px; width: 100%; }
 .ed-status.bad { color: #ff8a80; }
-body.editor-mode .nav { display: none; }
+/* the ◀ ▶ row has nothing to step through in Set up: hidden but keeping its space, or the centred column moved the
+   board down 18 px (2026-10-12); phones drop it, the board screen scrolls there anyway */
+body.editor-mode .nav { visibility: hidden; }
+@media (max-width: 900px) { body.editor-mode .nav { display: none; } }
 
 /* ---------- games dialog: saved / offline ---------- */
 #games-tabs { margin-bottom: 10px; }

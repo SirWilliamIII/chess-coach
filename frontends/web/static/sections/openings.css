@@ -60,7 +60,11 @@
 /* the lesson as notation (renderNotation()): main line bold, branches indented under the move they branch from */
 .ln-tree { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 2px 14px; font-size: 14px; line-height: 1.95; }
 .ln-tree > .ln-mv { font-weight: 700; }
-.ln-var { margin: 2px 0 4px 6px; padding-left: 12px; border-left: 2px solid var(--line); color: #c9c7c2; font-size: 13.5px; line-height: 1.8; }
+.ln-var { margin: 1px 0 2px; padding-left: 12px; border-left: 2px solid var(--line); color: #c9c7c2; font-size: 13.5px; line-height: 1.8; }
 .ln-tick { color: #7fd36a; font-size: 12px; font-weight: 700; margin-left: 1px; }
 .ln-drill .ln-mv { font-weight: 700; }
 .ln-empty { display: grid; place-items: center; flex: 1; }
+/* main line first: a line's branches after it, under the move they replace (lnBlock()) */
+.ln-group { margin: 8px 0 4px 6px; }
+.ln-instead { font-size: 11.5px; color: var(--muted); letter-spacing: .02em; line-height: 1.6; }
+.ln-instead .ln-num { font-size: 11.5px; margin-right: 1px; }

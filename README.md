@@ -29,15 +29,11 @@ terminal version.
 - Click moves, use the arrow keys, or drag pieces to try your own lines; the engine eval follows the board.
 - Ask the coach anything about the position on the board ("best move?", "what was the plan here?").
   Moves in its answers are clickable and play on the board.
-- **Play a bot**: practice games against Stockfish at 9 strength levels (~600 to full strength).
+- **Play a bot**: practice games against Maia (plays like a person at chess.com ~400 to ~2400) or full-strength
+  Stockfish. **Play bot from here** (above the board) plays on from any position or any move of a game.
   Ask the coach for ideas mid-game ("what idea should I aim for?"); it teaches the plan rather
   than giving away the move unless you ask. Takeback is always available, even after the game
   ends; then **Review this game**.
-- **Replay** (a loaded game): pick **Replay as White/Black** and play your moves from the game while
-  the opponent plays theirs; the arrow keys step through it, and the coach steps in at GM moments (and
-  warns you before the opponent's). Play a *different* move and you're offered to play on from there
-  against a bot matched to your opponent's rating, keeping the game's moves so far; **Back to the
-  game** returns to the replay.
 - **Learn → Openings**: pick any named opening (Najdorf, Dragon, Caro-Kann, London…) and a side. The
   first time, a lesson is built from master games (Lichess masters database, needs `LICHESS_TOKEN`),
   every move checked by Stockfish, with notes written by Claude from the engine's facts (a few minutes,
@@ -57,24 +53,20 @@ terminal version.
   One-time setup, ~1.5 min and ~420 MB:
   `curl -L -o data/puzzles/lichess_db_puzzle.csv.zst https://database.lichess.org/lichess_db_puzzle.csv.zst`
   then `.venv/bin/python -m scripts.puzzles_import` (needs `zstd`: `brew install zstd`).
-- **⚡ GM alerts**: Stockfish checks each position where it's your turn in bot games and replays for
-  a sacrifice or forced mate that beats everything else; only then does the coach speak up.
+- **⚡ GM alerts** (with **Auto** ticked in the coach's header): Stockfish checks each position where it's your
+  turn in bot games for a sacrifice or forced mate that beats everything else; only then does the coach speak up.
 - **Show me**: when the coach explains a line it attaches a demo; the button plays it on a
   grey demo board (with a note per move) where you can also try your own moves.
   **Back to my game** returns you exactly where you were.
 - **Set up**: place pieces freely or pick an endgame preset (Lucena, Philidor, basic
   mates, king + pawn), then **Play vs bot from here** or **Analyse**.
-- **▶ Most studied lines** (in the Explorer tab): instant demos of the main lines from the board
-  position, straight from real games: Masters = most studied, Lichess + rating band = most played
-  at that level. Each step shows how often it's played and how it scores. No coach call needed.
-- **Explorer** tab (next to the engine lines): what real Lichess players at a chosen rating band
-  and time control play in the current position, with results, plus a Masters database and
-  example games you can open. Needs a free Lichess account token (`LICHESS_TOKEN` in `.env`, no
-  scopes). The coach uses it too ("what do people at my level play here?").
-- **📚 Library**: every coach answer is saved automatically (with its position, game, and
-  auto-tags like back-rank, fork, sicilian) in `data/library.sqlite`. Search it, filter by tag,
-  favourites (☆ on any answer) or habits, and click an entry to put the board back where it was.
-  Works offline.
+- **Scoreboard** (beside the board on the Analysis page): the game's moves as notation, then Stockfish's top 5
+  (**▸ Lines** shows how each goes on) and what players at a rating you pick play (Maia, **▸ Full lines**). In the
+  opening it adds **Lichess games**: what real players play here and how it scores, with **▶ Main lines** as demos.
+  Needs a free Lichess token for the database (`LICHESS_TOKEN` in `.env`, no scopes). The **Engine** switch in its
+  header turns Stockfish off.
+- **Every coach answer is saved** (with its position and game) in `data/library.sqlite` and serves as a cache for
+  the same question later; `/lessons` lists them.
 - **Analysis** gives an empty board to set up and discuss any line.
 - Add `--host 0.0.0.0` to open it from another device on your network (anyone on the network
   could then use your API key through it).
