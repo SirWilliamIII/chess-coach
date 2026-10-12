@@ -105,6 +105,31 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 ## Architecture need-to-knows
 
+### Sections: one page each (2026-10-11, first step)
+
+- **User's call:** each section separate, so changing one can't affect another. A section is its own URL served by
+  the same `index.html` (`server.py` lists the paths on `index()`); `app.js` reads `SECTION` from the path and, for
+  anything but the board page (`/`), dynamically imports `static/sections/<name>.js`, which brings its own CSS and
+  dialog markup and plugs into the shared code through `hooks` (bot-game loop: `afterMyMove`, `myTurn`, `gameOver`,
+  `takeback`, `retry`, `foot`; page: `saveable`, `keyCardOff`, `idleInfo`, `blank`, `ready`). The module imports
+  what it needs from `app.js`'s `export { … }` list at the end (an import can't assign, hence `getBotLevels()` /
+  `bumpPlayToken()`). Only **Endgames** (`/endgames`) is split out so far; the rest is still the board page.
+- **Leaving a section is a page load.** Nav items for another section call `goSection(name, intent)`: the intent
+  (`{click: 'btn-…'}` or `{pgn, me}`) rides in `sessionStorage` and the target page runs it after `init()`.
+- **Back where you left off:** each section has its own snapshot (`SNAP_KEY`: `board`, `board:endgames`) with a
+  `reopen` recipe. The server still holds one board, so a section page that replaces it calls `markBoardTaken()`
+  (localStorage `boardTakenBy`); the board page then reopens its own on load (`reopenBoard()`: `/api/play/new` for a bot
+  game, `/api/saved/open` for a saved review, else `/api/analysis`), and only then, so a game loaded on another
+  device still wins a plain refresh. **Work vs exercise sections** (user's call, 2026-10-11): the board page (games,
+  analysis, bot games) always resumes; an exercise section (`hooks.freshOnArrival`: Endgames) resumes only on a
+  refresh (`performance` navigation type `reload`) and otherwise starts fresh: Endgames opens the picker on the
+  Start step with the last choices. Puzzles aren't restored at all. Learn openings: undecided (maybe the lesson you
+  were in, from its start). The coach conversation doesn't
+  come back (a reopen makes a new coach): one conversation per visit, by design.
+- Tested (Playwright, 2026-10-11): board at move 10 → Endgames → drill → Find games (dialog opens, back at move 10)
+  → Endgames (picker on Start, one click to a new drill); refresh mid-drill keeps it; the Review handoff; phone width. Not tested: Safari/Firefox, the user live.
+- Next candidates: Puzzles, Learn openings, Explore lines; then the nav redesign (groups) over the sections.
+
 ### Server and state
 
 - **Single-user, single global state.** `server.py` keeps one `S` (`S.review`, `S.coach`, `S.engine`,
@@ -675,7 +700,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   Tactics Generator (vitogit/pgn-tactics-generator, depth 8) on 20 of the same games, `data/my-lichess-tactics*.md`:
   53 positions, 20 confirmed by our finder (all in our set), the other 33 small evals or several winning moves.
 
-### Endgame trainer (`core/endgames.py`, `core/tablebase.py`, "endgame trainer" in `app.js`, 2026-10-04)
+### Endgame trainer (`core/endgames.py`, `core/tablebase.py`, `static/sections/endgames.js` + `.css` on `/endgames`, 2026-10-04)
 
 - 365chess-style (user's reference: set_endgames_training.php): "♔ Endgames" (side nav, Learn group) → a stepper (2026-10-09,
   user: all options at once was overload; `renderEndgames()`, `egStep`): 1 goal, 2 type (the preset group), 3 pieces,
