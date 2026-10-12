@@ -1,0 +1,42 @@
+/* Explore lines (sections/lines.js on /lines): the search and the list in the scoreboard's place */
+/* the list: header cards (open ones pin their title while you scroll through them), opening rows on one left
+   edge, branches indented under their opening */
+.rep-search { flex: none; }
+.rep-search input { padding-right: 34px; }
+.rep-clear { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; padding: 0;
+  display: grid; place-items: center; border: 0; border-radius: 6px; background: none; color: var(--muted); }
+.rep-clear:hover { background: var(--hover-2); color: var(--text); }
+.rep-clear .ico { width: 15px; height: 15px; }
+.rep-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-bottom: 14px; }
+.rep-note { flex: none; font-size: 12px; color: var(--muted); padding: 2px 4px 0; }
+.rep-empty { color: var(--muted); font-size: 13px; padding: 24px 8px; text-align: center; line-height: 1.5; }
+.rep-chev { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round;
+  stroke-linejoin: round; color: var(--faint); transition: transform .14s ease; }
+.rep-sec { flex: none; background: var(--inset); border: 1px solid var(--line); border-radius: 10px; }
+.rep-sec > summary { position: sticky; top: 0; z-index: 1; cursor: pointer; list-style: none; display: flex; align-items: center;
+  gap: 8px; padding: 11px 12px; background: var(--inset); border-radius: 10px; }
+.rep-sec[open] > summary { border-radius: 10px 10px 0 0; box-shadow: 0 1px 0 var(--line); }
+.rep-sec > summary::-webkit-details-marker { display: none; }
+.rep-sec > summary:hover .rep-chev, .rep-group > .rep-row:hover .rep-chev { color: var(--text); }
+.rep-sec[open] > summary .rep-chev, .rep-group.open > .rep-row .rep-chev { transform: rotate(90deg); }
+.rep-title { font-size: 14px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rep-groups { display: flex; flex-direction: column; gap: 1px; padding: 6px; }
+.rep-list > .rep-group { flex: none; }
+.rep-row { display: flex; align-items: flex-start; gap: 8px; width: 100%; min-width: 0; text-align: left; background: none;
+  border: 0; border-radius: 7px; padding: 7px 8px; color: var(--text); cursor: pointer; font: inherit; font-size: 13.5px;
+  line-height: 1.35; transition: background .1s; }
+.rep-row .rep-chev, .rep-lead { margin-top: 2px; }
+.rep-lead { flex: none; width: 14px; }
+.rep-row:hover { background: var(--hover); }
+.rep-row.on { background: rgba(129, 182, 76, .14); box-shadow: inset 2px 0 0 var(--accent); }
+.rep-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+/* two lines before cutting: the files' long names often differ only at the end */
+.rep-name { min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.rep-under { font-size: 12px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* search results stand alone (no header card around them): a card each, names may take two lines */
+.rep-list > .rep-group > .rep-row { background: var(--inset); border: 1px solid var(--line); border-radius: 9px; padding: 9px 10px; }
+.rep-list > .rep-group > .rep-row:hover { border-color: #4a4844; }
+.rep-list > .rep-group > .rep-row.on { background: rgba(129, 182, 76, .14); }
+.rep-subs { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 6px 15px; padding-left: 10px; border-left: 1px solid var(--line); }
+.rep-row.sub { padding: 5px 8px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rep-row.sub:hover, .rep-row.sub.on { color: var(--text); }

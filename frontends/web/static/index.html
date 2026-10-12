@@ -134,21 +134,12 @@
     <div class="side" id="side">
       <div class="side-resize" id="side-resize" title="Drag to size the board; double-click to reset"></div>
       <section class="panel score-panel" id="score-panel">
-        <header class="panel-head"><span class="panel-title"><button class="panel-back rep-only" id="rep-close" title="Back to the scoreboard"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6.5L9 12l5.5 5.5"/></svg></button><span class="sb-only">Scoreboard</span><span class="rep-only">Explore lines</span></span>
+        <header class="panel-head"><span class="panel-title"><span class="sb-only">Scoreboard</span><span class="rep-only">Explore lines</span></span>
           <span class="panel-tools">
             <button class="panel-hide" data-hide="score" id="score-hide" title="Hide the scoreboard"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 12h11"/></svg></button>
           </span></header>
         <div class="score-body">
           <div class="key-card hidden" id="key-card"></div>
-        </div>
-        <!-- "Explore lines" (side nav) puts the lines of data/openings*.md here in place of the scoreboard -->
-        <div class="rep-body">
-          <div class="search-box rep-search">
-            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg>
-            <input id="rep-q" aria-label="Search lines" autocomplete="off" spellcheck="false">
-            <button class="rep-clear hidden" id="rep-clear" title="Clear the search"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
-          </div>
-          <div id="rep-list" class="rep-list"></div>
         </div>
       </section>
       <button class="panel-tab tab-score" data-show="score" id="score-tab" title="Show the scoreboard"><span class="sb-only">Scoreboard</span><span class="rep-only">Explore lines</span></button>

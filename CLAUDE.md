@@ -120,7 +120,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
   what it needs from `app.js`'s `export { … }` list at the end (an import can't assign, hence `getBotLevels()` /
   `bumpPlayToken()`, `setDemoTimer()`); `sectionNav(ownId, open)` wires its nav. Split out so far: **Endgames**
   (`/endgames`), **Puzzles** (`/puzzles`) and **Learn openings** (`/openings`; `/lessons` is the saved-answers
-  page), all 2026-10-11; the rest (games, analysis, bot games, editor, positions, Explore lines) is the board page.
+  page), all 2026-10-11, and **Explore lines** (`/lines`, 2026-10-12); the rest (games, analysis, bot games, editor,
+  positions) is the board page.
 - **Leaving a section is a page load.** Nav items for another section call `goSection(name, intent)`: the intent
   rides in `sessionStorage` and the target page runs it after `init()`. Board page: `{click: 'btn-…'}`, `{pgn, me}`
   (a drill's Review), `{game: {id, ply, note}}` (a puzzle's "Open the game here", `openGameAt()`); a section's own
@@ -144,8 +145,13 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - Learn openings tested the same way (2026-10-11): picker on arrival and on refresh, a built lesson (auto reply,
   guide arrow and square, a lesson-text move on the demo board, Walk me through chip with a stubbed chat), Drill,
   Exit, back to the board at its move. Not tested: play-on at a leaf and Back to the lesson, a build left running.
-- Next candidates: Explore lines (or keep it on the board page: it's a read-only mode already); then the nav
-  redesign (groups) over the sections.
+- Explore lines tested (2026-10-12): list on arrival, search, a line on the demo board, Clear board, back to the board
+  at its move, phone width.
+- **Next (agreed 2026-10-12): each section its own panel** instead of the shared scoreboard: lessons show the
+  lesson as notation (Learn: the whole tree, current move highlighted, mastered lines ticked; Drill: only the moves
+  played so far, so it doesn't give the answers), shared with Explore lines (the opened line's notation under the
+  list); Endgames the drill (goal, material, moves, slips, Hold-it progress); Puzzles the puzzle while solving (where
+  it's from, rating, your level, the session), the scoreboard back once it's over. Then the nav redesign (groups).
 
 ### Server and state
 
@@ -807,7 +813,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   (`studyFindMove()`), rendered as `.lm` buttons that play from where your board and that line split
   (`LESSON_STEP_MS` 650 ms).
 
-### Known traps from the user's opening files (`core/repertoire.py`)
+### Known traps from the user's opening files (`core/repertoire.py`; Explore lines on `/lines`)
 
 - Sources: `data/openings.md` + `data/openings/*.md` (`##`/`###` headers + JSON lists of `{"name","pgn"}`; only
   moves matter; a pgn is cut at the first comment/glyph/variation). A move is a **trap** when it throws away ≥
@@ -827,7 +833,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   dropped (88). ~2,700 lines → ~1,100 groups. The list shows names only (user's call, 2026-10-10: no line counts or
   trap tags on the right; traps show on the board): header cards whose title pins while you scroll them, rows on one
   left edge (chevron or blank), names up to two lines, branches indented; search results are a card each. Cached by source hash + index object (~3-7 s cold, warmed in a thread
-  at startup; the page fetches it 3 s after load). User's call: no full move strings on screen.
+  at startup; `/lines` fetches it on load). User's call: no full move strings on screen.
 - **Search** (`repSearch()` in app.js, in the browser over `repIndex`, ~5 ms a keystroke): tokens that look like
   moves (`repMoveKey()`: case, move numbers, x + # ! ?, 0-0/O-O folded; "NF3", "1...c5", "cd4" work) must appear
   in order in the line: starts with them > all in a row > in order with gaps (tightest stretch wins), ties to the
@@ -837,18 +843,17 @@ file says what is true now. Last full cleanup: 2026-10-03.
   opens the first; a line found by moves opens on the demo board stopped where the typed moves end. The user's
   expectation that "e4 nf3 a6" finds only the Najdorf can't hold: 136 lines have those moves in order (Kan,
   O'Kelly, Ruy Lopez …a6); the O'Kelly ranks first (tightest), and the files' only Najdorf is named "Nadjorf".
-- **Its own mode** (user's call: it shouldn't take over the scoreboard whatever is open): clicking it leaves
-  whatever is on the board for a fresh analysis board (`/api/analysis`) and shows the list in the scoreboard's
-  place (`body.rep-mode`, `setRepMode()`/`repApply()`, localStorage `repMode`: `.score-body` hidden, `.rep-body`
-  shown, the Full Explorer dropdown closed). Anything else that takes the board ends it: `setReview()` (game, bot
-  game, puzzles, lesson, endgame, Analysis board, 📌 position) unless passed `keepMode` (refresh restore and first
-  load pass it) and `openEditor()`. ‹ in the panel header ends it too, leaving the board; the nav item only enters (clicked again it just focuses the search). A
-  line opens as a demo flagged `explore`: the top row reads "Line · <opening + branch> · <header> · Clear board"
-  instead of "Demo board · Back to my game"; under the board, the line's `"name"` from the file when it has one
-  (user's call: the file's own text belongs there; one line, full text in the tooltip; it's the only text the files
-  carry per line), plus "off the line: your moves" once you leave it. A named line's top row shows only its branch. No "Play bot from here" in this mode (user's call: it's for looking). The nav item shows `.on`; on phones the middle tab reads "Lines". While it's on,
-  `repMode()` stops `requestScoreboard`, `renderKeyCard` and `requestMaiaLines` (no engine work for a hidden
-  panel; so no live tactic alert either); leaving calls `update()`. Read-only.
+- **Its own page** (`/lines`, `static/sections/lines.js` + `.css`, 2026-10-12; was a mode on the board page): arriving
+  makes a fresh analysis board (`/api/analysis`, so the coach talks about what the lines put on it) and shows the
+  list in the scoreboard's place for good (`body.rep-mode`: `.score-body` hidden, `.rep-body` injected by the module;
+  the shell's `.rep-only`/`.sb-only` labels switch the panel title, tab and the phone's middle tab to "Lines"). Always
+  the whole list on arrival, nothing restored. A line opens as a demo flagged `explore`: the top row reads "Line ·
+  <opening + branch> · <header> · Clear board" instead of "Demo board · Back to my game"; under the board, the
+  line's `"name"` from the file when it has one (user's call: the file's own text belongs there; one line, full
+  text in the tooltip; it's the only text the files carry per line), plus "off the line: your moves" once you leave
+  it. A named line's top row shows only its branch. No "Play bot from here" (user's call: it's for looking).
+  `repMode()` (in `app.js`) stops `requestScoreboard`, `renderKeyCard` and `requestMaiaLines` (no engine work for
+  a hidden panel; so no live tactic alert either). Read-only.
 - Shown on review cards (`fell` / `punished` / `missed`) and the bot-game card (`trap_punish`, `trap_warn`),
   via `trapRow()` with a ▶ refutation demo. Not tested: a live bot game reaching a trap (rare with Maia/Stockfish
   until the bot uses an opening book). Some labels are odd where a line passes a position the ECO table names
