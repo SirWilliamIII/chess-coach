@@ -502,6 +502,12 @@ file says what is true now. Last full cleanup: 2026-10-03.
     opening read slowly and uncached; not checked against Lichess's actual limit (the 2026-10-06 trip was ~340/hour
     with no dwell, cutoff or cache check). At 1440×900 on a loaded game the section sits below the fold (move strip,
     report strip, your-move card and both lists come first); fits at 1920×1080 on a fresh board.
+    Step 5 ✓: Set up's tools (`#editor-body`, `buildEditorPanel()`: presets, Move/Remove, the palette, side to move,
+    Clear / Starting position / Kings only, FEN) sit in the scoreboard's place while editing (`body.editor-mode`, panel
+    title "Set up"); on phones they go under the board (moved there by `openEditor()`), and the board screen scrolls
+    while editing (an exception to the no-scroll rule: the tools don't fit; its parts don't shrink, or the eval bar
+    covered the wrapped Cancel/Analyze row). Seen, not fixed: in Set up on desktop the board sits 18 px lower than in
+    other modes (122 vs 104 at 1440×900); it did before this step too.
   - **The line under the board** (`setFoot()` → `#board-sub`, 2026-10-10; user: "it can be really helpful or really
     confusing", after "Opening puzzle · Your game vs … · Caro-Kann Defense: Advance Variation" under a your-mistakes
     puzzle): one line saying what this board is, never what the rows above already say (names, opening pill,
@@ -955,6 +961,23 @@ file says what is true now. Last full cleanup: 2026-10-03.
   stuck"), treating web results as settled, muddled explanations of sharp middlegames.
 
 ## TODOs / open decisions
+
+### Known issues (found while building; user, 2026-10-12: track every one as it's found)
+
+Add an entry the moment something is noticed, even when it's out of scope for the work at hand; delete it when fixed.
+
+- **Set up: the board sits 18 px lower than in other modes** on desktop (122 vs 104 px from the top at 1440×900).
+  Already there before the 2026-10-12 editor move; cause not looked at.
+- **The Lichess games section is below the fold at 1440×900 on a loaded game** (move strip, report strip, your-move
+  card and both lists come first). Options: put it higher during the opening, or shorten the lists while it shows.
+  User's call after seeing it live.
+- **Explorer request rate not checked against Lichess's real limit**: measured ~20 requests per game's opening read
+  slowly and uncached (2026-10-12). If "rate limited" comes back, raise `X_DWELL_MS` first.
+- **Not tested, from the section/panel work (2026-10-11/12):** a lesson's play-on and Back to the lesson, coming back
+  during a lesson build, a solved puzzle handing over to the scoreboard (same path as Exit), the 220-node lessons in
+  the notation panel, phone widths for the Drill/Puzzle/Lesson panels, loading a game through Paste PGN,
+  Safari/Firefox for everything since 2026-10-11.
+- **README.md describes removed features** (Replay mode, the 📚 Library dialog, Stockfish bot levels).
 
 ### Tactics finder
 

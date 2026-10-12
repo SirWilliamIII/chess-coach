@@ -542,6 +542,17 @@ body.demo-mode .board-wrap { box-shadow: 0 0 0 3px #6d6c68; border-radius: 3px; 
 .move-strip { flex: none; max-height: 30%; overflow-y: auto; padding: 10px 16px; border-bottom: 1px solid var(--line);
   font-size: 13.5px; line-height: 1.85; }
 .move-strip.hidden, body.own-panel .move-strip { display: none; }
+/* Set up's tools in the scoreboard's place while editing (openEditor; under the board on phones) */
+.editor-body { display: none; flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px; }
+body.editor-mode .editor-body { display: block; }
+body.editor-mode .score-body, body.editor-mode .move-strip { display: none; }
+@media (max-width: 900px) {
+  body.editor-mode .editor-body { flex: none; padding: 10px 0 16px; }
+  /* phones: the board screen doesn't scroll (user's call), but the tools don't fit under the board; while setting up
+     it scrolls from the top, so the row above the board (Cancel, Analyze) stays reachable */
+  body.editor-mode:not(.m-moves):not(.m-coach) .board-col { justify-content: flex-start; overflow-y: auto; min-height: 0; }
+  body.editor-mode:not(.m-moves):not(.m-coach) .board-col > * { flex-shrink: 0; }  /* scrolling, not squeezing */
+}
 .move-strip .flag { margin-left: 3px; font-size: 10px; padding: 0 4px; }
 .move-strip .ln-mv.ln-own { font-style: italic; }
 .strip-var { margin: 2px 0 4px 6px; padding-left: 10px; border-left: 2px solid var(--accent); }

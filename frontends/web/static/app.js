@@ -3100,17 +3100,23 @@ function editorProblem(fen) {
 function openEditor() {
   closeDemo(false);
   const c = state.review ? currentGame() : new Chess();
-  state.editor = { tool: 'move', turn: c.turn() === 'w' ? 'white' : 'black', openedGp: $('gp-details').classList.contains('hidden') };
+  state.editor = { tool: 'move', turn: c.turn() === 'w' ? 'white' : 'black' };
   cg.set({ fen: c.fen(), lastMove: undefined });
+  // the tools beside the board, in the scoreboard's place (nothing to score while setting up; 2026-10-12, they were in
+  // the Full Explorer dropdown). On a phone that panel is another screen, so they go under the board there.
+  if (PHONE.matches) document.querySelector('.board-col').append($('editor-body'));
+  else $('score-panel').querySelector('.score-body').before($('editor-body'));
+  if (!PHONE.matches && document.body.classList.contains('hide-score')) setPanelHidden('score', false);
+  if (PHONE.matches) setPhonePage('board');
+  $('score-title').textContent = 'Set up';
   buildEditorPanel();
   update();
-  $('gp-toggle').click();  // the palette and presets live in the Full Explorer panel, closed by default
 }
 
 function closeEditor(render = true) {
   if (!state.editor) return;
-  if (state.editor.openedGp) closeGpDropdown();
   state.editor = null;
+  $('score-title').textContent = ownPanel() ? $('score-tab-label').textContent : 'Scoreboard';
   document.body.classList.remove('editor-mode');
   cg.set({ selected: undefined });
   if (render) update();
@@ -3120,7 +3126,7 @@ function buildEditorPanel() {
   const img = pieceImages();
   const tools = ['white', 'black'].map((color) => `<div class="pal-row">${PALETTE_ROLES.map((role) =>
     `<button class="pal" data-tool="${color}-${role}" title="Place ${color} ${role}: click squares; drag a piece off the board to remove it" style="background-image:${esc(img[`${color}-${role}`])}"></button>`).join('')}</div>`).join('');
-  $('moves').innerHTML = `<div class="editor">
+  $('editor-body').innerHTML = `<div class="editor">
     <button class="btn ghost small" id="ed-preset-toggle">Endgame presets…</button>
     <label class="field hidden" id="ed-preset-field"><span class="label">Endgame presets</span>
       <select id="ed-preset"><option value="">Choose a position…</option>${PRESETS.map(([n, f]) => `<option value="${esc(f)}">${esc(n)}</option>`).join('')}</select></label>
@@ -3138,7 +3144,7 @@ function buildEditorPanel() {
     </div>
     <label class="field"><span class="label">FEN</span><input id="ed-fen" spellcheck="false"></label>
   </div>`;
-  $('moves').querySelectorAll('[data-tool]').forEach((b) => {
+  $('editor-body').querySelectorAll('[data-tool]').forEach((b) => {
     b.onclick = () => { state.editor.tool = b.dataset.tool; cg.set({ selected: undefined }); updateEditor(); };
   });
   $('ed-turn').querySelectorAll('button').forEach((b) => {
@@ -3187,7 +3193,7 @@ function updateEditor() {
   const ed = state.editor;
   const fen = editorFen();
   const problem = editorProblem(fen);
-  $('moves').querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === ed.tool));
+  $('editor-body').querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === ed.tool));
   $('ed-turn').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.turn === ed.turn));
   if (document.activeElement !== $('ed-fen')) $('ed-fen').value = fen;
 
