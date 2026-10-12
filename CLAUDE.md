@@ -12,7 +12,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - `data/` is gitignored (reviews, lessons, library, opening files). `data/openings*.md` is partly course
   material and must never be committed.
 
-## Current state (2026-10-08)
+## Current state (2026-10-12)
 
 - **Opening lessons built** (`data/studies/`, per clone):
 
@@ -65,8 +65,24 @@ file says what is true now. Last full cleanup: 2026-10-03.
   showing stale Maia/explorer lists); an endgame drill hides the engine after `setReview()` (leaving a puzzle there
   turned the eval bar back on) and its empty scoreboard says why; all top-row buttons are one size (the board moved a
   few px between modes); Find games tabs read chess.com / Lichess / Saved / ★ Favorites; US spelling (Analyze).
-- **Next focus:** the user trying Puzzles (both sources) and the tactics finder live; then "watch out" (the
-  opponent's tactics: the "allowed" puzzles are the offline half of it). Opening lessons after that. See TODOs.
+- **Built 2026-10-11/12 (a restructure; the user has seen parts live, not used all of it):**
+  - **Sections as pages** (see "Sections: one page each"): Learn openings `/openings`, Puzzles `/puzzles`, Endgames
+    `/endgames`, Opening files `/lines`, each its own module + CSS under `static/sections/`; the board page `/` is
+    Analysis (games, analysis board, bot games, Set up, positions). Work sections resume where you left them,
+    exercise sections start fresh (refresh-only resume for drills; lessons and puzzles never).
+  - **Each section its own panel** in the scoreboard's place: lesson notation (main line first, branches grouped
+    "Instead of …"; Drill shows only the moves played), the open line under Opening files, a Drill panel, a Puzzle
+    panel while solving.
+  - **Nav rebuilt around Analysis** (see "Layout" → Nav): Analysis (home), Open ▾ (Your games, Positions, Opening
+    files), Set up, Learn ▾ (Openings, Puzzles, Endgames), Play a bot last; labels on every screen; Find games + Load
+    game merged into Your games.
+  - **Full Explorer dissolved** (see "Move strip"): the move strip, ▸ Lines under Top bot moves, one Maia rating
+    picker, the Lichess games section in the opening, Set up's tools beside the board, an Engine switch in the
+    scoreboard header.
+  - **Smaller fixes:** the row above the board is one fixed line on desktop (and a status gets its own fixed line on
+    phones), demo notes pin to the top of the coach panel, anti-confetti for failed drills (confetti for held draws).
+- **Next focus:** the user using the restructure live (see "Known issues" for what's open and untested); then the
+  earlier queue: Puzzles and the tactics finder live, "watch out" (the opponent's tactics), opening lessons.
 
 ## Running and testing
 
@@ -120,7 +136,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   what it needs from `app.js`'s `export { … }` list at the end (an import can't assign, hence `getBotLevels()` /
   `bumpPlayToken()`, `setDemoTimer()`); `sectionNav(ownId, open)` wires its nav. Split out so far: **Endgames**
   (`/endgames`), **Puzzles** (`/puzzles`) and **Learn openings** (`/openings`; `/lessons` is the saved-answers
-  page), all 2026-10-11, and **Explore lines** (`/lines`, 2026-10-12); the rest (games, analysis, bot games, editor,
+  page), all 2026-10-11, and **Opening files** (was Explore lines; `/lines`, 2026-10-12); the rest (games, analysis, bot games, editor,
   positions) is the board page.
 - **Leaving a section is a page load.** Nav items for another section call `goSection(name, intent)`: the intent
   rides in `sessionStorage` and the target page runs it after `init()`. Board page: `{click: 'btn-…'}`, `{pgn, me}`
@@ -903,7 +919,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   (`studyFindMove()`), rendered as `.lm` buttons that play from where your board and that line split
   (`LESSON_STEP_MS` 650 ms).
 
-### Known traps from the user's opening files (`core/repertoire.py`; Explore lines on `/lines`)
+### Known traps from the user's opening files (`core/repertoire.py`; Opening files on `/lines`)
 
 - Sources: `data/openings.md` + `data/openings/*.md` (`##`/`###` headers + JSON lists of `{"name","pgn"}`; only
   moves matter; a pgn is cut at the first comment/glyph/variation). A move is a **trap** when it throws away ≥
@@ -914,7 +930,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   (`_label()`); course-titled sections fall back to "from your opening files".
 - **State 2026-10-10:** `openings.md` + `openings2.md`, `openings3.md`, `openings5.md`, `markdown5.md` → 2,705
   lines, 21,624 positions, **524 traps**. Rebuilds reuse cached evals; a cold batch is ~380 new positions/min.
-- **Viewing them** ("Explore lines" in the side nav, Learn; 2026-10-10): `repertoire.browse()` → `GET
+- **Viewing them** (Open ▾ → "Opening files", `/lines`; was "Explore lines" under Learn, 2026-10-10): `repertoire.browse()` → `GET
   /api/repertoire`: sections (header, any `#` level, tidied by `_clean_title()`; the same title in two files is one
   section) → groups (the line's own `"name"`, else its deepest ECO name shortened by `_short_name()` against the
   header: "Sicilian Defense: Kan Variation, Knight Variation" under "Sicilian Kan" is "Knight Variation") → lines
