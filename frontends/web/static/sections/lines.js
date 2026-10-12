@@ -1,27 +1,26 @@
 // Explore lines, its own page (/lines; user's call, 2026-10-12: each section separate): the lines in data/openings.md
 // and data/openings/*.md, grouped by the header they sit under (same header in two files = one group), as a list in
-// the scoreboard's place (body.rep-mode, set for good on this page; the phone's middle tab reads "Lines"). The
-// scoreboard doesn't search or render under it (app.js repMode() gates requestScoreboard / renderKeyCard /
+// the scoreboard's place (takePanel(); the phone's middle tab reads "Lines"). The
+// scoreboard doesn't search or render under it (app.js ownPanel() gates requestScoreboard / renderKeyCard /
 // requestMaiaLines), so stepping through a line costs the engines nothing.
 // Read-only: a line opens on the demo board (◀ ▶ step through it, Clear board empties it). The list is fetched when
 // the page loads (the server keeps it warm), and groups fill in only when opened, since there are thousands of lines.
 // Arriving always starts from a fresh analysis board and the whole list, like the other exercise-style sections.
 
 import {
-  $, hooks, api, esc, markdown, openDemo, demoStep, setReview, setPanelHidden, setPhonePage, closeGpDropdown,
+  $, hooks, api, esc, markdown, openDemo, demoStep, setReview, setPhonePage, takePanel,
   markBoardTaken, sectionNav, PHONE, TOUCH, START_FEN,
 } from '../app.js';
 
 // the list's markup first: the list code below wires listeners on it as it loads
 document.head.insertAdjacentHTML('beforeend', '<link rel="stylesheet" href="/static/sections/lines.css">');
-$('score-panel').querySelector('.score-body').insertAdjacentHTML('afterend', `<div class="rep-body">
+takePanel('Explore lines', 'Lines').innerHTML = `
   <div class="search-box rep-search">
     <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg>
     <input id="rep-q" aria-label="Search lines" autocomplete="off" spellcheck="false">
     <button class="rep-clear hidden" id="rep-clear" title="Clear the search"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
   </div>
-  <div id="rep-list" class="rep-list"></div>
-</div>`);
+  <div id="rep-list" class="rep-list"></div>`;
 
 let repSections = null, repOpenKey = null;
 let repFetch = null;
@@ -242,11 +241,6 @@ function openRepLine(si, gi, li, end) {
 
 // ---- the page around the list
 
-document.body.classList.add('rep-mode');
-$('score-hide').title = 'Hide the lines';
-$('score-tab').title = 'Show the lines';
-if (document.body.classList.contains('hide-score')) setPanelHidden('score', false);  // the list is the page
-closeGpDropdown();  // it would hang over the list
 
 $('rep-q').oninput = () => { $('rep-clear').classList.toggle('hidden', !$('rep-q').value); renderRepertoire(); };
 $('rep-clear').onclick = () => { $('rep-q').value = ''; $('rep-clear').classList.add('hidden'); renderRepertoire(); $('rep-q').focus(); };

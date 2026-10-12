@@ -113,7 +113,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   dialog markup and plugs into the shared code through `hooks` (bot-game loop: `afterMyMove`, `myTurn`, `gameOver`,
   `takeback`, `retry`, `foot`; a live puzzle: `puzzleMove`, `puzzleInfo`, `puzzleShapes`, `explainPuzzle`; a lesson:
   `studyMove`, `studyCanMove`, `studyGoTo`, `studyInfo`, `studyShapes`, `studyNextSquares`, `studyChipLive`,
-  `studyWalkthrough`, `backToLesson`; page:
+  `studyWalkthrough`, `backToLesson`; page: `afterUpdate` (end of `update()`, for a section's own panel),
   `saveable`, `freshOnArrival`, `keyCardOff`, `idleInfo`, `blank`, `ready(restored, intent)`). `state.puzzle` and
   `puzzleLive()` stay in `app.js` as the generic "an exercise is live, hide the answers" gate, and `state.study`
   as "a lesson owns the board" (`renderChips`, nav button states, `saveBoard` read it). The module imports
@@ -147,11 +147,21 @@ file says what is true now. Last full cleanup: 2026-10-03.
   Exit, back to the board at its move. Not tested: play-on at a leaf and Back to the lesson, a build left running.
 - Explore lines tested (2026-10-12): list on arrival, search, a line on the demo board, Clear board, back to the board
   at its move, phone width.
-- **Next (agreed 2026-10-12): each section its own panel** instead of the shared scoreboard: lessons show the
-  lesson as notation (Learn: the whole tree, current move highlighted, mastered lines ticked; Drill: only the moves
-  played so far, so it doesn't give the answers), shared with Explore lines (the opened line's notation under the
-  list); Endgames the drill (goal, material, moves, slips, Hold-it progress); Puzzles the puzzle while solving (where
-  it's from, rating, your level, the session), the scoreboard back once it's over. Then the nav redesign (groups).
+- **Each section its own panel (agreed 2026-10-12)** instead of the shared scoreboard. `takePanel(title, phoneLabel)`
+  (app.js) puts an empty `.own-body` in the scoreboard's place for good (`body.own-panel`; header title `#score-title`,
+  the hidden panel's tab `#score-tab-label`, the phone's middle tab `#m-tab-moves`) and returns it; `ownPanel()` stops
+  the scoreboard's searches. Used by Explore lines (the list) and lessons:
+  - **Lesson notation** (`renderNotation()` in openings.js, on `hooks.afterUpdate`, 2026-10-12): Learn shows the whole
+    tree (main line bold, each branch indented under the move it branches from, Lichess-study style; the board's move
+    highlighted, a ✓ after a mastered line's last move); moves you've reached (on the path to the board's move, or
+    their card is in the chat, `studyShown`) are buttons back to them (`studyGo`). Drill shows only the moves played
+    in this run (user's call: it mustn't give the answers away). A play-on game shows the lesson with its leaf
+    highlighted. Rebuilt only when the lesson, mode or mastery changes (`lnKey`), so the scroll survives each move.
+    Tested: 149/149 Najdorf moves, 32 branches, highlight follows, click back, Drill shows `1.e4` only. Not tested:
+    a family lesson (220 nodes, deep nesting), a phone.
+  - Still to do: Explore lines' opened line as notation under the list (the same renderer); Endgames the drill (goal,
+    material, moves, slips, Hold-it progress); Puzzles the puzzle while solving (where it's from, rating, your level,
+    the session), the scoreboard back once it's over. Then the nav redesign (groups).
 
 ### Server and state
 

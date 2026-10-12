@@ -134,7 +134,7 @@
     <div class="side" id="side">
       <div class="side-resize" id="side-resize" title="Drag to size the board; double-click to reset"></div>
       <section class="panel score-panel" id="score-panel">
-        <header class="panel-head"><span class="panel-title"><span class="sb-only">Scoreboard</span><span class="rep-only">Explore lines</span></span>
+        <header class="panel-head"><span class="panel-title" id="score-title">Scoreboard</span>
           <span class="panel-tools">
             <button class="panel-hide" data-hide="score" id="score-hide" title="Hide the scoreboard"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 12h11"/></svg></button>
           </span></header>
@@ -142,7 +142,7 @@
           <div class="key-card hidden" id="key-card"></div>
         </div>
       </section>
-      <button class="panel-tab tab-score" data-show="score" id="score-tab" title="Show the scoreboard"><span class="sb-only">Scoreboard</span><span class="rep-only">Explore lines</span></button>
+      <button class="panel-tab tab-score" data-show="score" id="score-tab" title="Show the scoreboard"><span id="score-tab-label">Scoreboard</span></button>
       <div class="side-split" id="side-split" title="Drag to share the space; double-click to reset"></div>
 
       <section class="panel chat-panel">
@@ -166,7 +166,7 @@
        board kept hitting it; no page scrolling at all). Hidden above 900 px -->
   <nav class="m-tabs" id="m-tabs">
     <button data-page="board" class="on">Board</button>
-    <button data-page="moves"><span class="sb-only">Moves</span><span class="rep-only">Lines</span></button>
+    <button data-page="moves" id="m-tab-moves">Moves</button>
     <button data-page="coach">Coach</button>
   </nav>
 

@@ -9,8 +9,8 @@ const $ = (id) => document.getElementById(id);
 const SECTION = location.pathname.replace(/^\/+|\/+$/g, '') || 'board';
 const SNAP_KEY = SECTION === 'board' ? 'board' : `board:${SECTION}`;  // each section's own "where I left off"
 const hooks = {};
-// a section's own list in the scoreboard's place (Explore lines): the scoreboard doesn't search or render under it
-const repMode = () => document.body.classList.contains('rep-mode');
+// a section's own panel in the scoreboard's place (takePanel()): the scoreboard doesn't search or render under it
+const ownPanel = () => document.body.classList.contains('own-panel');
 
 const FLAG = { inaccuracy: '?!', mistake: '?', blunder: '??' };
 
@@ -629,7 +629,7 @@ function renderInfo() {
   if (!r.moves.length) {
     // no "I'm playing" toggle (removed 2026-10-07, user's call): the name labels (.you-pick) still pick your side
     // Explore lines is for looking, not playing (user's call): no "Play bot from here" there
-    if (repMode()) $('summary').innerHTML = ''; else renderPlayBotButtons();
+    renderPlayBotButtons();
     return;
   }
   // the names are on the rows above and below the board, the opening in the pill: here the ☆, the result, the date
@@ -948,7 +948,7 @@ function requestScoreboard(c) {
   clearTimeout(sbTimer);
   const token = ++sbToken;
   sbError = null;
-  if (!c || !state.engineOn || state.editor || repMode()) return;
+  if (!c || !state.engineOn || state.editor || ownPanel()) return;
   const line = currentLine();
   const L = sbLine();
   const { now, k } = sbTargets(L);
@@ -1124,7 +1124,7 @@ function mlHtml(fen, uci) {
 }
 
 async function requestMaiaLines() {
-  if (!mlOpen() || !mlShown || mlBusy || repMode()) return;
+  if (!mlOpen() || !mlShown || mlBusy || ownPanel()) return;
   const { fen, ucis } = mlShown;
   const uci = ucis.find((u) => !mlCache.has(mlKey(fen, u)));
   if (!uci) return;
@@ -1393,7 +1393,7 @@ function wireReport(box) {
 }
 
 function renderKeyCard() {
-  if (repMode()) return;  // Explore lines has the panel; leaving it re-renders
+  if (ownPanel()) return;  // a section page's own panel is there instead
   const box = $('key-card');
   // a search landing mid-pick would rebuild the heading and snap the rating dropdown shut: catch up on blur
   if (document.activeElement?.matches?.('#key-card .sb-rate')) return;
@@ -1704,6 +1704,7 @@ function update() {
   noteMove();
   saveBoard();
   recTrack();
+  hooks.afterUpdate?.();  // a section's own panel follows the board
 }
 
 // ---- the board survives a page refresh: a snapshot in localStorage, restored by init() only when the
@@ -2994,7 +2995,7 @@ function demoLabels(d) {
 
 function renderDemoInfo() {
   const d = state.demo;
-  const explore = d.explore && repMode();
+  const explore = !!d.explore;
   // a line from Explore lines: on top its opening (when the file gives it no name) and header; under the board the
   // name the file gives it (user's call: the file's own text belongs there), and whether you've left the line
   $('player-top').innerHTML = explore
@@ -4613,6 +4614,22 @@ async function openGameAt({ id, ply, note }) {
   update();
 }
 
+// A section page's own panel in the scoreboard's place, for good: its title (header, the hidden panel's tab, the phone's
+// middle tab) and an empty body to fill. The scoreboard stops searching (ownPanel()).
+function takePanel(title, phoneLabel = title) {
+  document.body.classList.add('own-panel');
+  $('score-title').textContent = $('score-tab-label').textContent = title;
+  $('m-tab-moves').textContent = phoneLabel;
+  $('score-hide').title = `Hide ${title.toLowerCase()}`;
+  $('score-tab').title = `Show ${title.toLowerCase()}`;
+  if (document.body.classList.contains('hide-score')) setPanelHidden('score', false);  // it's the page's panel
+  closeGpDropdown();  // it would hang over the panel
+  const body = document.createElement('div');
+  body.className = 'own-body';
+  $('score-panel').querySelector('.score-body').after(body);
+  return body;
+}
+
 // On a section page its own nav item opens its picker and every other item belongs to the board page: go there and
 // do what it would have done
 function sectionNav(own, open) {
@@ -4630,7 +4647,7 @@ function setDemoTimer(t) { demoTimer = t; }
 export {
   $, SECTION, hooks, state, api, store, recall, esc, addMsg, setReview, setEngineVisible, setFoot,
   playView, playChess, botMove, levelForRating, getBotLevels, bumpPlayToken, goSection, markBoardTaken,
-  update, renderChips, closeGpDropdown, currentGame, ask, sectionNav, setDemoTimer, PHONE, TOUCH, markdown,
+  update, renderChips, closeGpDropdown, currentGame, ask, sectionNav, setDemoTimer, PHONE, TOUCH, markdown, takePanel,
   setPhonePage, setPanelHidden, demoStep,
   CHIPS, CHIP_TIPS, START_FEN, baseShapes, cg, closeDemo, evalPill, knightShapes, openDemo, stopAutoplay, syncCards,
 };

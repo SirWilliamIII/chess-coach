@@ -14,7 +14,7 @@
 import { Chess } from '../vendor/chess-1.4.0.js';
 import {
   $, hooks, state, api, recall, esc, addMsg, ask, setReview, setEngineVisible, setFoot, update, renderChips,
-  currentGame, botMove, levelForRating, getBotLevels, bumpPlayToken, markBoardTaken, sectionNav, setDemoTimer,
+  currentGame, botMove, levelForRating, getBotLevels, bumpPlayToken, markBoardTaken, sectionNav, setDemoTimer, takePanel,
   CHIPS, CHIP_TIPS, START_FEN, baseShapes, cg, closeDemo, evalPill, knightShapes, openDemo, stopAutoplay, syncCards,
 } from '../app.js';
 
@@ -879,11 +879,104 @@ $('study-q').oninput = (e) => { studyPick = null; $('study-go').disabled = true;
 
 sectionNav('btn-study', () => openStudyDialog());
 
+// ---- the lesson as notation, in the scoreboard's place (user's call, 2026-10-12: a lesson has nothing to score; an
+// opening is learned from its moves). Learn: the whole tree, main line bold, each branch indented under the move it
+// branches from, the move on the board highlighted, mastered lines ticked; a move you've already reached is a
+// button back to it. Drill: only the moves played so far, so the notation never gives the answer away.
+
+const notePanel = takePanel('Lesson');
+let lnKey = '';  // what the panel shows; rebuilt only when it changes, so its scroll position survives each move
+
+// the lesson on the board, or the one a play-on game came from
+const lnStudy = () => state.study || state.play?.backLesson?.study || null;
+
+// "6." before every White move; "6..." before a Black move only where the line resumes (after a branch)
+function lnNum(fen, force) {
+  const [, turn, , , , n] = fen.split(' ');
+  return turn === 'w' ? `<span class="ln-num">${n}.</span>` : force ? `<span class="ln-num">${n}...</span>` : '';
+}
+
+function lnMove(N, id, force, prog, leaves) {
+  const n = N[id];
+  const tick = leaves.has(id) && (prog[id] || 0) >= MASTERED ? '<span class="ln-tick" title="Mastered">✓</span>' : '';
+  return `${lnNum(N[n.parent].fen, force)}<button class="ln-mv" data-id="${id}">${esc(n.san)}</button>${tick} `;
+}
+
+// the line on from node `pid`: its main move, then each other try as an indented branch, then on along the main move
+function lnFrom(N, pid, force, prog, leaves) {
+  let html = '';
+  for (let id = pid; N[id].children.length;) {
+    const n = N[id];
+    const main = n.main ?? n.children[0];
+    html += lnMove(N, main, force, prog, leaves);
+    const alts = n.children.filter((k) => k !== main);
+    html += alts.map((a) => `<div class="ln-var">${lnMove(N, a, true, prog, leaves)}${lnFrom(N, a, false, prog, leaves)}</div>`).join('');
+    force = alts.length > 0;
+    id = main;
+  }
+  return html;
+}
+
+// the moves played so far, for Drill (and for a game played on past the lesson)
+function lnPlayed(sans) {
+  const c = new Chess(START_FEN);
+  return sans.map((san, i) => {
+    const num = lnNum(c.fen(), i === 0);
+    c.move(san);
+    return `${num}<span class="ln-mv${i === sans.length - 1 ? ' on' : ''}">${esc(san)}</span> `;
+  }).join('');
+}
+
+function renderNotation() {
+  const st = lnStudy();
+  if (!st) {
+    if (lnKey === 'none') return;
+    lnKey = 'none';
+    notePanel.innerHTML = '<div class="ln-empty"><button class="btn small" id="ln-pick">Learn openings</button></div>';
+    $('ln-pick').onclick = () => openStudyDialog();
+    return;
+  }
+  const N = st.data.nodes;
+  const drill = !!state.study && st.mode === 'drill';
+  if (drill) {
+    // nothing past the board: the moves played in this run, the last one highlighted
+    const key = `drill|${state.extra.join(' ')}`;
+    if (key === lnKey) return;
+    lnKey = key;
+    notePanel.innerHTML = `<div class="ln-tree ln-drill">${lnPlayed(state.extra) || '<span class="ln-num">…</span>'}</div>`;
+    return;
+  }
+  const prog = studyProgress();
+  const leaves = new Set(studyLeaves(st.data.root));
+  const key = `learn|${st.data.slug}|${[...leaves].filter((l) => (prog[l] || 0) >= MASTERED).join(',')}`;
+  if (key !== lnKey) {
+    lnKey = key;
+    notePanel.innerHTML = `<div class="ln-tree">${lnFrom(N, st.data.root, true, prog, leaves)}</div>`;
+    notePanel.querySelector('.ln-tree').onclick = (e) => {
+      const b = e.target.closest('.ln-mv.reach');
+      if (b && state.study === st) studyGo(b.dataset.id);
+    };
+  }
+  // where the board is; moves you've reached (their card is in the chat, or they're on the way here) take you back
+  const here = state.study === st ? studyNodeHere() : state.play?.backLesson?.at ?? null;
+  const path = new Set();
+  for (let k = here; k !== null && k !== undefined; k = N[k].parent) path.add(k);
+  let on = null;
+  notePanel.querySelectorAll('.ln-mv').forEach((b) => {
+    const id = b.dataset.id;
+    b.classList.toggle('on', id === here);
+    b.classList.toggle('reach', state.study === st && (path.has(id) || studyShown.has(id)));
+    if (id === here) on = b;
+  });
+  on?.scrollIntoView({ block: 'nearest' });
+}
+
 // the starting position until a lesson is picked (the server's board is still the board page's game)
 const EMPTY = { game_id: null, white: '?', black: '?', white_elo: null, black_elo: null, result: '*', opening: null,
   start_fen: START_FEN, moves: [], player_color: 'white' };
 
 Object.assign(hooks, {
+  afterUpdate: renderNotation,
   studyMove: onStudyMove,
   // you play your side, the app plays theirs (Learn and Drill alike)
   studyCanMove: (turn) => {

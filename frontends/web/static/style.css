@@ -796,10 +796,9 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .pos-actions .btn.small { font-size: 13px; padding: 4px 12px; }
 .pos-actions .link { font-size: 13px; }
 @media (max-width: 520px) { .pos-save-row { flex-direction: column; } }
-/* a section page whose own list takes the scoreboard's body (body.rep-mode: Explore lines on /lines) */
-body:not(.rep-mode) .rep-only, body.rep-mode .sb-only, body.rep-mode .score-body { display: none !important; }
-.rep-body { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 10px; padding: 14px 14px 0; }
-body.rep-mode .rep-body { display: flex; }
+/* a section page's own panel in the scoreboard's place (takePanel(): Explore lines, a lesson's notation) */
+body.own-panel .score-body { display: none !important; }
+.own-body { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 10px; padding: 14px 14px 0; }
 .score-panel .panel-title { display: flex; align-items: center; gap: 4px; }
 .nav-item.on { background: var(--hover-2); color: var(--text); }
 /* search bars: a magnifier and no placeholder text (user's call, 2026-10-10) */
