@@ -1,5 +1,6 @@
 import { Chessground } from './vendor/chessground-9.2.1.js';
 import { Chess } from './vendor/chess-1.4.0.js';
+import { moveNum } from './sections/notation.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -719,6 +720,61 @@ function positionLabel() {
   }
   return label;
 }
+
+// ---- the move strip (2026-10-12, user's pick: the Analysis page is home and its moves belong in view, not in a
+// dropdown): the line on the board as notation at the top of the scoreboard. A loaded game's moves with their ?! ? ??
+// marks; your side line indented after the move it leaves from, with Back to game; a bot game's or a demo's moves;
+// on a fresh board your own. The board's move highlighted; a click goes there.
+
+function stripLine(sans, startFen, { on = -1, flags = [], plyOf = null, cls = '' } = {}) {
+  const c = new Chess(startFen);
+  return sans.map((san, i) => {
+    const num = moveNum(c.fen(), i === 0);
+    try { c.move(san); } catch { return ''; }
+    const flag = flags[i] ? `<span class="flag ${flags[i]}" title="${flags[i]}">${FLAG[flags[i]]}</span>` : '';
+    return `${num}<button class="ln-mv reach${cls}${i === on ? ' on' : ''}" data-i="${i}"${plyOf ? ` data-ply="${plyOf(i)}"` : ''}>${esc(san)}${flag}</button> `;
+  }).join('');
+}
+
+function renderStrip() {
+  const box = $('move-strip');
+  const r = state.review;
+  let html = '';
+  if (state.editor || state.study || state.puzzle) html = '';
+  else if (state.demo) html = stripLine(state.demo.moves, state.demo.start_fen, { on: state.demo.step - 1 });
+  else if (state.play) html = stripLine(state.play.moves, state.play.startFen, { on: state.play.view - 1 });
+  else if (!r.moves.length) html = stripLine(state.extra, r.start_fen, { on: state.extra.length - 1 });
+  else {
+    // the game up to the board's move, your line as a branch there, then the rest of the game
+    const sans = r.moves.map((m) => m.san);
+    const flags = r.moves.map((m) => m.class || null);
+    const on = state.extra.length ? -1 : state.ply - 1;
+    const game = stripLine(sans, r.start_fen, { on, flags, plyOf: (i) => i + 1 });
+    if (!state.extra.length) html = game;
+    else {
+      const cut = game.split('</button> ');  // one entry per move (the last one empty)
+      const head = cut.slice(0, state.ply).join('</button> ') + (state.ply ? '</button> ' : '');
+      const tail = cut.slice(state.ply).join('</button> ');
+      const base = state.ply ? r.moves[state.ply - 1].fen_after : r.start_fen;
+      html = `${head}<div class="strip-var">${stripLine(state.extra, base, { on: state.extra.length - 1, cls: ' ln-own' })}`
+        + `<button class="link strip-back">Back to game</button></div>${tail}`;
+    }
+  }
+  box.classList.toggle('hidden', !html);
+  if (box.innerHTML !== html) box.innerHTML = html;
+  box.querySelector('.ln-mv.on')?.scrollIntoView({ block: 'nearest' });
+}
+
+$('move-strip').onclick = (e) => {
+  if (e.target.closest('.strip-back')) { state.extra = []; return void update(); }
+  const b = e.target.closest('.ln-mv');
+  if (!b) return;
+  const i = +b.dataset.i;
+  if (state.demo) demoStep(i + 1);
+  else if (state.play) playView(i + 1);
+  else if (b.dataset.ply) goTo(+b.dataset.ply);
+  else { state.extra = state.extra.slice(0, i + 1); update(); }  // a move of your own line
+};
 
 function renderVariation() {
   const show = state.extra.length && state.review.moves.length && !state.play && !state.demo;
@@ -1686,6 +1742,7 @@ function update() {
   // an unsolved puzzle steps nowhere: the moves are the puzzle's
   $('nav-prev').disabled = $('nav-start').disabled = puzzleLive();
   renderMoves();
+  renderStrip();
   renderVariation();
   syncLineButtons();
   syncCards();

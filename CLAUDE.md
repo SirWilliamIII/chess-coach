@@ -473,6 +473,18 @@ file says what is true now. Last full cleanup: 2026-10-03.
     short panel, and the "Asking about" line hides while it shows so the input always fits (measured at 1280×800:
     the coach panel is 210 px there). On phones it's on the Coach screen. Phones keep their own rules for the row
     (the opening on its own line; puzzles' fixed status line).
+  - **Move strip** (`renderStrip()`, `#move-strip` at the top of the scoreboard panel, Analysis page only; 2026-10-12,
+    user's pick over a tab: the home page's moves belong in view): the line on the board as notation (`moveNum()` from
+    `sections/notation.js`, `.ln-mv` buttons). A loaded game's moves with their ?! ? ?? flags; your side line (`state.extra`)
+    as an indented italic branch after the move it leaves from, with Back to game; a bot game's, a demo's, or a fresh
+    board's own moves. Highlight follows the board, a click goes there. Max 30% of the panel, scrolls. Hidden on section
+    pages (`body.own-panel`) and in the editor/lessons/puzzles. Gotcha found: a `side` class on a move clashed with the
+    side column's `.side` grid; own moves are `.ln-own`.
+    **Plan agreed 2026-10-12 (the Full Explorer dropdown dissolves):** (1) this strip ✓; (2) Stockfish's continuations
+    as "▸ Lines" under Top bot moves, the Engine lines list goes; (3) the duplicate Maia list and its second rating
+    picker go; (4) the opening explorer as a scoreboard section shown while the position has database games (fetch
+    after a dwell, cached; measure the request rate against Lichess's 429); (5) the editor palette next to the board in
+    Set up; (6) the Full Explorer button and floating box go everywhere.
   - **The line under the board** (`setFoot()` → `#board-sub`, 2026-10-10; user: "it can be really helpful or really
     confusing", after "Opening puzzle · Your game vs … · Caro-Kann Defense: Advance Variation" under a your-mistakes
     puzzle): one line saying what this board is, never what the rows above already say (names, opening pill,
