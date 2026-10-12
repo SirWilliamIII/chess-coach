@@ -8,7 +8,7 @@
 
 import {
   $, hooks, state, api, store, recall, esc, addMsg, setReview, setEngineVisible, playView, playChess, botMove,
-  levelForRating, getBotLevels, bumpPlayToken, goSection, markBoardTaken,
+  levelForRating, getBotLevels, bumpPlayToken, markBoardTaken, sectionNav,
 } from '../app.js';
 
 
@@ -320,13 +320,7 @@ document.body.insertAdjacentHTML('beforeend', `<dialog id="dlg-endgame" class="w
   <p class="hint" id="eg-status"></p>
 </dialog>`);
 
-// Here the Endgames item opens the picker; every other section is the board page's, so it goes there and does
-// what it would have done
-$('btn-endgames').onclick = () => openEndgames();
-$('btn-endgames').classList.add('on');
-document.querySelectorAll('#side-nav .nav-item[id^="btn-"]').forEach((b) => {
-  if (b.id !== 'btn-endgames') b.onclick = () => goSection('board', { click: b.id });
-});
+sectionNav('btn-endgames', () => openEndgames());
 
 // a bare board until a drill starts (the server's board is still the board page's game)
 const EMPTY = { game_id: null, white: '?', black: '?', white_elo: null, black_elo: null, result: '*', opening: null,

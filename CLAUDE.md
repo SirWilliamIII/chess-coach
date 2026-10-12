@@ -111,11 +111,16 @@ file says what is true now. Last full cleanup: 2026-10-03.
   the same `index.html` (`server.py` lists the paths on `index()`); `app.js` reads `SECTION` from the path and, for
   anything but the board page (`/`), dynamically imports `static/sections/<name>.js`, which brings its own CSS and
   dialog markup and plugs into the shared code through `hooks` (bot-game loop: `afterMyMove`, `myTurn`, `gameOver`,
-  `takeback`, `retry`, `foot`; page: `saveable`, `keyCardOff`, `idleInfo`, `blank`, `ready`). The module imports
+  `takeback`, `retry`, `foot`; a live puzzle: `puzzleMove`, `puzzleInfo`, `puzzleShapes`, `explainPuzzle`; page:
+  `saveable`, `freshOnArrival`, `keyCardOff`, `idleInfo`, `blank`, `ready(restored, intent)`). `state.puzzle` and
+  `puzzleLive()` stay in `app.js` as the generic "an exercise is live, hide the answers" gate. The module imports
   what it needs from `app.js`'s `export { … }` list at the end (an import can't assign, hence `getBotLevels()` /
-  `bumpPlayToken()`). Only **Endgames** (`/endgames`) is split out so far; the rest is still the board page.
+  `bumpPlayToken()`); `sectionNav(ownId, open)` wires its nav. Split out so far: **Endgames** (`/endgames`) and
+  **Puzzles** (`/puzzles`, 2026-10-11); the rest is still the board page.
 - **Leaving a section is a page load.** Nav items for another section call `goSection(name, intent)`: the intent
-  (`{click: 'btn-…'}` or `{pgn, me}`) rides in `sessionStorage` and the target page runs it after `init()`.
+  rides in `sessionStorage` and the target page runs it after `init()`. Board page: `{click: 'btn-…'}`, `{pgn, me}`
+  (a drill's Review), `{game: {id, ply, note}}` (a puzzle's "Open the game here", `openGameAt()`); a section's own
+  go to its `ready()` (Puzzles: `{practice: key}` from the game report's "Practice from this game").
 - **Back where you left off:** each section has its own snapshot (`SNAP_KEY`: `board`, `board:endgames`) with a
   `reopen` recipe. The server still holds one board, so a section page that replaces it calls `markBoardTaken()`
   (localStorage `boardTakenBy`); the board page then reopens its own on load (`reopenBoard()`: `/api/play/new` for a bot
@@ -123,12 +128,14 @@ file says what is true now. Last full cleanup: 2026-10-03.
   device still wins a plain refresh. **Work vs exercise sections** (user's call, 2026-10-11): the board page (games,
   analysis, bot games) always resumes; an exercise section (`hooks.freshOnArrival`: Endgames) resumes only on a
   refresh (`performance` navigation type `reload`) and otherwise starts fresh: Endgames opens the picker on the
-  Start step with the last choices. Puzzles aren't restored at all. Learn openings: undecided (maybe the lesson you
+  Start step with the last choices. Puzzles aren't restored at all, not even on a refresh (the picker opens). Learn openings: undecided (maybe the lesson you
   were in, from its start). The coach conversation doesn't
   come back (a reopen makes a new coach): one conversation per visit, by design.
 - Tested (Playwright, 2026-10-11): board at move 10 → Endgames → drill → Find games (dialog opens, back at move 10)
   → Endgames (picker on Start, one click to a new drill); refresh mid-drill keeps it; the Review handoff; phone width. Not tested: Safari/Firefox, the user live.
-- Next candidates: Puzzles, Learn openings, Explore lines; then the nav redesign (groups) over the sections.
+- Puzzles tested the same way (2026-10-11): picker on arrival, a live puzzle with hints, Exit, back to the board at
+  its move, both handoffs, phone layout.
+- Next candidates: Learn openings, Explore lines; then the nav redesign (groups) over the sections.
 
 ### Server and state
 
@@ -632,7 +639,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   can flash first; the eval bar still hints. Not built: "watch out" (their tactic, needs a search as if it were
   their move), better pin/discovered rules, tactics from your games as puzzles.
 
-### Opening puzzles (`core/puzzles.py`, `scripts/puzzles_import.py`, "opening puzzles" in `app.js`, 2026-10-08)
+### Opening puzzles (`core/puzzles.py`, `scripts/puzzles_import.py`, `static/sections/puzzles.js` + `.css` on `/puzzles`, 2026-10-08)
 
 - **Data:** Lichess's puzzle database (CC0). Lichess tags a puzzle with its game's opening only before move 20
   (checked on the 2026-10 dump: 1.22M of 6.16M tagged, all moves 1-19), always two tags: family

@@ -134,6 +134,7 @@ def public_review() -> dict:
 
 @app.get("/")
 @app.get("/endgames")
+@app.get("/puzzles")
 def index():
     """Every section is the same page shell; app.js picks the section from the path (sections/*.js)."""
     return FileResponse(STATIC / "index.html")
