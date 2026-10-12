@@ -263,10 +263,11 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - **Explorer walks are slow and rate-limited:** ~1 s per request, serialized; `BUDGET` 20 (`core/openings.py`)
   ≈ 27 s cold. `explore(..., patient=True)` waits out 429s (the coach's tools are patient; the panel and
   `/api/lines` fail fast). `_warm_explorer()` pre-walks after each bot move in the opening (move ≤ 8). Disk
-  cache `data/explorer/` (a month). The explorer panel fetches only while Moves & engine is open (`requestExplorer()`; opening it fetches),
-  since fetching behind the closed dropdown was ~340 requests an hour and tripped Lichess's 429 (2026-10-06;
+  cache `data/explorer/` (a month). The explorer is a scoreboard section in the opening since 2026-10-12 (see
+  "Move strip" … step 4: dwell, move-20 cap, out-of-book cutoff); fetching every position was ~340 requests an hour
+  and tripped Lichess's 429 (2026-10-06;
   after a 429 every non-patient call fails for 61 s, `RATE_LIMIT_WAIT`). The other big consumer is
-  `_warm_explorer()` (~25 masters requests per bot move up to move 8). The explorer panel has no filter UI: `explorerFilters()` is a constant
+  `_warm_explorer()` (~25 masters requests per bot move up to move 8). The explorer has no filter UI: `explorerFilters()` is a constant
   (Lichess DB, all ratings, all six speeds listed explicitly, since a missing speeds list means blitz+rapid).
 - **ECO table** (`core/eco.py`, vendored lichess-org/chess-openings TSVs in `core/eco_data/`, CC0): indexed by
   EPD, exact positions only. Used for opening quips, lesson names and trap labels; the explorer panel and
@@ -456,7 +457,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
     In the side column the chat's chips are one scrolling line and "Asking about…" shows only while typing.
   - **Around the board:** `.bottom-row` = the bottom name (`#player-bottom`), then right-aligned `.board-foot` =
     `#game-title`
-    (favourites, hidden when empty), `#game-info` (a loaded game's ☆ only), `#board-sub`, and `.board-foot-right` (Moves & engine only while the scoreboard is hidden; its dropdown opens upwards there). Above
+    (favourites, hidden when empty), `#game-info` (a loaded game's ☆ only), and `#board-sub`. Above
     the board: then `.top-row` = the top name (`#player-top`), `.opening-slot`
     (the opening pill: `#opening-tag` only, 2026-10-09, user's call; the slot takes the
     leftover width with basis 0 so a long name shrinks instead of wrapping the row, the pill is centred in it and
@@ -508,6 +509,11 @@ file says what is true now. Last full cleanup: 2026-10-03.
     while editing (an exception to the no-scroll rule: the tools don't fit; its parts don't shrink, or the eval bar
     covered the wrapped Cancel/Analyze row). Seen, not fixed: in Set up on desktop the board sits 18 px lower than in
     other modes (122 vs 104 at 1440×900); it did before this step too.
+    Step 6 ✓: the Full Explorer button, its floating/draggable box and everything only it used are gone (the old move
+    list and its fold, the variation bar, the Engine lines list, `dockGamePanel()`, `closeGpDropdown()`, the drag and
+    resize handles, `.board-foot-right`, their CSS). The engine on/off moved to an **Engine** switch in the scoreboard
+    header (`#engine-toggle`, `.engine-switch`; same id, so `setEngine()`/`setEngineVisible()` are unchanged).
+    `showEval()` now only sets the bar.
   - **The line under the board** (`setFoot()` → `#board-sub`, 2026-10-10; user: "it can be really helpful or really
     confusing", after "Opening puzzle · Your game vs … · Caro-Kann Defense: Advance Variation" under a your-mistakes
     puzzle): one line saying what this board is, never what the rows above already say (names, opening pill,
@@ -530,14 +536,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
     in its tooltip. Not the same as the older `evalWords()` (pawn bands, eval-pill tooltips and move cards).
   - **Colour tokens** (`:root`): `--inset`, `--hover`/`--hover-2`, `--faint`, `--maia`, and one severity scale
     `--t0..--t3` (+ `--t3-text`) for win chance lost (< 5, 5-15, 15-30, 30+), used by every scoreboard mark.
-  - **Full Explorer** (was "Moves & engine", renamed 2026-10-09; `.game-panel`, dropdown `#gp-details`) sits in the scoreboard's header, first in
-    `.panel-tools` (2026-10-09, user's call; `dockGamePanel()`, also on `setPanelHidden()`); while the scoreboard
-    is hidden it goes under the board (`.board-foot-right`). The panel is a size container: under 400 px the
-    "Players" label hides, under 340 px the button reads "Explorer". In the header the
-    dropdown anchors to the panel (`.score-panel` is `overflow: visible`, the body keeps the rounded corners), right
-    edge, under the header, so it never covers the board (the editor palette lives in it). Draggable/resizable (`position: fixed` on first drag), starts closed on
-    every load (only "Set up position" opens it), closes only with ✕, folds the moves list to 5 rows
-    (`FOLD_ROWS`).
+  - **Full Explorer** (the dropdown with the move list, engine lines, Maia, the opening explorer and the editor
+    palette) was dissolved 2026-10-12: see "Move strip" for where each part went.
   - **Static files aren't cache-busted:** no `Cache-Control`, so a browser can keep an old `style.css`/`app.js`
     after edits. Ask for a hard reload (⌘⇧R) before chasing a layout report that doesn't reproduce.
 - **Analysis board: "Play bot from here"** (2026-10-09, user's calls: always there; the level picker only after
@@ -978,6 +978,9 @@ Add an entry the moment something is noticed, even when it's out of scope for th
   the notation panel, phone widths for the Drill/Puzzle/Lesson panels, loading a game through Paste PGN,
   Safari/Firefox for everything since 2026-10-11.
 - **README.md describes removed features** (Replay mode, the 📚 Library dialog, Stockfish bot levels).
+- **With the scoreboard hidden, the Engine switch and the move strip are hidden too** (both live in that panel since
+  2026-10-12; the old dropdown moved under the board instead). The eval bar still shows; there's no way to turn the
+  engine off or see the move list until the panel is shown again.
 
 ### Tactics finder
 

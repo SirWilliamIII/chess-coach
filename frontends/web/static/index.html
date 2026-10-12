@@ -71,31 +71,6 @@
           <div class="game-info" id="game-info"></div>
           <div class="board-sub" id="board-sub"></div>
         </div>
-        <div class="board-foot-right">
-          <div class="game-panel">
-            <button class="gp-toggle collapsed" id="gp-toggle" title="The move list, engine lines, human moves and the opening explorer"><span class="gp-long">Full </span>Explorer</button>
-            <div id="gp-details" class="hidden">
-              <div class="gp-bar">
-                <div class="gp-drag" id="gp-drag" title="Drag to move">⠿ Drag to move</div>
-                <button class="link gp-close" id="gp-close" title="Close (Esc)">✕</button>
-              </div>
-              <div class="gp-body">
-              <div class="moves" id="moves"></div>
-              <button class="link moves-more hidden" id="moves-more"></button>
-              <div class="variation hidden" id="variation">
-                <span id="variation-text"></span>
-                <button class="link" id="btn-back-to-game">Back to game</button>
-              </div>
-              <div class="engine">
-                <div id="engine-pane">
-                  <label class="toggle"><input type="checkbox" id="engine-toggle" checked> Engine lines</label>
-                  <div id="engine-lines"></div>
-                </div>
-              </div>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
       <div class="nav">
         <button class="navbtn" id="nav-start" title="Start (Home)" data-tip="Start (Home)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6v12M17.5 6.5L11 12l6.5 5.5z"/></svg></button>
@@ -127,6 +102,8 @@
       <section class="panel score-panel" id="score-panel">
         <header class="panel-head"><span class="panel-title" id="score-title">Scoreboard</span>
           <span class="panel-tools">
+            <!-- the engine on/off (the eval bar and the scoreboard's numbers); it was in the Full Explorer dropdown -->
+            <label class="engine-switch" title="Stockfish: the eval bar and the scoreboard's numbers"><input type="checkbox" id="engine-toggle" checked> Engine</label>
             <button class="panel-hide" data-hide="score" id="score-hide" title="Hide the scoreboard"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 12h11"/></svg></button>
           </span></header>
         <!-- the board's line as notation, always in view on the Analysis page (renderStrip) -->

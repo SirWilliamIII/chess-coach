@@ -486,16 +486,6 @@ setInterval(() => {
   }
 }, 250);
 
-function dockGamePanel() {
-  // in the scoreboard's header (user's call, 2026-10-09); under the board (.board-foot-right) while the scoreboard
-  // is hidden, so the moves and the engine lines stay reachable
-  const gp = document.querySelector('.game-panel');
-  const inPanel = !document.body.classList.contains('hide-score');
-  const home = inPanel ? document.querySelector('#score-panel .panel-tools') : document.querySelector('.board-foot-right');
-  if (gp.parentElement !== home) home.prepend(gp);
-  gp.classList.toggle('in-panel', inPanel);
-}
-
 // ---- favorite games + their titles (core/favorites.py). Only a loaded game has a game_id to key
 // them on; a title can be typed by double-clicking the header gap, the line above the board or the
 // game line in the chat header (the three spots the user picked), and giving one favorites the game.
@@ -555,7 +545,7 @@ function editTitle(el) {
 
 for (const id of ['game-title', 'board-sub', 'game-info']) {
   $(id).addEventListener('dblclick', (e) => {
-    if (canTitle() && !e.target.closest('.game-panel, .fav-btn, input')) editTitle($(id));
+    if (canTitle() && !e.target.closest('.fav-btn, input')) editTitle($(id));
   });
 }
 
@@ -610,7 +600,6 @@ function gameDate(r) {
 
 function renderInfo() {
   const r = state.review;
-  dockGamePanel(!state.demo && !state.play && !state.study && !r.moves.length);
   syncGameTitle();
   const top = state.orientation === 'white' ? 'black' : 'white';
   const mat = material(currentGame());
@@ -642,55 +631,6 @@ function renderInfo() {
 
   // no "Replay as" (removed 2026-10-09, user's call): your side is at the bottom; play on from any move vs the bot
   renderPlayBotButtons();
-}
-
-function movesRows(moves, cellFn) {
-  let html = '';
-  for (let i = 0; i < moves.length;) {
-    const w = moves[i].color === 'white' ? moves[i++] : null;  // a set-up game may start with Black
-    const b = moves[i]?.color === 'black' ? moves[i++] : null;
-    const num = parseInt((w || b).label, 10);
-    html += `<div class="row"><span class="num">${num}.</span>${w ? cellFn(w) : '<span>…</span>'}${b ? cellFn(b) : '<span></span>'}</div>`;
-  }
-  return html;
-}
-
-// The list shows FOLD_ROWS rows (scrolled to the current move) until "Show all" is clicked; a whole
-// game was too tall for the panel. Expanded stays expanded until "Show fewer".
-const FOLD_ROWS = 5;
-let movesExpanded = false;
-
-function renderMoves() {
-  const box = $('moves');
-  renderMoveList(box);
-  const rows = box.querySelectorAll('.row').length;
-  const foldable = rows > FOLD_ROWS;
-  box.classList.toggle('folded', foldable && !movesExpanded);
-  box.style.setProperty('--fold-rows', FOLD_ROWS);
-  const btn = $('moves-more');
-  btn.classList.toggle('hidden', !foldable);
-  btn.textContent = movesExpanded ? 'Show fewer ▴' : `Show all ${rows} moves ▾`;
-  box.querySelector('.mv.active')?.scrollIntoView({ block: 'nearest' });
-}
-
-function renderMoveList(box) {
-  const r = state.review;
-  if (state.demo) return renderDemoMoves(box);
-  if (state.play) return renderPlayMoves(box);
-  if (!r.moves.length) {
-    box.innerHTML = '';
-    return;
-  }
-  box.innerHTML = movesRows(r.moves, cell);
-  box.querySelectorAll('.mv').forEach((el) => { el.onclick = () => goTo(+el.dataset.ply); });
-  const active = box.querySelector('.mv.active');
-  if (active) active.scrollIntoView({ block: 'nearest' });
-}
-
-function cell(m) {
-  const active = m.ply === state.ply && !state.extra.length ? ' active' : '';
-  const flag = m.class ? `<span class="flag ${m.class}" title="${m.class}">${FLAG[m.class]}</span>` : '';
-  return `<span class="mv${active}" data-ply="${m.ply}">${esc(m.san)}${flag}</span>`;
 }
 
 function positionLabel() {
@@ -777,9 +717,6 @@ $('move-strip').onclick = (e) => {
 };
 
 function renderVariation() {
-  const show = state.extra.length && state.review.moves.length && !state.play && !state.demo;
-  $('variation').classList.toggle('hidden', !show);
-  if (show) $('variation-text').textContent = `Exploring: ${state.extra.join(' ')}`;
   $('chat-context').textContent = `Asking about: ${positionLabel()}`;
 }
 
@@ -796,7 +733,6 @@ function requestEval(c) {
   clearTimeout(evalTimer);
   const token = ++evalToken;
   if (!state.engineOn) return;
-  $('engine-lines').innerHTML = '<div class="eline" style="color:var(--muted)">Thinking…</div>';
   // the bot's reply (~0.45 s) lands before this search would (0.2 + 0.6 s) and makes it stale: it only held the
   // engine that the position after the reply needs
   if (state.play?.thinking) return;
@@ -810,9 +746,7 @@ function requestEval(c) {
       lastEval = { fen: c.fen(), lines: data.lines };
       showEval(data);
       renderKeyCard();
-    } catch (e) {
-      if (token === evalToken) $('engine-lines').textContent = e.message;
-    }
+    } catch {}  // the bar keeps its last reading; the scoreboard's own search says what went wrong
   }, 200);
 }
 
@@ -844,22 +778,7 @@ function evalBarWords(ev, w) {
 }
 
 function showEval(data) {
-  setEvalBar(data);
-  if (!data.lines.length) {
-    $('engine-lines').innerHTML = `<div class="eline">Game over</div>`;
-    return;
-  }
-  // the next move and its eval up front; the full lines one click away (open state remembered)
-  const ev = (l) => `<span class="ev ${l.cp_white >= 0 ? 'w' : 'b'}">${esc(l.eval_white)}</span>`;
-  const full = recall('engineFull') === '1';
-  $('engine-lines').innerHTML = data.lines.map((l) =>
-    `<div class="eline"><span class="emove">${esc(l.move)}</span>${ev(l)}</div>`).join('')
-    + `<button class="link elines-more">${full ? '▾' : '▸'} Full lines</button>`
-    + (full ? data.lines.map((l) => `<div class="eline full">${ev(l)}<span class="pv">${esc(l.line)}</span></div>`).join('') : '');
-  $('engine-lines').querySelector('.elines-more').onclick = () => {
-    store('engineFull', full ? '0' : '1');
-    showEval(data);
-  };
+  setEvalBar(data);  // Stockfish's lines are the scoreboard's Top bot moves (+ ▸ Lines) since 2026-10-12
 }
 
 // ---- Maia: what a human of the chosen rating plays here (its own lc0 process, runs alongside Stockfish)
@@ -1539,7 +1458,6 @@ function setEngineVisible(on) {
   state.engineOn = on;
   $('engine-toggle').checked = on;
   $('evalbar').classList.toggle('off', !on);
-  $('engine-lines').classList.toggle('hidden', !on);
   renderKeyCard();
 }
 
@@ -1547,7 +1465,6 @@ function setEngine(on) {
   state.engineOn = on;
   if (!state.play) store('engineOn', on ? '1' : '0');
   $('evalbar').classList.toggle('off', !on);
-  $('engine-lines').classList.toggle('hidden', !on);
   if (on) {
     requestEval(currentGame());
     requestScoreboard(currentGame());
@@ -1710,7 +1627,6 @@ function update() {
   $('nav-next').disabled = $('nav-end').disabled = (!!state.study && !state.demo) || puzzleLive();
   // an unsolved puzzle steps nowhere: the moves are the puzzle's
   $('nav-prev').disabled = $('nav-start').disabled = puzzleLive();
-  renderMoves();
   renderStrip();
   renderVariation();
   syncLineButtons();
@@ -3042,17 +2958,6 @@ function renderDemoInfo() {
   $('demo-replay').onclick = () => openDemo({ ...d, moves: d.moves, notes: d.notes });
 }
 
-function renderDemoMoves(box) {
-  const d = state.demo;
-  const labels = demoLabels(d);
-  const rows = d.moves.map((san, i) => `<div class="demo-row${i + 1 === d.step ? ' active' : ''}" data-step="${i + 1}">
-      <span class="num">${labels[i]}</span><span class="dm">${esc(san)}</span><span class="dn">${esc(d.notes[i] || '')}</span>
-    </div>`).join('');
-  box.innerHTML = `<div class="demo-row${d.step === 0 ? ' active' : ''}" data-step="0"><span class="num"></span><span class="dm">Start</span><span class="dn"></span></div>${rows}`;
-  box.querySelectorAll('.demo-row').forEach((el) => { el.onclick = () => demoStep(+el.dataset.step); });
-  box.querySelector('.demo-row.active')?.scrollIntoView({ block: 'nearest' });
-}
-
 // ---------------------------------------------------------------- position editor
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -3187,7 +3092,6 @@ function onEditorSelect(key) {
 }
 
 function updateEditor() {
-  dockGamePanel(false);
   $('pb-takeback').classList.add('hidden');
   renderBoard();
   const ed = state.editor;
@@ -3214,7 +3118,6 @@ function updateEditor() {
   $('ed-analyse').onclick = analyseEditorPosition;
   $('ed-save').onclick = openSavePosition;
   $('ed-cancel').onclick = () => closeEditor();
-  $('variation').classList.add('hidden');
   $('chat-context').textContent = 'Asking about: the set-up position (starts an analysis board)';
 
   requestMaia(null);  // no move history on a set-up position; the lines would be the old position's
@@ -3222,10 +3125,7 @@ function updateEditor() {
   // live engine check: also catches positions the server refuses (e.g. side not to move in check)
   clearTimeout(evalTimer);
   const token = ++evalToken;
-  if (problem) {
-    $('engine-lines').innerHTML = '';
-    return;
-  }
+  if (problem) return;
   evalTimer = setTimeout(async () => {
     try {
       const data = await api('/api/eval', { fen, lines: 3 });
@@ -3236,7 +3136,6 @@ function updateEditor() {
       $('ed-status').textContent = $('ed-status').title = e.message;
       $('ed-status').classList.remove('hidden');
       $('ed-play').disabled = $('ed-analyse').disabled = $('ed-save').disabled = true;
-      $('engine-lines').innerHTML = '';
     }
   }, 250);
 }
@@ -3882,33 +3781,6 @@ function renderPlayInfo() {
   $('pb-stop')?.addEventListener('click', stopBotThinking);
 }
 
-function renderPlayMoves(box) {
-  const p = state.play;
-  if (!p.moves.length) {
-    const myTurn = new Chess(p.startFen).turn() === p.color[0];
-    box.innerHTML = `<div class="empty">${myTurn ? 'Your move. Drag a piece to start.' : 'The bot is thinking about its first move…'}</div>`;
-    return;
-  }
-  // rows of full moves; a game from a set-up position may start with Black's move
-  const c = new Chess(p.startFen);
-  let html = '', row = null;
-  p.moves.forEach((san, j) => {
-    const white = c.turn() === 'w';
-    const cell = `<span class="mv${j + 1 === p.view ? ' active' : ''}" data-view="${j + 1}">${esc(san)}</span>`;
-    if (white || !row) {
-      if (row) html += row.join('') + '</div>';
-      row = [`<div class="row"><span class="num">${c.moveNumber()}.</span>`, white ? cell : '<span>…</span>', white ? '' : cell];
-    } else {
-      row[2] = cell;
-    }
-    c.move(san);
-  });
-  if (row) html += row.join('') + (row[2] ? '' : '<span></span>') + '</div>';
-  box.innerHTML = html;
-  box.querySelectorAll('.mv').forEach((el) => { el.onclick = () => playView(+el.dataset.view); });
-  box.querySelector('.mv.active')?.scrollIntoView({ block: 'nearest' });
-}
-
 let playColor = 'white';
 
 let pendingFen = null;  // set when starting a bot game from the position editor
@@ -4386,14 +4258,12 @@ $('auto-coach').onchange = (e) => store('autoCoach', e.target.checked ? '1' : '0
 function setPanelHidden(which, hidden) {
   document.body.classList.toggle(`hide-${which}`, hidden);
   store(`hide-${which}`, hidden ? '1' : '0');
-  dockGamePanel();
   // the board changed size: chessground recomputes its square geometry
   requestAnimationFrame(() => { document.body.dispatchEvent(new Event('chessground.resize')); cg.redrawAll(); });
 }
 document.querySelectorAll('[data-hide]').forEach((b) => { b.onclick = () => setPanelHidden(b.dataset.hide, true); });
 document.querySelectorAll('[data-show]').forEach((b) => { b.onclick = () => setPanelHidden(b.dataset.show, false); });
 for (const w of ['score', 'chat']) if (recall(`hide-${w}`) === '1') document.body.classList.add(`hide-${w}`);
-dockGamePanel();
 // Stacked panels (below 1680 px): drag the handle between them to share the column; the scoreboard's share
 // (0.25-0.85 of the height) is remembered per browser. Never dragged (or double-clicked back): CSS's default, the
 // coach at about 28% of the column within 210-380 px.
@@ -4471,7 +4341,6 @@ $('btn-analysis').onclick = async () => {
 };
 
 
-$('btn-back-to-game').onclick = () => { state.extra = []; update(); };
 $('nav-start').onclick = () => goTo(0);
 $('nav-prev').onclick = back;
 $('nav-next').onclick = forward;
@@ -4481,96 +4350,7 @@ $('nav-flip').onclick = () => {
   state.orientation = state.orientation === 'white' ? 'black' : 'white';
   update();
 };
-// moves/engine/explorer live in a dropdown off the game panel, closed by default; board + chat
-// stay the main event and never resize when it opens
-function closeGpDropdown() {
-  const d = $('gp-details');
-  d.classList.add('hidden');
-  d.style.cssText = '';  // forget where it was dragged to; it reopens anchored to the button
-  $('gp-toggle').classList.add('collapsed');
-}
-
-// Drag the dropdown by its handle, or resize it from any side/corner. Either one turns it into
-// position: fixed at its current spot first (absolute + the chat panel's overflow: hidden would
-// clip it at the panel's edge), so it can go anywhere in the window. Pointer capture keeps the
-// release on the handle, so the document click-outside handler below doesn't see it as a click off
-// the dropdown. closeGpDropdown() clears all the inline styles set here.
-(() => {
-  const handle = $('gp-drag'), box = $('gp-details');
-  const MIN_W = 260, MIN_H = 160;
-  let grab = null;
-
-  const detach = () => {
-    const r = box.getBoundingClientRect();
-    Object.assign(box.style, { position: 'fixed', margin: '0', right: 'auto', left: `${r.left}px`, top: `${r.top}px` });
-    return r;
-  };
-
-  handle.onpointerdown = (e) => {
-    if (e.button !== 0) return;
-    const r = detach();
-    grab = { dx: e.clientX - r.left, dy: e.clientY - r.top };
-    box.classList.add('dragging');
-    handle.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  };
-  handle.onpointermove = (e) => {
-    if (!grab) return;
-    // keep the handle inside the window so it can't be dragged out of reach
-    box.style.left = `${Math.min(innerWidth - 60, Math.max(60 - box.offsetWidth, e.clientX - grab.dx))}px`;
-    box.style.top = `${Math.min(innerHeight - 30, Math.max(0, e.clientY - grab.dy))}px`;
-  };
-  handle.onpointerup = handle.onpointercancel = () => { grab = null; box.classList.remove('dragging'); };
-
-  for (const dir of ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']) {
-    const el = document.createElement('div');
-    el.className = 'gp-rs';
-    el.dataset.dir = dir;
-    let start = null;
-    el.onpointerdown = (e) => {
-      if (e.button !== 0) return;
-      const r = detach();
-      // an explicit size replaces the content-sized default and its max-height cap
-      Object.assign(box.style, { width: `${r.width}px`, height: `${r.height}px`, maxHeight: 'none' });
-      start = { x: e.clientX, y: e.clientY, r };
-      el.setPointerCapture(e.pointerId);
-      e.preventDefault();
-    };
-    el.onpointermove = (e) => {
-      if (!start) return;
-      const { r } = start;
-      const px = Math.min(innerWidth, Math.max(0, e.clientX)), py = Math.min(innerHeight, Math.max(0, e.clientY));
-      const dx = px - start.x, dy = py - start.y;
-      let { left, top, right, bottom } = r;
-      if (dir.includes('e')) right = Math.max(left + MIN_W, r.right + dx);
-      if (dir.includes('w')) left = Math.min(right - MIN_W, r.left + dx);
-      if (dir.includes('s')) bottom = Math.max(top + MIN_H, r.bottom + dy);
-      if (dir.includes('n')) top = Math.min(bottom - MIN_H, r.top + dy);
-      Object.assign(box.style, { left: `${left}px`, top: `${top}px`, width: `${right - left}px`, height: `${bottom - top}px` });
-    };
-    el.onpointerup = el.onpointercancel = () => { start = null; };
-    box.appendChild(el);
-  }
-})();
-$('gp-toggle').onclick = (e) => {
-  e.stopPropagation();
-  const wasHidden = $('gp-details').classList.contains('hidden');
-  $('gp-details').classList.remove('hidden');
-  $('gp-toggle').classList.remove('collapsed');
-  if (wasHidden) requestExplorer(currentGame());
-  // the folded list can't scroll to the current move while the panel is hidden, so do it on open
-  $('moves').querySelector('.mv.active')?.scrollIntoView({ block: 'nearest' });
-};
-// Full Explorer closes only with its ✕ (user's call): outside clicks, Esc and the toggle leave it open.
-$('gp-close').onclick = closeGpDropdown;
-closeGpDropdown();
-
 $('engine-toggle').onchange = (e) => setEngine(e.target.checked);
-$('moves-more').onclick = (e) => {
-  e.stopPropagation();
-  movesExpanded = !movesExpanded;
-  renderMoves();
-};
 
 $('chat-form').onsubmit = (e) => { e.preventDefault(); ask($('chat-text').value); };
 $('chat-text').onkeydown = (e) => {
@@ -4609,7 +4389,6 @@ document.addEventListener('keydown', (e) => {
   $('engine-toggle').checked = engineOn;
   state.engineOn = engineOn;
   $('evalbar').classList.toggle('off', !engineOn);
-  $('engine-lines').classList.toggle('hidden', !engineOn);
   const review = await api('/api/review');
   const linked = +(location.hash.match(/ply=(\d+)/)?.[1] || 0);
   if (SECTION !== 'board') await import(`./sections/${SECTION}.js`);  // fills `hooks`
@@ -4665,7 +4444,6 @@ function takePanel(title, phoneLabel = title) {
   const body = document.createElement('div');
   body.className = 'own-body';
   $('score-panel').querySelector('.score-body').after(body);
-  closeGpDropdown();  // it would hang over the panel
   setOwnPanel(true);
   return body;
 }
@@ -4706,7 +4484,7 @@ function setDemoTimer(t) { demoTimer = t; }
 export {
   $, SECTION, hooks, state, api, store, recall, esc, addMsg, setReview, setEngineVisible, setFoot,
   playView, playChess, botMove, levelForRating, getBotLevels, bumpPlayToken, goSection, markBoardTaken,
-  update, renderChips, closeGpDropdown, currentGame, ask, sectionNav, setDemoTimer, PHONE, TOUCH, markdown, takePanel, setOwnPanel,
+  update, renderChips, currentGame, ask, sectionNav, setDemoTimer, PHONE, TOUCH, markdown, takePanel, setOwnPanel,
   setPhonePage, setPanelHidden, demoStep,
   CHIPS, CHIP_TIPS, START_FEN, baseShapes, cg, closeDemo, evalPill, knightShapes, openDemo, stopAutoplay, syncCards,
 };

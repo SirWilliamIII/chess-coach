@@ -11,7 +11,7 @@
 import { Chess } from '../vendor/chess-1.4.0.js';
 import {
   $, hooks, state, api, store, recall, esc, addMsg, setReview, setEngineVisible, setFoot, update, renderChips,
-  closeGpDropdown, currentGame, ask, goSection, markBoardTaken, sectionNav, takePanel, setOwnPanel,
+  currentGame, ask, goSection, markBoardTaken, sectionNav, takePanel, setOwnPanel,
 } from '../app.js';
 
 
@@ -300,7 +300,6 @@ async function startPuzzle(pattern = null) {
   if (token !== pzToken) return;
   markBoardTaken();  // the server's board is the puzzle's now: the board page reopens its own on the way back
   if ($('dlg-puzzles').open) $('dlg-puzzles').close();
-  closeGpDropdown();  // its Maia and explorer lists are off during a puzzle; open, they showed stale moves
   const first = !state.puzzle;
   setReview(res.review, first ? `Opening puzzles: ${topic.label}. Their move plays first; then find the tactic.` : null, null, { keepChat: !first });
   pzBegin(res.puzzle, topic, pattern);

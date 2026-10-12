@@ -273,84 +273,15 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
   background: none; color: var(--muted); transition: background .12s, color .12s; }
 .panel-hide:hover { background: var(--hover-2); color: var(--text); }
 .panel-hide .ico { width: 18px; height: 18px; }
-/* the game panel (in the scoreboard's header, or .board-foot-right): just the "Moves & engine" trigger, with
-   everything else in the #gp-details dropdown, which anchors to this (position: relative) wrapper */
-.game-panel { position: relative; }
 .game-info { padding: 12px 14px 4px; font-weight: 600; }
 .board-sub { color: var(--muted); font-size: 13px; padding-left: var(--strip); min-height: 18px; }
 .summary { padding: 4px 14px 8px; display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; }
 
-.gp-toggle {
-  height: 30px; padding: 0 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
-  color: var(--muted); font-size: 12.5px; font-weight: 500; white-space: nowrap; transition: color .12s, background .12s;
-}
-.gp-toggle:hover { color: var(--text); background: #2f2e2b; }
-.gp-toggle::before { content: "▾ "; }
-.gp-toggle.collapsed::before { content: "▸ "; }
-
-
-/* dropdown: floats over whatever's below/beside it instead of pushing the grid around; wider than
-   its narrow trigger column so the explorer filters aren't cramped */
-#gp-details {
-  /* the trigger sits at the board's right edge; the dropdown opens to its right, over the scoreboard
-     column, so it never covers the board (the editor's palette is in it) */
-  position: absolute; top: 0; left: calc(100% + 18px); z-index: 15;
-  width: min(320px, calc(100vw - 48px));
-  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
-  box-shadow: 0 14px 32px rgba(0,0,0,.5);
-  max-height: min(520px, calc(100vh - 220px));
-  display: flex; flex-direction: column;
-}
-/* the scrolling lives in the body, not on #gp-details, so the resize handles (absolute children of
-   #gp-details) stay put instead of scrolling away with the content */
-.gp-body { flex: 1; min-height: 0; overflow-y: auto; }
-
-/* header bar: sticky so the handle and close button stay reachable while the dropdown's own content
-   scrolls. Dragging switches #gp-details to position: fixed (see app.js) so it can leave
-   .chat-panel, which clips absolutely-positioned children (overflow: hidden). The close button is a
-   sibling of the handle, not a child: the handle captures the pointer, which would swallow its click. */
-.gp-bar {
-  flex: none; display: flex; align-items: stretch;
-  background: var(--panel); border-bottom: 1px solid var(--line);
-}
-.gp-drag {
-  flex: 1; padding: 5px 10px; cursor: grab; user-select: none; touch-action: none;
-  color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
-}
-.gp-drag:hover { color: var(--text); }
-#gp-details.dragging .gp-drag { cursor: grabbing; }
-/* resize handles: thin invisible strips on the four sides and squares on the four corners */
-.gp-rs { position: absolute; z-index: 2; touch-action: none; }
-.gp-rs[data-dir="n"]  { top: -3px;    left: 10px;  right: 10px;  height: 8px; cursor: ns-resize; }
-.gp-rs[data-dir="s"]  { bottom: -3px; left: 10px;  right: 10px;  height: 8px; cursor: ns-resize; }
-.gp-rs[data-dir="w"]  { left: -3px;   top: 10px;   bottom: 10px; width: 8px;  cursor: ew-resize; }
-.gp-rs[data-dir="e"]  { right: -3px;  top: 10px;   bottom: 10px; width: 8px;  cursor: ew-resize; }
-.gp-rs[data-dir="nw"] { top: -3px;    left: -3px;  width: 14px; height: 14px; cursor: nwse-resize; }
-.gp-rs[data-dir="se"] { bottom: -3px; right: -3px; width: 14px; height: 14px; cursor: nwse-resize; }
-.gp-rs[data-dir="ne"] { top: -3px;    right: -3px; width: 14px; height: 14px; cursor: nesw-resize; }
-.gp-rs[data-dir="sw"] { bottom: -3px; left: -3px;  width: 14px; height: 14px; cursor: nesw-resize; }
-.gp-close { padding: 0 10px; font-size: 13px; }
-
-.moves { overflow-y: auto; border-top: 1px solid var(--line); font-size: 14px; }
-.moves .row { display: grid; grid-template-columns: 44px 1fr 1fr; }
-.moves .row:nth-child(even) { background: #2b2a27; }
-.moves .num { color: var(--muted); padding: 4px 8px; text-align: right; }
-.moves .mv { padding: 4px 8px; cursor: pointer; border-radius: 3px; display: flex; gap: 6px; align-items: center; }
-.moves .mv:hover { background: #3a3835; }
-.moves .mv.active { background: #4b4845; font-weight: 700; }
-.moves .empty { color: var(--muted); padding: 16px; font-size: 13px; }
-/* folded: FOLD_ROWS rows (a row = one line + the .mv's 4px top/bottom padding), scrolled to the current move */
-.moves.folded { max-height: calc(var(--fold-rows, 5) * (1lh + 8px)); }
-.moves-more { display: block; width: 100%; padding: 4px 8px; font-size: 12px; color: var(--muted); text-align: center; border-top: 1px solid var(--line); }
 .flag { font-size: 11px; font-weight: 800; border-radius: 8px; padding: 0 5px; color: #1c1b19; }
 .flag.inaccuracy { background: var(--inaccuracy); }
 .flag.mistake { background: var(--mistake); }
 .flag.blunder { background: var(--blunder); color: #fff; }
 
-.variation {
-  border-top: 1px solid var(--line); padding: 8px 14px; font-size: 13px;
-  display: flex; justify-content: space-between; align-items: center; gap: 8px; background: #2d3326;
-}
 .nav { display: flex; gap: 8px; margin-left: var(--strip); width: var(--board-w); }
 .navbtn { position: relative; flex: 1; height: 36px; display: grid; place-items: center; padding: 0; background: var(--panel);
   border: 1px solid var(--line); border-radius: 10px; color: var(--text); transition: background .12s; }
@@ -363,16 +294,7 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
   padding: 5px 9px; font-size: 12px; font-weight: 600; box-shadow: 0 6px 18px rgba(0,0,0,.5); pointer-events: none;
 }
 
-.engine { border-top: 1px solid var(--line); padding: 8px 14px 12px; font-size: 13px; min-height: 90px; }
 .toggle { color: var(--muted); display: flex; gap: 6px; align-items: center; cursor: pointer; margin-bottom: 4px; }
-.eline { display: flex; gap: 8px; padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.eline .ev { font-weight: 700; min-width: 48px; }
-.eline .ev.w { color: #fff; }
-.eline .ev.b { color: var(--muted); }
-.eline .pv { overflow: hidden; text-overflow: ellipsis; color: #d5d4d0; }
-.eline .emove { font-weight: 700; color: #d5d4d0; min-width: 52px; }
-.elines-more { font-size: 12px; color: var(--muted); padding: 2px 0; }
-.eline.full { font-size: 12px; }
 
 /* ---------- chat ---------- */
 .head-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
@@ -508,7 +430,6 @@ dialog textarea { width: 100%; resize: vertical; }
   body.hide-score .side { grid-template-rows: 44px 16px 520px; }
   body.hide-chat .side { grid-template-rows: auto 16px 44px; }
   .score-panel { max-height: 80vh; }
-  .game-panel .moves { max-height: 200px; }
 }
 
 /* ---------- play mode ---------- */
@@ -564,12 +485,6 @@ body.editor-mode .score-body, body.editor-mode .move-strip { display: none; }
 /* while a note is pinned it says what the board shows: the "Asking about" line goes, so a short panel keeps its input */
 .chat-panel:has(.demo-pin:not(.hidden)) .context { display: none; }
 .demo-pin-move { color: var(--accent); margin-right: 4px; }
-.demo-row { display: grid; grid-template-columns: 44px auto 1fr; gap: 8px; padding: 5px 8px; cursor: pointer; align-items: baseline; }
-.demo-row:hover { background: #3a3835; }
-.demo-row.active { background: #4b4845; }
-.demo-row .num { color: var(--muted); text-align: right; }
-.demo-row .dm { font-weight: 700; }
-.demo-row .dn { color: var(--muted); font-size: 13px; }
 .demos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .demo-btn { background: #3d5a26; color: #fff; border: 0; border-radius: 6px; padding: 5px 10px; font-size: 13px; font-weight: 600; }
 .demo-btn:hover { background: #4a6d2e; }
@@ -611,23 +526,12 @@ body.editor-mode .nav { display: none; }
 .offline-box { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 10px; }
 .offline-box .hint { margin: 0; }
 
-/* ---------- engine + explorer, both shown at once ---------- */
-#explorer-pane { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; }
-.eng-h { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin-bottom: 6px; }
-.x-opening { font-size: 13px; margin-bottom: 2px; }
-.x-total { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
-.x-row { display: grid; grid-template-columns: 52px 44px 42px 1fr; gap: 6px; align-items: center; padding: 3px 4px; border-radius: 4px; cursor: pointer; font-size: 13px; }
-.x-row:hover { background: #3a3835; }
-.x-move { font-weight: 700; }
-.x-n, .x-pct { color: var(--muted); text-align: right; font-size: 12px; }
+.x-pct { color: var(--muted); text-align: right; font-size: 12px; }
 .x-bar { display: flex; height: 16px; border-radius: 3px; overflow: hidden; font-size: 10px; font-weight: 700; line-height: 16px; }
 .x-bar i { font-style: normal; text-align: center; overflow: hidden; white-space: nowrap; }
 .x-bar .w { background: #f0f0ee; color: #333; }
 .x-bar .d { background: #8a8986; color: #fff; }
 .x-bar .b { background: #1b1a18; color: #ddd; }
-.x-games-h { color: var(--muted); font-size: 12px; margin: 8px 0 2px; }
-.x-game { font-size: 12px; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
-.x-game:hover { background: #3a3835; }
 /* ---------- GM moments, play from here ---------- */
 .msg.coach.gm { border: 2px solid #e5484d; background: #3b2424; animation: alert-pulse 1.2s ease-out 2; }
 .gm-label { font-size: 12px; font-weight: 800; color: #ff6b6b; margin-bottom: 4px; letter-spacing: .04em; text-transform: uppercase; }
@@ -689,7 +593,6 @@ ol.points li:nth-child(3n+3) .pt-title .san { color: #e6b450; border-color: #906
 
 /* ---------- most studied lines ---------- */
 .x-lines-btn { width: 100%; margin: 2px 0 8px; }
-#x-lines-box { background: #2a2926; border-radius: 8px; padding: 6px; margin-bottom: 8px; }
 .x-lines-h { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 700; color: var(--muted); padding: 0 4px 4px; }
 .x-line { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 6px; border-radius: 6px; cursor: pointer; }
 .x-line:hover { background: #3a3835; }
@@ -883,8 +786,6 @@ body.own-panel .score-body, body:not(.own-panel) .own-body { display: none !impo
 .board-foot .game-info { padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
   font-size: 13px; font-weight: 500; color: var(--muted); }
 .board-foot .board-sub { padding-left: 0; min-height: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.board-foot-right { display: flex; align-items: center; gap: 8px; flex: none; }
-.board-foot-right #gp-details { top: auto; bottom: 0; }  /* the row is near the bottom of the screen: open upwards */
 .top-row .player.top { padding-left: 0; max-width: none; flex: 0 1 auto; }
 .top-row .head-row { margin-left: auto; }
 .top-row .summary { padding: 0; position: relative; }
@@ -893,7 +794,6 @@ body.own-panel .score-body, body:not(.own-panel) .own-body { display: none !impo
    moved a few px between modes) */
 .top-row .btn.small { font-size: 13px; padding: 4px 10px; }
 
-@media (max-width: 900px) { #gp-details { left: auto; right: 0; top: 100%; margin-top: 2px; } }  /* one column: no room beside */
 .auto-coach { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; color: var(--muted); cursor: pointer; }
 .auto-coach input { margin: 0; }
 
@@ -1136,14 +1036,10 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
    the body keeps the rounded bottom; the dropdown opens down from the button's right edge */
 .score-panel { overflow: visible; position: relative; }
 .score-panel .score-body { border-radius: 0 0 var(--radius) var(--radius); }
-.game-panel.in-panel { position: static; }  /* the dropdown anchors to the panel, not the button: it stays inside the panel's width */
-.game-panel.in-panel .gp-toggle { height: 28px; }
-.game-panel.in-panel #gp-details { top: 52px; left: auto; right: 8px; width: min(320px, calc(100% - 16px)); }
 /* a narrow scoreboard (phones, small laptops): Moves & engine and the rating picker don't fit beside the title with
    the "Players" label; the picker's tooltip still says what it is */
 .score-panel { container-type: inline-size; }
 @container (max-width: 400px) { .panel-tools { gap: 6px; } }
-@container (max-width: 340px) { .gp-long { display: none; } }
 
 
 /* phones: three screens (setPhonePage()): the board, the scoreboard, the coach; the tab bar flips them. Nothing
@@ -1233,3 +1129,7 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
 .xdb .x-pct { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .xdb .x-bar { height: 14px; line-height: 14px; font-size: 9.5px; }
 .xdb .x-total { margin-left: 6px; color: var(--faint); font-weight: 500; letter-spacing: 0; }
+
+/* the engine on/off in the scoreboard's header (2026-10-12; it was the Full Explorer's "Engine lines" checkbox) */
+.engine-switch { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: var(--muted); cursor: pointer; }
+.engine-switch input { margin: 0; }
