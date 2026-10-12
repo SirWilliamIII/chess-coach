@@ -491,6 +491,17 @@ file says what is true now. Last full cleanup: 2026-10-03.
     `.ml-toggle:not(.bl-toggle)`. The old Engine lines list goes with the dropdown in step 6.
     Step 3 ✓: the duplicate Maia list, its on/off checkbox (`maiaOn()` is now just "Maia installed") and the second
     rating picker are gone; the scoreboard's `.sb-rate` drives `maiaElo` directly.
+    Step 4 ✓: the opening explorer is a scoreboard section, "Lichess games N" (`sbExplorer()`, all three card shapes:
+    deep, quick, eval off), up to 5 moves with share and a White/draw/Black bar; rows are `.sb-row[data-uci]`, so hover
+    draws the move and a click plays it. Fetch rules (`requestExplorer()`): only after `X_DWELL_MS` 800 on a position,
+    Analysis page only, up to move `X_MAX_MOVE` 20, never past a position with < `X_MIN_GAMES` 50 games; `xCache` by FEN
+    on top of the server's month-long disk cache. "▶ Main lines" posts the old Most played lines demos as a chat card
+    (`showLines()`, `.x-lines-card`). Example games were dropped. Measured (2026-10-12, a counting test server): a slow
+    read at 1 move/s through 30 plies = 20 page calls, 7 real Lichess requests on a first visit (13 already in the disk
+    cache), 0 on a second; 30 plies flicked through in 3 s = 1 call. So worst case ~20 Lichess requests per game's
+    opening read slowly and uncached; not checked against Lichess's actual limit (the 2026-10-06 trip was ~340/hour
+    with no dwell, cutoff or cache check). At 1440×900 on a loaded game the section sits below the fold (move strip,
+    report strip, your-move card and both lists come first); fits at 1920×1080 on a fresh board.
   - **The line under the board** (`setFoot()` → `#board-sub`, 2026-10-10; user: "it can be really helpful or really
     confusing", after "Opening puzzle · Your game vs … · Caro-Kann Defense: Advance Variation" under a your-mistakes
     puzzle): one line saying what this board is, never what the rows above already say (names, opening pill,

@@ -1216,3 +1216,9 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
 .ov-side { height: 4px; background: var(--text); }
 .ov-side.opp { height: 2px; opacity: .45; }
 .ov-sep { width: 100%; margin: 3px 0; border: 0; border-top: 1px solid var(--line); }
+
+/* the opening explorer as a scoreboard section (sbExplorer(), 2026-10-12): Lichess players' moves while the
+   position is still in the opening; share, then a White / draw / Black bar */
+.xdb .x-pct { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.xdb .x-bar { height: 14px; line-height: 14px; font-size: 9.5px; }
+.xdb .x-total { margin-left: 6px; color: var(--faint); font-weight: 500; letter-spacing: 0; }

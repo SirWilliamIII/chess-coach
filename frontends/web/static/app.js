@@ -1277,7 +1277,7 @@ function sbBefore(L, now, u) {
     const top = Math.max(1, ...(mm || []).map((m) => m.pct));
     return `<section class="sb-card live"><div class="sb-head"><b>What players at ${sbRatePick()} play</b>${mm ? '' : '<span class="sb-busy"></span>'}`
       + `</div><div class="sb-table">${(mm || []).map((m) => `<button class="sb-row maia-only" data-uci="${esc(m.uci)}">`
-      + `<b class="sb-mv">${esc(m.move)}</b><span class="sb-pop"><span class="sb-pbar"><span style="width:${Math.max(3, 100 * m.pct / top)}%"></span></span></span></button>`).join('') || '<div class="sb-row skel"><span></span></div>'.repeat(5)}</div></section>`;
+      + `<b class="sb-mv">${esc(m.move)}</b><span class="sb-pop"><span class="sb-pbar"><span style="width:${Math.max(3, 100 * m.pct / top)}%"></span></span></span></button>`).join('') || '<div class="sb-row skel"><span></span></div>'.repeat(5)}</div>${sbExplorer(fen)}</section>`;
   }
   const busy = !sb && state.engineOn ? `<span class="sb-busy" title="${esc(sbError || 'Searching every move')}">${sbError ? 'search failed' : ''}</span>` : '';
   if (!sb) {
@@ -1285,7 +1285,7 @@ function sbBefore(L, now, u) {
     const q = sbQuick(fen, turn);
     return `<section class="sb-card live">`
       + (q ? sbCandidates(q.rows.filter((r) => r.rank).slice(0, 5), turn, q.best, 'Top bot moves', 'sf', busy) : `<div class="sb-table">${'<div class="sb-row skel"><span></span></div>'.repeat(5)}</div>`)
-      + `</section>`;
+      + sbExplorer(fen) + `</section>`;
   }
   const pcts = sbPcts(sb, rating);
   const withPct = (r) => ({ ...r, pct: pcts.get(r.uci) ?? null });
@@ -1308,6 +1308,7 @@ function sbBefore(L, now, u) {
   return `<section class="sb-card live"><div class="sb-body${hide ? ' tac-hide' : ''}">${tac && tac.fen === fen ? sbTactic(tac) : ''}<div>`
     + sbCandidates(best, turn, engine.eval_white, `Top bot moves${blToggle}`, 'sf', '', blOpen ? blLine : null)
     + (players.length ? sbCandidates(players, turn, engine.eval_white, `Top player moves at ${sbRatePick()}${toggle}`, 'maia', '', open ? (r) => mlHtml(fen, r.uci) : null) : '')
+    + sbExplorer(fen)
     + `</div>${sb.ladder?.length ? `<div><div class="sb-sub-h"><span>Top pick by rating</span><span class="sb-engine" data-uci="${esc(engine.uci)}">Engine <b>${esc(engine.move)}</b></span></div>${sbTrack(sb, rating)}</div>` : ''}`
     + `</div></section>`;
 }
@@ -1474,8 +1475,9 @@ function renderKeyCard() {
       renderShapes();
     };
   });
-  const mlBtn = box.querySelector('.ml-toggle:not(.bl-toggle)');
+  const mlBtn = box.querySelector('.ml-toggle:not(.bl-toggle):not(.x-lines-btn)');
   if (mlBtn) mlBtn.onclick = () => { store('maiaLines', mlOpen() ? '0' : '1'); renderKeyCard(); };
+  box.querySelector('.x-lines-btn')?.addEventListener('click', (e) => { e.stopPropagation(); showLines(); });
   const blBtn = box.querySelector('.bl-toggle');
   if (blBtn) blBtn.onclick = () => { store('botLines', recall('botLines') === '1' ? '0' : '1'); renderKeyCard(); };
   if (!mlBtn) mlShown = null;  // no live card with player moves: nothing to fetch for
@@ -1573,33 +1575,57 @@ const EXPLORER_ALL = {
 };
 const explorerFilters = () => EXPLORER_ALL;
 
+// The opening explorer as a scoreboard section (2026-10-12, user's pick: it was a part of the Full Explorer dropdown
+// that's only useful in the opening, so it shows by itself there). Fetched only once you stay on a position
+// (X_DWELL_MS), only on the Analysis page, only up to move X_MAX_MOVE and never past a position that already had
+// too few games: fetching every position (behind the old dropdown) was ~340 Lichess requests an hour and tripped
+// its rate limit (2026-10-06). The server keeps a month-long disk cache; xCache keeps this page's.
+const X_MIN_GAMES = 50;    // fewer and it's past the opening: no section, and nothing after it is fetched
+const X_MAX_MOVE = 20;
+const X_DWELL_MS = 800;
+const xCache = new Map();  // fen → explorer data, or null while fetching
+
+function xParentFen() {
+  const line = currentLine();
+  if (!line.at) return null;
+  const c = new Chess(line.startFen);
+  line.sans.slice(0, line.at - 1).forEach((san) => c.move(san));
+  return c.fen();
+}
+
 function requestExplorer(c) {
   clearTimeout(xTimer);
-  if (linesFor && !state.demo && c && c.fen() !== linesFor) { $('x-lines-box').classList.add('hidden'); linesFor = null; }
   const token = ++xToken;
-  if (!c) return;
-  // only while Full Explorer is open (it starts closed): fetching every position behind a closed dropdown
-  // was ~340 Lichess requests an hour of play and tripped its rate limit (2026-10-06). Opening it fetches.
-  if ($('gp-details').classList.contains('hidden')) return;
-  const f = explorerFilters();
-  if (!state.explorerReady) {
-    $('x-body').innerHTML = '<p class="hint">The explorer needs a Lichess token: add <code>LICHESS_TOKEN=lip_…</code> to <code>.env</code> and restart.</p>';
-    return;
-  }
-  $('x-body').innerHTML = '<p class="hint">Loading…</p>';
+  if (!c || !state.explorerReady || ownPanel() || state.editor || puzzleLive()) return;
+  const fen = c.fen();
+  if (xCache.has(fen) || +fen.split(' ')[5] > X_MAX_MOVE) return;
+  const parent = xParentFen();
+  const before = parent && xCache.get(parent);
+  if (before && before.total < X_MIN_GAMES) return;  // out of book already
   xTimer = setTimeout(async () => {
+    xCache.set(fen, null);
     try {
-      const data = await api('/api/explorer', { fen: c.fen(), ...f });
-      if (token === xToken) showExplorer(data);
-    } catch (e) {
-      if (token === xToken) $('x-body').innerHTML = `<p class="hint">${esc(e.message)}</p>`;
-    }
-  }, 350);
+      xCache.set(fen, await api('/api/explorer', { fen, ...explorerFilters() }));
+    } catch { xCache.delete(fen); return; }  // a 429 or offline: no section, a later visit tries again
+    if (token === xToken) renderKeyCard();
+  }, X_DWELL_MS);
+}
+
+// the section under Top player moves: the moves Lichess players play here, how often, and how they score
+function sbExplorer(fen) {
+  const d = xCache.get(fen);
+  if (!d || d.total < X_MIN_GAMES || !d.moves.length) return '';
+  const rows = d.moves.slice(0, 5).map((m) => `<button class="sb-row x-db" data-uci="${esc(m.uci)}" title="${m.games.toLocaleString()} games · average rating ${m.avg_rating ?? '?'}">`
+    + `<span class="sb-rank"></span><b class="sb-mv">${esc(m.san)}</b><span class="x-pct">${m.share}%</span>`
+    + `<span class="x-bar"><i class="w" style="width:${m.white}%">${m.white >= 18 ? Math.round(m.white) : ''}</i>`
+    + `<i class="d" style="width:${m.draws}%">${m.draws >= 18 ? Math.round(m.draws) : ''}</i>`
+    + `<i class="b" style="width:${m.black}%">${m.black >= 18 ? Math.round(m.black) : ''}</i></span></button>`).join('');
+  return `<div class="sb-table xdb"><div class="sb-cols"><span>Lichess games <span class="x-total">${fmtCount(d.total)}</span>`
+    + `<button class="ml-toggle x-lines-btn" title="The lines Lichess players play most from here, as demos in the chat">▶ Main lines</button></span></div>${rows}</div>`;
 }
 
 // ---- instant "most studied / most played lines" demos, straight from the explorer
 
-let linesFor = null;  // FEN the lines box was built for
 
 function linesOrigin() {
   // the board position in coach-tool terms (ply + extra moves), so demos can be discussed
@@ -1611,14 +1637,12 @@ function linesOrigin() {
   return { ply: state.ply + 1, then_moves: [...state.extra] };
 }
 
+// posted in the chat as a card of demos (they lived in the Full Explorer dropdown until 2026-10-12)
 async function showLines() {
   const c = currentGame();
-  const box = $('x-lines-box');
   const f = explorerFilters();
   const origin = linesOrigin();
-  linesFor = c.fen();
-  box.classList.remove('hidden');
-  box.innerHTML = '<p class="hint">Mapping the lines… (the first time for a position can take ~20 s)</p>';
+  const box = addMsg('coach card x-lines-card', '<p class="hint">Mapping the lines… (the first time for a position can take ~20 s)</p>');
   let data;
   try {
     data = await api('/api/lines', { fen: c.fen(), db: f.db, ratings: f.ratings, speeds: f.speeds });
@@ -1626,7 +1650,6 @@ async function showLines() {
     box.innerHTML = `<p class="hint">${esc(e.message)}</p>`;
     return;
   }
-  if (linesFor !== c.fen()) return;
   if (!data.main_lines.length) { box.innerHTML = '<p class="hint">No established lines from here.</p>'; return; }
   const src = data.source === 'masters' ? 'master games' : 'Lichess games';
   // lines sharing a name get the moves where they part ways ("English Attack · 8...h5 9. Nd5")
@@ -1655,7 +1678,7 @@ async function showLines() {
     notes: l.steps.map((s) => `Played in ${s.share}% of ${src} here · White wins ${s.white}%, draws ${s.draws}%, Black wins ${s.black}%`),
   }));
   box.innerHTML = `<div class="x-lines-h"><span>${data.source === 'masters' ? 'Common' : 'Most played'} lines`
-      + `${data.start_opening ? ` · ${esc(data.start_opening)}` : ''}</span><button class="link" id="x-lines-close">×</button></div>`
+      + `${data.start_opening ? ` · ${esc(data.start_opening)}` : ''}</span></div>`
     + data.main_lines.map((l, i) => {
       const r = l.results_pct || {};
       return `<div class="x-line" data-i="${i}" title="${esc(l.line)}">
@@ -1665,35 +1688,9 @@ async function showLines() {
         ${r.white !== undefined ? `<span class="x-bar"><i class="w" style="width:${r.white}%"></i><i class="d" style="width:${r.draws}%"></i><i class="b" style="width:${r.black}%"></i></span>` : ''}
       </div>`;
     }).join('') + (data.partial ? '<p class="hint">Lichess was busy, so some lines are shorter.</p>' : '');
-  $('x-lines-close').onclick = () => { box.classList.add('hidden'); linesFor = null; };
   box.querySelectorAll('.x-line').forEach((el) => { el.onclick = () => openDemo(demos[+el.dataset.i]); });
 }
 
-function showExplorer(data) {
-  const head = data.opening
-    ? `<div class="x-opening"><b>${esc(data.opening.eco)}</b> ${esc(data.opening.name)}</div>` : '';
-  const cached = data.from_cache ? ' <span class="hint">(offline copy)</span>' : '';
-  if (!data.moves.length) {
-    $('x-body').innerHTML = `${head}<p class="hint">No games reached this position with these filters.${cached}</p>`;
-    return;
-  }
-  const rows = data.moves.map((m) => `<div class="x-row" data-san="${esc(m.san)}" title="Average rating ${m.avg_rating ?? '?'}">
-      <span class="x-move">${esc(m.san)}</span>
-      <span class="x-n">${fmtCount(m.games)}</span>
-      <span class="x-pct">${m.share}%</span>
-      <span class="x-bar">
-        <i class="w" style="width:${m.white}%">${m.white >= 12 ? Math.round(m.white) + '%' : ''}</i><i class="d" style="width:${m.draws}%">${m.draws >= 12 ? Math.round(m.draws) + '%' : ''}</i><i class="b" style="width:${m.black}%">${m.black >= 12 ? Math.round(m.black) + '%' : ''}</i>
-      </span>
-    </div>`).join('');
-  const games = data.games.length ? `<div class="x-games-h">Example games</div>` + data.games.slice(0, 4).map((g) => {
-    const res = g.winner === 'white' ? '1-0' : g.winner === 'black' ? '0-1' : '½-½';
-    const ref = data.db === 'masters' ? `masters:${g.id}` : g.url;
-    return `<div class="x-game" data-ref="${esc(ref)}" title="Open and review this game">${esc(g.white)}${g.white_rating ? ` (${g.white_rating})` : ''} – ${esc(g.black)}${g.black_rating ? ` (${g.black_rating})` : ''} <span class="hint">${res} · ${esc(g.year ?? '')}</span></div>`;
-  }).join('') : '';
-  $('x-body').innerHTML = `${head}<div class="x-total">${fmtCount(data.total)} games${cached}</div>${rows}${games}`;
-  $('x-body').querySelectorAll('.x-row').forEach((el) => { el.onclick = () => playSan(el.dataset.san); });
-  $('x-body').querySelectorAll('.x-game').forEach((el) => { el.onclick = () => loadGame(el.dataset.ref); });
-}
 
 // ---------------------------------------------------------------- update
 
@@ -4563,7 +4560,6 @@ $('gp-close').onclick = closeGpDropdown;
 closeGpDropdown();
 
 $('engine-toggle').onchange = (e) => setEngine(e.target.checked);
-$('x-lines').onclick = showLines;
 $('moves-more').onclick = (e) => {
   e.stopPropagation();
   movesExpanded = !movesExpanded;
