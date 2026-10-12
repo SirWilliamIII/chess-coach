@@ -140,6 +140,13 @@ def build(sf_engine, human_engine, maia, board: chess.Board, rating: int, opp_ra
         raise RuntimeError("Stockfish returned no lines")
     out = summarize(board.turn, sf, humans, full, rating, include, full)
     out["ladder"] = ladder
+    # how each of the deep top 5 goes on ("▸ Lines" under Top bot moves): the PV after the move itself, which is the row
+    pvs = {l["uci"]: l.get("pv") or [] for l in sf}
+    for row in out["all"][:len(sf)]:
+        pv = [chess.Move.from_uci(u) for u in pvs.get(row["uci"], [])[1:]]
+        after = board.copy()
+        after.push_uci(row["uci"])
+        row["cont"] = after.variation_san(pv) if pv else ""
     # the tactics finder on the deep search we already have (its validation: scripts/tactics_eval.py)
     out["tactic"] = tactics.from_lines(board, sf)
     return out

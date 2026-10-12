@@ -485,6 +485,10 @@ file says what is true now. Last full cleanup: 2026-10-03.
     picker go; (4) the opening explorer as a scoreboard section shown while the position has database games (fetch
     after a dwell, cached; measure the request rate against Lichess's 429); (5) the editor palette next to the board in
     Set up; (6) the Full Explorer button and floating box go everywhere.
+    Step 2 ✓: `scoreboard.build()` adds `cont` to the deep top 5 rows of `all` (the PV after the move, SAN with
+    numbers, from the search it already runs, so free); "▸ Lines" in the Top bot moves heading (`.bl-toggle`,
+    localStorage `botLines`) shows it under each row (`.bl-line`, Maia lines' `.ml-line` look). The Maia toggle is
+    `.ml-toggle:not(.bl-toggle)`. The old Engine lines list goes with the dropdown in step 6.
   - **The line under the board** (`setFoot()` → `#board-sub`, 2026-10-10; user: "it can be really helpful or really
     confusing", after "Opening puzzle · Your game vs … · Caro-Kann Defense: Advance Variation" under a your-mistakes
     puzzle): one line saying what this board is, never what the rows above already say (names, opening pill,

@@ -1322,8 +1322,13 @@ function sbBefore(L, now, u) {
   const tac = tacticHere();
   const hide = tac && tac.fen === fen && tac.level < 4;
   const toggle = `<button class="ml-toggle" title="How ~${rating} players typically go on after each move (Maia, scored by Stockfish)">${open ? '▾' : '▸'} Full lines</button>`;
+  // Stockfish's continuation under each of its moves (2026-10-12: the Engine lines list in Full Explorer repeated
+  // these moves and evals; only the continuations were its own). From the deep search, so free.
+  const blOpen = recall('botLines') === '1';
+  const blToggle = `<button class="ml-toggle bl-toggle" title="How Stockfish goes on after each move">${blOpen ? '▾' : '▸'} Lines</button>`;
+  const blLine = (r) => (r.cont ? `<div class="ml-line bl-line">${esc(r.cont)}</div>` : '');
   return `<section class="sb-card live"><div class="sb-body${hide ? ' tac-hide' : ''}">${tac && tac.fen === fen ? sbTactic(tac) : ''}<div>`
-    + sbCandidates(best, turn, engine.eval_white, 'Top bot moves', 'sf')
+    + sbCandidates(best, turn, engine.eval_white, `Top bot moves${blToggle}`, 'sf', '', blOpen ? blLine : null)
     + (players.length ? sbCandidates(players, turn, engine.eval_white, `Top player moves at ${sbRatePick()}${toggle}`, 'maia', '', open ? (r) => mlHtml(fen, r.uci) : null) : '')
     + `</div>${sb.ladder?.length ? `<div><div class="sb-sub-h"><span>Top pick by rating</span><span class="sb-engine" data-uci="${esc(engine.uci)}">Engine <b>${esc(engine.move)}</b></span></div>${sbTrack(sb, rating)}</div>` : ''}`
     + `</div></section>`;
@@ -1491,8 +1496,10 @@ function renderKeyCard() {
       renderShapes();
     };
   });
-  const mlBtn = box.querySelector('.ml-toggle');
+  const mlBtn = box.querySelector('.ml-toggle:not(.bl-toggle)');
   if (mlBtn) mlBtn.onclick = () => { store('maiaLines', mlOpen() ? '0' : '1'); renderKeyCard(); };
+  const blBtn = box.querySelector('.bl-toggle');
+  if (blBtn) blBtn.onclick = () => { store('botLines', recall('botLines') === '1' ? '0' : '1'); renderKeyCard(); };
   if (!mlBtn) mlShown = null;  // no live card with player moves: nothing to fetch for
   requestMaiaLines();
 
