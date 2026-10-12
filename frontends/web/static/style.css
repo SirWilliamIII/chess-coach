@@ -767,64 +767,6 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .quip-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
 
-/* opening lessons (studyCard / startStudy in app.js): the bot-game card look */
-.study-picker { max-height: 42vh; }
-.study-row.on { background: #3a3835; box-shadow: inset 3px 0 0 var(--accent); }
-.card-open { font-size: 12px; font-style: italic; color: #c9b47a; margin-left: 6px; }
-.study-group { border-bottom: 1px solid rgba(255,255,255,.04); padding-bottom: 2px; }
-.study-subs-toggle { font-size: 12px; padding: 0 12px 6px; }
-.study-subs { padding-left: 16px; border-left: 2px solid rgba(255,255,255,.07); margin-left: 12px; }
-.study-sub .who { font-weight: 500; }
-.study-row.no-entry { cursor: default; }
-.study-row.no-entry:hover { background: none; }
-.study-row .hint { grid-column: 1 / -1; margin: 0; }
-.study-mode button { padding: 4px 12px; }
-
-/* lesson text (lessonText / lessonInline in app.js): moves are buttons onto the demo board */
-.lm {
-  font: inherit; font-weight: 700; color: #d9f2b8; background: rgba(129,182,76,.14);
-  border: 0; border-bottom: 2px solid #6c9a40; border-radius: 3px; padding: 0 3px; margin: 0 1px;
-  cursor: pointer; white-space: nowrap;
-}
-.lm:hover { background: #4a7030; color: #eafddc; }
-.lm-off { color: #d9f2b8; font-weight: 700; white-space: nowrap; }
-.lm-name { color: #f0d58a; font-style: italic; }
-.lm-lead { color: var(--text); }
-.study-summary { font-size: 14.5px; line-height: 1.55; padding: 2px 0 4px; }
-.study-sec { border-left: 3px solid var(--sec, var(--accent)); background: rgba(255,255,255,.03); border-radius: 0 6px 6px 0; padding: 6px 10px 6px 12px; }
-.study-sec.ideas { --sec: #81b64c; }
-.study-sec.breaks { --sec: #e6b450; }
-.study-sec.wait { --sec: #5aa9e6; }
-.study-sec.mistakes { --sec: #e5534b; }
-.study-sec-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--sec); margin-bottom: 4px; }
-.study-sec ul { margin: 0; padding-left: 18px; }
-.study-sec li { margin: 4px 0; line-height: 1.5; }
-.study-sec li::marker { color: var(--sec); }
-.study-note { display: block; line-height: 1.5; }
-/* overview bullets: callouts on the move card, and the start card's checklist */
-.study-sec.moment { margin-top: 6px; }
-.study-sec.moment > summary { cursor: pointer; list-style: none; margin-bottom: 0; }
-.study-sec.moment[open] > summary { margin-bottom: 4px; }
-.study-sec.moment > summary::-webkit-details-marker, .moment-all > summary::-webkit-details-marker { display: none; }
-.study-sec.moment:not([open]) > summary::after, .moment-all:not([open]) > summary::after { content: ' ▸'; }
-.moment-all > summary { cursor: pointer; list-style: none; }
-.study-sec.moment .moment-text { line-height: 1.5; }
-.study-sec.recap { --sec: var(--muted); }
-.moment-list { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
-.moment-count { color: var(--muted); }
-.moment-item summary { cursor: pointer; list-style: none; padding: 2px 0; color: var(--muted); }
-.moment-item summary::-webkit-details-marker { display: none; }
-.moment-item[data-locked] summary { cursor: default; opacity: .7; }
-.moment-item.seen summary { color: var(--text); }
-.moment-item.ideas.seen summary { color: #81b64c; }
-.moment-item.breaks.seen summary { color: #e6b450; }
-.moment-item.wait.seen summary { color: #5aa9e6; }
-.moment-item.mistakes.seen summary { color: #e5534b; }
-.moment-item .moment-text { padding: 2px 0 6px 18px; line-height: 1.5; }
-.card-hint { color: var(--muted); font-size: 12px; font-style: italic; }
-/* squares in lesson text: gold and dotted, so they don't read as clickable moves */
-.study-card .sq { color: #f0d58a; font-weight: 600; border-bottom: 1px dotted #b08a3a; background: none; }
-.study-card .sq:hover, .study-card .sq.on { background: rgba(240,213,138,.18); color: #fff2c8; }
 
 .opening-tag { flex: none; margin: 10px 16px -4px; display: flex; gap: 8px; align-items: baseline; min-width: 0;
   font-size: 13px; color: #e8e6e1; font-weight: 600; }

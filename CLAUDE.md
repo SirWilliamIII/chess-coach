@@ -111,12 +111,16 @@ file says what is true now. Last full cleanup: 2026-10-03.
   the same `index.html` (`server.py` lists the paths on `index()`); `app.js` reads `SECTION` from the path and, for
   anything but the board page (`/`), dynamically imports `static/sections/<name>.js`, which brings its own CSS and
   dialog markup and plugs into the shared code through `hooks` (bot-game loop: `afterMyMove`, `myTurn`, `gameOver`,
-  `takeback`, `retry`, `foot`; a live puzzle: `puzzleMove`, `puzzleInfo`, `puzzleShapes`, `explainPuzzle`; page:
+  `takeback`, `retry`, `foot`; a live puzzle: `puzzleMove`, `puzzleInfo`, `puzzleShapes`, `explainPuzzle`; a lesson:
+  `studyMove`, `studyCanMove`, `studyGoTo`, `studyInfo`, `studyShapes`, `studyNextSquares`, `studyChipLive`,
+  `studyWalkthrough`, `backToLesson`; page:
   `saveable`, `freshOnArrival`, `keyCardOff`, `idleInfo`, `blank`, `ready(restored, intent)`). `state.puzzle` and
-  `puzzleLive()` stay in `app.js` as the generic "an exercise is live, hide the answers" gate. The module imports
+  `puzzleLive()` stay in `app.js` as the generic "an exercise is live, hide the answers" gate, and `state.study`
+  as "a lesson owns the board" (`renderChips`, nav button states, `saveBoard` read it). The module imports
   what it needs from `app.js`'s `export { … }` list at the end (an import can't assign, hence `getBotLevels()` /
-  `bumpPlayToken()`); `sectionNav(ownId, open)` wires its nav. Split out so far: **Endgames** (`/endgames`) and
-  **Puzzles** (`/puzzles`, 2026-10-11); the rest is still the board page.
+  `bumpPlayToken()`, `setDemoTimer()`); `sectionNav(ownId, open)` wires its nav. Split out so far: **Endgames**
+  (`/endgames`), **Puzzles** (`/puzzles`) and **Learn openings** (`/openings`; `/lessons` is the saved-answers
+  page), all 2026-10-11; the rest (games, analysis, bot games, editor, positions, Explore lines) is the board page.
 - **Leaving a section is a page load.** Nav items for another section call `goSection(name, intent)`: the intent
   rides in `sessionStorage` and the target page runs it after `init()`. Board page: `{click: 'btn-…'}`, `{pgn, me}`
   (a drill's Review), `{game: {id, ply, note}}` (a puzzle's "Open the game here", `openGameAt()`); a section's own
@@ -128,14 +132,20 @@ file says what is true now. Last full cleanup: 2026-10-03.
   device still wins a plain refresh. **Work vs exercise sections** (user's call, 2026-10-11): the board page (games,
   analysis, bot games) always resumes; an exercise section (`hooks.freshOnArrival`: Endgames) resumes only on a
   refresh (`performance` navigation type `reload`) and otherwise starts fresh: Endgames opens the picker on the
-  Start step with the last choices. Puzzles aren't restored at all, not even on a refresh (the picker opens). Learn openings: undecided (maybe the lesson you
-  were in, from its start). The coach conversation doesn't
-  come back (a reopen makes a new coach): one conversation per visit, by design.
+  Start step with the last choices. Puzzles and Learn openings aren't restored at all, not even on a refresh (the
+  picker opens; user's call for lessons). A lesson's play-on bot game lives on `/openings` and goes with it. A lesson
+  build (4-6 min) keeps running on the server after you leave; the picker shows its progress on the way back
+  (`studyWatchBuild()`). The coach conversation doesn't come back (a reopen makes a new coach): one conversation per
+  visit, by design.
 - Tested (Playwright, 2026-10-11): board at move 10 → Endgames → drill → Find games (dialog opens, back at move 10)
   → Endgames (picker on Start, one click to a new drill); refresh mid-drill keeps it; the Review handoff; phone width. Not tested: Safari/Firefox, the user live.
 - Puzzles tested the same way (2026-10-11): picker on arrival, a live puzzle with hints, Exit, back to the board at
   its move, both handoffs, phone layout.
-- Next candidates: Learn openings, Explore lines; then the nav redesign (groups) over the sections.
+- Learn openings tested the same way (2026-10-11): picker on arrival and on refresh, a built lesson (auto reply,
+  guide arrow and square, a lesson-text move on the demo board, Walk me through chip with a stubbed chat), Drill,
+  Exit, back to the board at its move. Not tested: play-on at a leaf and Back to the lesson, a build left running.
+- Next candidates: Explore lines (or keep it on the board page: it's a read-only mode already); then the nav
+  redesign (groups) over the sections.
 
 ### Server and state
 
@@ -740,7 +750,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   "you took N moves, best is M", the bot defending with tablebase moves instead of Stockfish, coach chips
   aware of the drill. Captured-piece rows now count from the game's start position.
 
-### Opening lessons (`core/study.py` + the "opening lessons" section of `app.js`)
+### Opening lessons (`core/study.py` + `static/sections/openings.js` + `.css` on `/openings`)
 
 - **Build** (once per opening, saved to `data/studies/<slug>.json`): (1) trunk = the ECO line; (2) breadth-first
   walk of the **masters** explorer (`EXTRA_PLIES` 10, `MAX_NODES` 90, `OPP_WIDTH` 3/3/2/2/1, tries ≥
