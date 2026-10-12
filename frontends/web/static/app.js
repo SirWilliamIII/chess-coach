@@ -2759,6 +2759,8 @@ function showGamesTab(tab) {
   $('tab-chesscom').classList.toggle('hidden', tab !== 'chesscom');
   $('tab-lichess').classList.toggle('hidden', tab !== 'lichess');
   $('tab-saved').classList.toggle('hidden', tab !== 'saved');
+  $('tab-paste').classList.toggle('hidden', tab !== 'paste');
+  if (tab === 'paste') return void $('load-text').focus();
   $('tab-favorites').classList.toggle('hidden', tab !== 'favorites');
   if (tab === 'saved') showSaved();
   else if (tab === 'favorites') showFavorites();
@@ -4071,7 +4073,7 @@ $('nav-save').onclick = openSavePosition;
 // (you, the bot; ▶ along a loaded game too). Anything else (◀ ▶ inside it, takebacks, other
 // games, refreshes) leaves it alone: corrections are explicit (Undo last move, Cut here). Kept in localStorage
 // until saved, so it survives refreshes and mode changes. Saved as a titled ★ favorite (no review pass: opening
-// it from Find games → ★ Favorites analyses it then).
+// it from Your games → ★ Favorites analyses it then).
 
 try { rec = JSON.parse(recall('recording') || 'null'); } catch {}
 if (rec && !replays(rec.startFen, rec.moves)) rec = null;
@@ -4231,7 +4233,7 @@ $('rec-save').onclick = async () => {
   recStore();
   recSync();
   $('dlg-rec').close();
-  addMsg('system', `★ Saved “${esc(title)}” to your favorites (Find games → ★ Favorites). Opening it there analyses it.`);
+  addMsg('system', `★ Saved “${esc(title)}” to your favorites (Your games → ★ Favorites). Opening it there analyses it.`);
 };
 $('btn-positions').onclick = openPositions;
 $('pos-q').oninput = renderPositions;
@@ -4269,7 +4271,6 @@ $('games-user').onkeydown = (e) => { if (e.key === 'Enter') showGames(); };
 $('games-fetch-lichess').onclick = () => showGames('lichess');
 $('games-user-lichess').onkeydown = (e) => { if (e.key === 'Enter') showGames('lichess'); };
 
-$('btn-load').onclick = () => $('dlg-load').showModal();
 // ---- PGN files: pick or drop; files with several games get a list to choose from
 function splitPgn(text) {
   // every game in a PGN file starts with an [Event "..."] header; a single game may have none
@@ -4287,7 +4288,7 @@ async function loadPgnText(text, fileName = '') {
   $('load-file-name').textContent = fileName ? `${fileName}: ${games.length} game${games.length === 1 ? '' : 's'}` : '';
   if (!games.length) { $('load-file-name').textContent = "That file doesn't look like a PGN."; return; }
   if (games.length === 1) {
-    $('dlg-load').close();
+    $('dlg-games').close();
     loadGame(games[0]);
     return;
   }
@@ -4299,7 +4300,7 @@ async function loadPgnText(text, fileName = '') {
       <span class="meta">${esc(pgnHeader(g, 'Date'))} · ${esc(pgnHeader(g, 'Event'))}</span>
     </div>`).join('');
   box.querySelectorAll('.game-row').forEach((el) => {
-    el.onclick = () => { $('dlg-load').close(); loadGame(games[+el.dataset.i]); };
+    el.onclick = () => { $('dlg-games').close(); loadGame(games[+el.dataset.i]); };
   });
 }
 
@@ -4316,7 +4317,8 @@ $('load-text').addEventListener('drop', async (e) => {
   const file = e.dataTransfer.files[0];
   if (file) await loadPgnText(await file.text(), file.name);
 });
-$('dlg-load').addEventListener('close', () => {
+// the Paste PGN tab starts empty next time
+$('dlg-games').addEventListener('close', () => {
   $('pgn-games').classList.add('hidden');
   $('pgn-games').innerHTML = '';
   $('load-file-name').textContent = '';
@@ -4325,13 +4327,14 @@ $('dlg-load').addEventListener('close', () => {
 $('load-go').onclick = () => {
   const ref = $('load-text').value.trim();
   if (!ref) return;
-  $('dlg-load').close();
+  $('dlg-games').close();
   $('load-text').value = '';
   loadGame(ref);
 };
 
 // the section pages' items (a section page rewires its own)
 if (SECTION === 'board') {
+  navOn('btn-analysis');  // the board page is Analysis, whatever is on it
   $('btn-study').onclick = () => goSection('openings');
   $('btn-repertoire').onclick = () => goSection('lines');
   $('btn-endgames').onclick = () => goSection('endgames');
@@ -4397,16 +4400,26 @@ $('side-resize').onpointerdown = (e) => {
   };
 };
 $('side-resize').ondblclick = () => { store('boardMax'); setBoardMax(null); };
-// Side nav: ‹ folds it to an icon rail (remembered per browser). ≤ 1800 px it's a rail anyway (CSS), and ≤ 900 px
-// a top bar, so the button only shows where the choice exists.
-function setNavCollapsed(on) {
-  document.body.classList.toggle('nav-collapsed', on);
-  $('nav-collapse').dataset.tip = on ? 'Expand the menu' : 'Collapse the menu';
-  store('navCollapsed', on ? '1' : '0');
-  requestAnimationFrame(() => { document.body.dispatchEvent(new Event('chessground.resize')); cg.redrawAll(); });
+// Open and Learn are menus on every screen (user's call, 2026-10-12): a click opens one; a choice, a click anywhere
+// else or Esc closes it
+function closeNavMenus() {
+  document.querySelectorAll('.nav-menu').forEach((m) => m.classList.add('hidden'));
+  document.querySelectorAll('.nav-grp').forEach((b) => { b.classList.remove('open'); b.setAttribute('aria-expanded', 'false'); });
 }
-$('nav-collapse').onclick = () => setNavCollapsed(!document.body.classList.contains('nav-collapsed'));
-if (recall('navCollapsed') === '1') setNavCollapsed(true);
+document.querySelectorAll('.nav-grp').forEach((b) => {
+  b.onclick = () => {
+    const menu = $(b.dataset.menu);
+    const opening = menu.classList.contains('hidden');
+    closeNavMenus();
+    if (!opening) return;
+    menu.classList.remove('hidden');
+    b.classList.add('open');
+    b.setAttribute('aria-expanded', 'true');
+  };
+});
+document.querySelectorAll('.nav-mi').forEach((b) => b.addEventListener('click', closeNavMenus));
+document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.nav-group')) closeNavMenus(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNavMenus(); });
 // as a top bar (≤ 900 px) the nav takes height from the board's budget: CSS reads it as --head-h
 const navTop = matchMedia('(max-width: 900px)');
 new ResizeObserver(() => {
@@ -4633,13 +4646,20 @@ function setOwnPanel(on) {
   if (on && document.body.classList.contains('hide-score')) setPanelHidden('score', false);  // it's the page's panel
 }
 
+// where you are: the item, and the menu it sits in
+function navOn(id) {
+  $(id).classList.add('on');
+  $(id).closest('.nav-group')?.querySelector('.nav-grp').classList.add('on');
+}
+
 // On a section page its own nav item opens its picker and every other item belongs to the board page: go there and
 // do what it would have done
 function sectionNav(own, open) {
-  document.querySelectorAll('#side-nav .nav-item[id^="btn-"]').forEach((b) => {
-    b.onclick = b.id === own ? open : () => goSection('board', { click: b.id });
+  document.querySelectorAll('#side-nav [id^="btn-"]').forEach((b) => {
+    // Analysis is home: from here it goes back to the board as you left it
+    b.onclick = b.id === own ? open : b.id === 'btn-analysis' ? () => goSection('board') : () => goSection('board', { click: b.id });
   });
-  $(own).classList.add('on');
+  navOn(own);
 }
 
 // for the section modules (sections/*.js): an import can't assign to botLevels or playToken

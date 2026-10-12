@@ -231,7 +231,7 @@ async function pzShowMine() {
     // no explainer beside the button (user's call, 2026-10-10): what it does is its tooltip; only state shows here
     : `<div class="pz-update"><button class="btn ghost small pz-mine-run"${who ? '' : ' disabled'} title="${who
         ? esc(`Fetches the last ${PZ_UPDATE_GAMES} games of ${who}, reviews the new ones and looks for tactics (~30 s per new game)`) : ''}">Update from my games</button>`
-      + `<span class="hint">${who ? '' : 'Enter your chess.com or Lichess name in Find games first.'}`
+      + `<span class="hint">${who ? '' : 'Enter your chess.com or Lichess name in Your games first.'}`
       + `${job?.status === 'done' ? `Last update: ${job.new_games} new game${job.new_games === 1 ? '' : 's'}, ${job.new_puzzles} new puzzle${job.new_puzzles === 1 ? '' : 's'}. ` : ''}`
       + `${res.pending && job?.status !== 'running' ? `${res.pending} reviewed game${res.pending > 1 ? 's' : ''} not checked yet.` : ''}</span></div>`
       + (job?.status === 'error' ? `<p class="hint pz-err">Update failed: ${esc(job.error)}</p>` : '')

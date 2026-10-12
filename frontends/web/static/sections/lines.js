@@ -15,7 +15,7 @@ import { lineHtml } from './notation.js';
 
 // the list's markup first: the list code below wires listeners on it as it loads
 document.head.insertAdjacentHTML('beforeend', '<link rel="stylesheet" href="/static/sections/lines.css">');
-takePanel('Explore lines', 'Lines').innerHTML = `
+takePanel('Opening files', 'Files').innerHTML = `
   <div class="search-box rep-search">
     <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg>
     <input id="rep-q" aria-label="Search lines" autocomplete="off" spellcheck="false">

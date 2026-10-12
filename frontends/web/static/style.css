@@ -49,49 +49,49 @@ input, textarea {
 }
 input:focus, textarea:focus { outline: 2px solid var(--accent-dark); border-color: transparent; }
 
-/* ---------- side nav: section labels and icon rows, the panels' surfaces and type. 216 px; an icon rail
-   (68 px) when folded or ≤ 1800 px; a top bar ≤ 900 px. --nav-w is part of the board's width budget. ---------- */
+/* ---------- the nav (2026-10-12): Analysis (home), Open ▾, Set up, Learn ▾, then Play a bot small at the end. Open
+   and Learn are menus everywhere. 216 px with labels beside the icons; ≤ 1800 px a 76 px rail with the words under
+   the icons; ≤ 900 px a top bar the same way. --nav-w is part of the board's width budget. ---------- */
 :root { --nav-w: 216px; }
 body { padding-left: var(--nav-w); }
 .side-nav {
-  position: fixed; top: 0; left: 0; bottom: 0; width: var(--nav-w); z-index: 20; overflow: hidden auto;
+  position: fixed; top: 0; left: 0; bottom: 0; width: var(--nav-w); z-index: 20; overflow: visible;
   display: flex; flex-direction: column; gap: 18px; padding: 16px 12px;
   background: var(--panel-2); border-right: 1px solid var(--line);
 }
 .brand { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 8px; font-weight: 600; font-size: 16px;
   letter-spacing: .01em; white-space: nowrap; }
 .brand .logo { height: 30px; width: 30px; object-fit: contain; flex: none; }
-.nav-sec { display: flex; flex-direction: column; gap: 2px; }
-.nav-h { padding: 0 12px 6px; font-size: 11px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+.nav-main { display: flex; flex-direction: column; gap: 2px; }
 .nav-item {
   position: relative; display: flex; align-items: center; gap: 12px; width: 100%; height: 38px; padding: 0 12px;
   background: none; border: 0; border-radius: 10px; color: var(--muted); font-size: 14px; font-weight: 500;
   text-align: left; white-space: nowrap; transition: background .12s, color .12s;
 }
 .nav-item:hover { background: var(--hover); color: var(--text); }
-.nav-item:focus-visible, .navbtn:focus-visible, .panel-hide:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.nav-item:focus-visible, .nav-mi:focus-visible, .navbtn:focus-visible, .panel-hide:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .nav-label { overflow: hidden; text-overflow: ellipsis; }
+/* Analysis is home: first and a step bigger; Play a bot last and a step smaller (the least used) */
+.nav-home { height: 44px; font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.nav-home .ico { width: 22px; height: 22px; }
+.nav-play { margin-top: auto; height: 34px; font-size: 13px; }
+.nav-play .ico { width: 17px; height: 17px; }
+.nav-grp::after { content: '›'; margin-left: auto; font-size: 16px; color: var(--faint); }
+.nav-item.on, .nav-grp.open { background: var(--hover-2); color: var(--text); }
+/* a group's menu, beside the nav (below the bar on phones) */
+.nav-group { position: relative; }
+.nav-menu { position: absolute; left: calc(100% + 10px); top: -6px; z-index: 40; min-width: 200px; padding: 6px;
+  display: flex; flex-direction: column; gap: 2px; background: #1f1e1c; border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.5); }
+.nav-menu.hidden { display: none; }
+.nav-mi { display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 12px; border: 0; border-radius: 8px;
+  background: none; color: var(--text); font: inherit; font-size: 14px; font-weight: 500; text-align: left; white-space: nowrap; }
+.nav-mi:hover { background: var(--hover); }
+.nav-mi.on { background: var(--hover-2); }
+.nav-mi .ico { color: var(--muted); }
 /* one line-icon set (24 px grid, 1.6 stroke) for the nav, the board buttons and the panel controls */
 .ico { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .ico .fill { fill: currentColor; stroke: none; opacity: .3; }
-.nav-collapse { margin-top: auto; }
-.nav-collapse .ico { transition: transform .2s; }
-/* the rail: icons only, the labels as tooltips */
-@media (min-width: 901px) {
-  body.nav-collapsed { --nav-w: 68px; }
-  body.nav-collapsed .side-nav { overflow: visible; padding: 16px 0; align-items: center; }
-  body.nav-collapsed .nav-label, body.nav-collapsed .nav-h { display: none; }
-  body.nav-collapsed .brand { padding: 0; }
-  body.nav-collapsed .nav-sec { width: 44px; }
-  body.nav-collapsed .nav-sec + .nav-sec { border-top: 1px solid var(--line); padding-top: 18px; }
-  body.nav-collapsed .nav-item { width: 44px; height: 40px; padding: 0; justify-content: center; }
-  body.nav-collapsed .nav-collapse .ico { transform: rotate(180deg); }
-  body.nav-collapsed .nav-item:hover::after {
-    content: attr(data-tip); position: absolute; left: calc(100% + 12px); top: 50%; transform: translateY(-50%); z-index: 30;
-    padding: 6px 10px; border-radius: 8px; background: #141312; border: 1px solid var(--line); color: var(--text);
-    font-size: 12.5px; font-weight: 500; white-space: nowrap; box-shadow: 0 8px 20px rgba(0,0,0,.45); pointer-events: none;
-  }
-}
 /* the game's title (favourites), first in the row above the board; double-click edits it */
 .game-title { flex: 0 1 auto; min-width: 0; font-weight: 600; font-size: 16px; color: var(--muted);
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -479,34 +479,41 @@ dialog textarea { width: 100%; resize: vertical; }
 .game-row .meta { color: var(--muted); font-size: 12px; grid-column: 1 / -1; }
 
 /* ---------- smaller screens ---------- */
-/* the nav is a rail by itself here (the collapse button has nothing to choose) */
+/* the rail: the words under the icons (user, 2026-10-11: icons alone left too much guessing) */
 @media (min-width: 901px) and (max-width: 1800px) {
-  :root, body { --nav-w: 68px; }
-  .side-nav { overflow: visible; padding: 16px 0; align-items: center; }
-  .nav-label, .nav-h, .nav-collapse { display: none; }
+  :root, body { --nav-w: 76px; }
+  .side-nav { padding: 16px 6px; align-items: center; }
   .brand { padding: 0; }
-  .nav-sec { width: 44px; }
-  .nav-sec + .nav-sec { border-top: 1px solid var(--line); padding-top: 18px; }
-  .nav-item { width: 44px; height: 40px; padding: 0; justify-content: center; }
-  .nav-item:hover::after {
-    content: attr(data-tip); position: absolute; left: calc(100% + 12px); top: 50%; transform: translateY(-50%); z-index: 30;
-    padding: 6px 10px; border-radius: 8px; background: #141312; border: 1px solid var(--line); color: var(--text);
-    font-size: 12.5px; font-weight: 500; white-space: nowrap; box-shadow: 0 8px 20px rgba(0,0,0,.45); pointer-events: none;
-  }
+  .brand .nav-label { display: none; }
+  .nav-main { width: 100%; align-items: center; gap: 4px; }
+  .nav-item { flex-direction: column; justify-content: center; gap: 4px; width: 64px; height: 54px; padding: 0;
+    font-size: 11px; text-align: center; }
+  .nav-label { max-width: 62px; }
+  .nav-home { height: 58px; font-size: 11.5px; margin-bottom: 4px; }
+  .nav-play { height: 50px; font-size: 10.5px; }
+  .nav-grp::after { content: none; }
 }
 @media (min-width: 901px) and (max-width: 1360px) {
   main { --gap: 16px; --pad-x: 16px; --side-w: clamp(300px, 30vw, 380px); }
 }
 /* phones: a top bar of icons, then board, scoreboard and coach in one column */
 @media (max-width: 900px) {
-  :root, body, body.nav-collapsed { --nav-w: 0px; }
-  .side-nav { position: sticky; top: 0; bottom: auto; width: auto; height: 56px; flex-direction: row; align-items: center;
-    gap: 4px; padding: 0 12px; overflow: auto hidden; border-right: 0; border-bottom: 1px solid var(--line); }
-  .nav-label, .nav-h, .nav-collapse { display: none; }
-  .brand { padding: 0 6px 0 0; height: auto; }
-  .nav-sec { flex-direction: row; gap: 2px; }
-  .nav-sec + .nav-sec { border-left: 1px solid var(--line); padding-left: 4px; }
-  .nav-item { width: 40px; height: 40px; padding: 0; justify-content: center; }
+  :root, body { --nav-w: 0px; }
+  .side-nav { position: sticky; top: 0; bottom: auto; width: auto; height: 60px; flex-direction: row; align-items: center;
+    gap: 4px; padding: 0 8px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .brand { flex: none; padding: 0 4px 0 0; height: auto; }
+  .brand .nav-label { display: none; }
+  .nav-main { flex: 1; flex-direction: row; justify-content: space-around; gap: 0; min-width: 0; }
+  .nav-item { flex-direction: column; justify-content: center; gap: 3px; flex: 1 1 0; min-width: 0; max-width: 76px;
+    height: 52px; padding: 0; font-size: 10.5px; text-align: center; }
+  .nav-label { max-width: 100%; }
+  .nav-home { height: 52px; font-size: 10.5px; margin: 0; }
+  .nav-home .ico { width: 20px; height: 20px; }
+  .nav-play { margin: 0; flex: 0 1 64px; height: 52px; font-size: 10px; }
+  .nav-grp::after { content: none; }
+  .nav-group { display: contents; }
+  .nav-menu { position: fixed; left: 8px; right: 8px; top: calc(var(--head-h, 60px) + 6px); min-width: 0; }
+  .nav-mi { height: 48px; font-size: 15px; }
   /* phones: the rank labels go inside the board so it sits centred (user's call, 2026-10-09) */
   main { --strip: 0px; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; padding: 12px 16px; --board-w: calc(100vw - 32px); }
   .cg-wrap coords.ranks { left: 2px; width: 10px; }
@@ -800,7 +807,6 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 body.own-panel .score-body, body:not(.own-panel) .own-body { display: none !important; }
 .own-body { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 10px; padding: 14px 14px 0; }
 .score-panel .panel-title { display: flex; align-items: center; gap: 4px; }
-.nav-item.on { background: var(--hover-2); color: var(--text); }
 /* search bars: a magnifier and no placeholder text (user's call, 2026-10-10) */
 .search-box { position: relative; flex: 1; min-width: 0; }
 .search-box > .ico { position: absolute; left: 11px; top: 50%; width: 16px; height: 16px; transform: translateY(-50%);
@@ -1139,11 +1145,6 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
   body.m-moves .side, body.m-coach .side { display: grid; height: 100%; grid-template-rows: minmax(0, 1fr); grid-template-areas: "one"; }
   body.m-moves .score-panel, body.m-coach .chat-panel { display: flex; grid-area: one; max-height: none; }
   body.m-moves .chat-panel, body.m-coach .score-panel, .side .panel-tab, .side-split, .panel-hide { display: none; }
-  /* the top bar fits the width instead of scrolling sideways */
-  .side-nav { overflow: hidden; padding: 0 8px; gap: 0; }
-  .nav-sec { flex: 1 1 auto; min-width: 0; justify-content: space-around; }
-  .nav-item { flex: 1 1 0; width: auto; min-width: 0; max-width: 44px; }
-  .brand { flex: none; }
 }
 @media (max-width: 360px) { main { --m-rest: 372px; } }  /* the name rows wrap at this width */
 

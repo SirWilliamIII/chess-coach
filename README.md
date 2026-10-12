@@ -22,11 +22,14 @@ terminal version.
 ./start        # then open http://localhost:8000
 ```
 
-- **Search games** lists your recent chess.com games; pick one and it's reviewed (about 40 s on a Pi, cached after).
+- The nav: **Analysis** (home), **Open** (Your games, Positions, Opening files), **Set up**, **Learn** (Openings,
+  Puzzles, Endgames), and **Play a bot** at the end. Each Learn section and Opening files is its own page.
+- **Open → Your games** lists your recent chess.com or Lichess games, or paste a link/PGN; pick one and it's
+  reviewed (about 40 s on a Pi, cached after).
 - Click moves, use the arrow keys, or drag pieces to try your own lines; the engine eval follows the board.
 - Ask the coach anything about the position on the board ("best move?", "what was the plan here?").
   Moves in its answers are clickable and play on the board.
-- **Play bot**: practice games against Stockfish at 9 strength levels (~600 to full strength).
+- **Play a bot**: practice games against Stockfish at 9 strength levels (~600 to full strength).
   Ask the coach for ideas mid-game ("what idea should I aim for?"); it teaches the plan rather
   than giving away the move unless you ask. Takeback is always available, even after the game
   ends; then **Review this game**.
@@ -35,18 +38,18 @@ terminal version.
   warns you before the opponent's). Play a *different* move and you're offered to play on from there
   against a bot matched to your opponent's rating, keeping the game's moves so far; **Back to the
   game** returns to the replay.
-- **Learn openings**: pick any named opening (Najdorf, Dragon, Caro-Kann, London…) and a side. The
+- **Learn → Openings**: pick any named opening (Najdorf, Dragon, Caro-Kann, London…) and a side. The
   first time, a lesson is built from master games (Lichess masters database, needs `LICHESS_TOKEN`),
   every move checked by Stockfish, with notes written by Claude from the engine's facts (a few minutes,
   about $0.25). After that it's free: **Learn** walks the lines with a card per move (the idea, the
   opponent's tries, what to wait for), **Drill** has you play your side while the app answers with
   the replies masters play, catches wrong moves (a hint first, then the answer) and tracks which lines
   you've mastered. **Walk me through this** asks the coach about the position with the lesson's line.
-- **Puzzles → Your mistakes**: positions from your own reviewed games where you missed a tactic, or your
+- **Learn → Puzzles → Your mistakes**: positions from your own reviewed games where you missed a tactic, or your
   move handed your opponent one (you then find it from their side). Built by
   `.venv/bin/python -m core.my_puzzles --me <chess.com name>,<Lichess name>` (names remembered; ~20 s per game),
   or **Check them** in the list for games reviewed since.
-- **Puzzles** (side nav, Learn): tactics from real Lichess games in an opening you pick (your
+- **Learn → Puzzles**: tactics from real Lichess games in an opening you pick (your
   lessons' openings are listed first, or search: "london", "dutch"). Each opening lists its recurring
   patterns: the ones **typical** of it ("after …Nxe5, dxe5 forks" in the London) apart from the mates
   every opening has; drill one pattern or mix them. The opponent's mistake plays first, then you find
@@ -59,7 +62,7 @@ terminal version.
 - **Show me**: when the coach explains a line it attaches a demo; the button plays it on a
   grey demo board (with a note per move) where you can also try your own moves.
   **Back to my game** returns you exactly where you were.
-- **Set up position**: place pieces freely or pick an endgame preset (Lucena, Philidor, basic
+- **Set up**: place pieces freely or pick an endgame preset (Lucena, Philidor, basic
   mates, king + pawn), then **Play vs bot from here** or **Analyse**.
 - **▶ Most studied lines** (in the Explorer tab): instant demos of the main lines from the board
   position, straight from real games: Masters = most studied, Lichess + rating band = most played
@@ -72,7 +75,7 @@ terminal version.
   auto-tags like back-rank, fork, sicilian) in `data/library.sqlite`. Search it, filter by tag,
   favourites (☆ on any answer) or habits, and click an entry to put the board back where it was.
   Works offline.
-- **Analysis board** gives an empty board to set up and discuss any line.
+- **Analysis** gives an empty board to set up and discuss any line.
 - Add `--host 0.0.0.0` to open it from another device on your network (anyone on the network
   could then use your API key through it).
 

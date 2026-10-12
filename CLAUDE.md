@@ -274,7 +274,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 ### Games: loading, review, playing on, favourites
 
-- **"Find game by username"** has chess.com, Lichess, Saved (offline) and ★ Favourites tabs.
+- **"Your games"** (Open ▾; was Find games) has chess.com, Lichess, Paste PGN, Saved (offline) and ★ Favorites tabs.
   `/api/games?site=lichess` maps Lichess's list to the chess.com row shape (AI/anonymous players have no
   rating). The Lichess name is `localStorage` `meLichess`; `state.me` stays the chess.com name.
 - **Loaded games open at move 1** (`state.ply = 0` in `setReview()`), including saved games.
@@ -434,11 +434,19 @@ file says what is true now. Last full cleanup: 2026-10-03.
     2026-10-10: at 1728×1117 the full nav left a width-bound 701 px board with 200 px empty under it; now 849); the
     tighter page padding stays ≤ 1360. ≤ 900 px: one column, the nav a top bar of icons (`--head-h` = its height).
     At 1366×768 the scoreboard still scrolls a little: height is the limit there, the handle decides.
-  - **Side nav:** `nav.side-nav`, `--nav-w` 216 px, section labels (`.nav-h`) and icon rows (`.nav-item`, inline
-    SVG `.ico`, one 24 px line set shared with the board buttons and panel controls; no emoji). No collapsible
-    groups any more (the 2026-10-05 `<details>` tree went). Collapse (`#nav-collapse`, `setNavCollapsed()`,
-    localStorage `navCollapsed`) folds it to a 68 px rail with tooltips (`data-tip`); hidden where the rail is
-    automatic. Button ids unchanged.
+  - **Nav** (rebuilt 2026-10-12; user: "I don't want to build a chess app like the 1000 others": playing is the least
+    used, analysis the most). Order: **Analysis** (`#btn-analysis`, home: first and bigger, `.nav-home`; lit on the
+    board page whatever is on it; from a section page it goes back to the board as you left it, on the board page it
+    starts a fresh analysis board), **Open ▾** (Your games `#btn-games`, Positions, Opening files `#btn-repertoire`
+    → `/lines`), **Set up** (`#btn-setup`), **Learn ▾** (Openings `#btn-study`, Puzzles, Endgames), then **Play a
+    bot** (`#btn-play`, `.nav-play`, last and smaller, a direct click). Open and Learn are menus on every screen
+    (`.nav-grp` + `.nav-menu`, `closeNavMenus()`: a choice, a click elsewhere or Esc closes; user's call), beside the
+    nav on desktop, a sheet under the bar on phones. Labels always show: 216 px with labels beside the icons (> 1800
+    px); a 76 px rail with the words under the icons (901-1800 px); a 60 px phone bar the same way. `navOn(id)` lights
+    the item and its group. The collapse toggle and the rail tooltips are gone. **Your games** = the old Find games +
+    Load game: tabs chess.com · Lichess · Paste PGN (`#tab-paste`, the old Load dialog's textarea/file/Review) · Saved
+    · ★ Favorites. Button ids unchanged otherwise (`btn-load`, `dlg-load` removed). Open questions left: whether
+    Games/Positions/Lines should open straight into the analysis board as "sources" (they mostly do already).
   - **Panels:** both have the same 48 px header (`.panel-head`: title, tools, a minus `[data-hide]` button).
     The players' rating picker is inline in the "Top player moves at ~N ▾" heading (`sbRatePick()`, `.sb-rate`;
     "What players at ~N play" with the eval off), a mirror of `#maia-rating` (2026-10-10, user's call: in the panel

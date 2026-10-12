@@ -11,27 +11,33 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <!-- side nav: section labels and icon rows; folds to an icon rail (‹, or automatically ≤ 1800 px) and becomes a
-       top bar ≤ 900 px. Button ids are the ones app.js binds -->
+  <!-- the nav (user's calls, 2026-10-12): Analysis is home; Open = what you bring to it (your games, saved positions,
+       your opening files); Learn = the training sections; Play a bot last and small (it's the least used). Open and
+       Learn are menus on every screen. Labels always show: words under the icons on the rail and the phone bar.
+       Button ids are the ones app.js binds -->
   <nav class="side-nav" id="side-nav">
     <div class="brand"><img class="logo" src="/static/logo-mark.png" alt=""><span class="nav-label">Chess Coach</span></div>
-    <div class="nav-sec"><div class="nav-h">Play</div>
-      <button id="btn-play" class="nav-item" data-tip="Play game"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M10.25 8.75v6.5l5-3.25z"/></svg><span class="nav-label">Play game</span></button>
-      <button id="btn-analysis" class="nav-item" data-tip="Analysis board"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/><path d="M7.75 11.5l1.75-1.75 1.5 1.5 2-2.5"/></svg><span class="nav-label">Analysis board</span></button>
-      <button id="btn-setup" class="nav-item" data-tip="Set up position"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M12 4v16M4 12h16"/><path d="M4 4h8v8H4zM12 12h8v8h-8z" class="fill"/></svg><span class="nav-label">Set up position</span></button>
+    <div class="nav-main">
+      <button id="btn-analysis" class="nav-item nav-home"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/><path d="M7.75 11.5l1.75-1.75 1.5 1.5 2-2.5"/></svg><span class="nav-label">Analysis</span></button>
+      <div class="nav-group">
+        <button class="nav-item nav-grp" data-menu="menu-open" aria-haspopup="menu" aria-expanded="false"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg><span class="nav-label">Open</span></button>
+        <div class="nav-menu hidden" id="menu-open" role="menu">
+        <button id="btn-games" class="nav-mi" role="menuitem"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="8.5" r="3.5"/><path d="M4 19.5c.6-3.2 3-5 6-5 1 0 1.9.2 2.7.5"/><circle cx="17" cy="16.5" r="2.75"/><path d="M19 18.5l2 2"/></svg><span>Your games</span></button>
+        <button id="btn-positions" class="nav-mi" role="menuitem"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-3.75L7 20z"/></svg><span>Positions</span></button>
+        <button id="btn-repertoire" class="nav-mi" role="menuitem"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h7.5l4.5 4.5v12.5h-12z"/><path d="M14 3.5V8h4.5"/><path d="M9 12.5h6M9 16h6"/></svg><span>Opening files</span></button>
+        </div>
+      </div>
+      <button id="btn-setup" class="nav-item"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M12 4v16M4 12h16"/><path d="M4 4h8v8H4zM12 12h8v8h-8z" class="fill"/></svg><span class="nav-label">Set up</span></button>
+      <div class="nav-group">
+        <button class="nav-item nav-grp" data-menu="menu-learn" aria-haspopup="menu" aria-expanded="false"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 9.5L12 5l9.5 4.5L12 14z"/><path d="M6.5 11.5v4c1.5 1.5 3.5 2.25 5.5 2.25s4-.75 5.5-2.25v-4"/></svg><span class="nav-label">Learn</span></button>
+        <div class="nav-menu hidden" id="menu-learn" role="menu">
+        <button id="btn-study" class="nav-mi" role="menuitem"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7C10 5.5 7.25 5 4 5.5v12.75c3.25-.5 6 0 8 1.5 2-1.5 4.75-2 8-1.5V5.5C16.75 5 14 5.5 12 7z"/><path d="M12 7v12.75"/></svg><span>Openings</span></button>
+        <button id="btn-puzzles" class="nav-mi" role="menuitem"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3.5L6 13.5h5.5L10.5 20.5l7.5-10.5h-5.5z"/></svg><span>Puzzles</span></button>
+        <button id="btn-endgames" class="nav-mi" role="menuitem"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 17l-1.25-9.5 4.75 3.75L12 5.5l3.5 5.75 4.75-3.75L19 17z"/><path d="M5.5 20h13"/></svg><span>Endgames</span></button>
+        </div>
+      </div>
     </div>
-    <div class="nav-sec"><div class="nav-h">Games</div>
-      <button id="btn-games" class="nav-item" data-tip="Find games by username"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="8.5" r="3.5"/><path d="M4 19.5c.6-3.2 3-5 6-5 1 0 1.9.2 2.7.5"/><circle cx="17" cy="16.5" r="2.75"/><path d="M19 18.5l2 2"/></svg><span class="nav-label">Find games</span></button>
-      <button id="btn-load" class="nav-item" data-tip="Load game"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4.5M7.75 8.5L12 4.25l4.25 4.25"/><path d="M4.5 14.5v4a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-4"/></svg><span class="nav-label">Load game</span></button>
-      <button id="btn-positions" class="nav-item" data-tip="Positions"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-3.75L7 20z"/></svg><span class="nav-label">Positions</span></button>
-    </div>
-    <div class="nav-sec"><div class="nav-h">Learn</div>
-      <button id="btn-study" class="nav-item" data-tip="Learn openings"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7C10 5.5 7.25 5 4 5.5v12.75c3.25-.5 6 0 8 1.5 2-1.5 4.75-2 8-1.5V5.5C16.75 5 14 5.5 12 7z"/><path d="M12 7v12.75"/></svg><span class="nav-label">Learn openings</span></button>
-      <button id="btn-puzzles" class="nav-item" data-tip="Puzzles"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3.5L6 13.5h5.5L10.5 20.5l7.5-10.5h-5.5z"/></svg><span class="nav-label">Puzzles</span></button>
-      <button id="btn-repertoire" class="nav-item" data-tip="Explore lines"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h7.5l4.5 4.5v12.5h-12z"/><path d="M14 3.5V8h4.5"/><path d="M9 12.5h6M9 16h6"/></svg><span class="nav-label">Explore lines</span></button>
-      <button id="btn-endgames" class="nav-item" data-tip="Endgames"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 17l-1.25-9.5 4.75 3.75L12 5.5l3.5 5.75 4.75-3.75L19 17z"/><path d="M5.5 20h13"/></svg><span class="nav-label">Endgames</span></button>
-    </div>
-    <button class="nav-item nav-collapse" id="nav-collapse" data-tip="Expand the menu"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.5 17l-5-5 5-5M18 17l-5-5 5-5"/></svg><span class="nav-label">Collapse</span></button>
+    <button id="btn-play" class="nav-item nav-play"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M10.25 8.75v6.5l5-3.25z"/></svg><span class="nav-label">Play a bot</span></button>
   </nav>
 
   <main>
@@ -171,10 +177,11 @@
   </nav>
 
   <dialog id="dlg-games">
-    <form method="dialog" class="dlg-head"><h2>Find game by username</h2><button class="link">Close</button></form>
+    <form method="dialog" class="dlg-head"><h2>Your games</h2><button class="link">Close</button></form>
     <div class="seg" id="games-tabs">
       <button data-tab="chesscom" class="on">chess.com</button>
       <button data-tab="lichess">Lichess</button>
+      <button data-tab="paste">Paste PGN</button>
       <button data-tab="saved" title="Games already analyzed here: they open without internet">Saved</button>
       <button data-tab="favorites">★ Favorites</button>
     </div>
@@ -199,6 +206,15 @@
         <span id="prefetch-status-lichess" class="hint"></span>
       </div>
       <div id="games-list-lichess" class="games-list"></div>
+    </div>
+    <div id="tab-paste" class="hidden">
+      <textarea id="load-text" rows="8" placeholder="chess.com or Lichess game link, or PGN"></textarea>
+      <div id="pgn-games" class="games-list hidden"></div>
+      <div class="row">
+        <label class="btn ghost small file-btn">📄 Upload PGN file<input type="file" id="load-file" accept=".pgn,.txt,application/x-chess-pgn,text/plain" hidden></label>
+        <span class="hint" id="load-file-name"></span>
+        <button class="btn" id="load-go" style="margin-left:auto">Review game</button>
+      </div>
     </div>
     <div id="tab-favorites" class="hidden">
       <div id="fav-list" class="games-list"></div>
@@ -298,16 +314,6 @@
     <div id="pos-list" class="pos-list"></div>
   </dialog>
 
-  <dialog id="dlg-load">
-    <form method="dialog" class="dlg-head"><h2>Load a game</h2><button class="link">Close</button></form>
-    <textarea id="load-text" rows="8" placeholder="chess.com or Lichess game link, or PGN"></textarea>
-    <div id="pgn-games" class="games-list hidden"></div>
-    <div class="row">
-      <label class="btn ghost small file-btn">📄 Upload PGN file<input type="file" id="load-file" accept=".pgn,.txt,application/x-chess-pgn,text/plain" hidden></label>
-      <span class="hint" id="load-file-name"></span>
-      <button class="btn" id="load-go" style="margin-left:auto">Review game</button>
-    </div>
-  </dialog>
 
   <script type="module" src="/static/app.js"></script>
 </body>
