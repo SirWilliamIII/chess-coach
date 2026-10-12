@@ -3694,6 +3694,28 @@ function fireConfetti(count = 140) {
   setTimeout(() => overlay.remove(), 4000);
 }
 
+// The other ending (user, 2026-10-12: confetti said "done" on a win, but after a lost or drawn drill nothing moved and
+// the game looked frozen): grey rain over the page and a short shake of the board. Same length as the confetti.
+function fireAntiConfetti(count = 90) {
+  const overlay = document.createElement('div');
+  overlay.className = 'confetti-overlay';
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('div');
+    el.className = 'anti-drop';
+    el.style.left = `${Math.random() * 100}%`;
+    el.style.animationDuration = `${1.3 + Math.random() * 0.9}s`;
+    el.style.animationDelay = `${Math.random() * 1.6}s`;
+    el.style.opacity = String(0.35 + Math.random() * 0.4);
+    overlay.appendChild(el);
+  }
+  document.body.appendChild(overlay);
+  const board = $('board-wrap');
+  board.classList.remove('shake');
+  void board.offsetWidth;  // restart the animation
+  board.classList.add('shake');
+  setTimeout(() => { overlay.remove(); board.classList.remove('shake'); }, 4000);
+}
+
 function checkGameOver() {
   const p = state.play;
   const c = playChess(p);
@@ -3775,7 +3797,7 @@ function renderPlayInfo() {
     cls = p.over.outcome === 'win' ? 'win' : p.over.outcome === 'loss' ? 'loss' : '';
   } else if (p.view < p.moves.length && !p.thinking) status = 'Viewing an earlier position; press → or ⏭ to return';
   const buttons = p.over
-    ? `<button class="btn small" id="pb-review">Review this game</button>
+    ? `<button class="btn small" id="pb-review">Review<span class="long"> this game</span></button>
        <button class="btn ghost small" id="pb-again">${p.endgame ? 'Try again' : 'New game'}</button>`
     : (p.thinking ? '<button class="btn ghost small" id="pb-stop">Stop bot</button>' : '');
   const back = p.back ? '<button class="btn ghost small" id="pb-back">Back to the game</button>'
@@ -4491,7 +4513,7 @@ function setDemoTimer(t) { demoTimer = t; }
 export {
   $, SECTION, hooks, state, api, store, recall, esc, addMsg, setReview, setEngineVisible, setFoot,
   playView, playChess, botMove, levelForRating, getBotLevels, bumpPlayToken, goSection, markBoardTaken,
-  update, renderChips, currentGame, ask, sectionNav, setDemoTimer, PHONE, TOUCH, markdown, takePanel, setOwnPanel,
+  update, renderChips, currentGame, ask, fireConfetti, fireAntiConfetti, sectionNav, setDemoTimer, PHONE, TOUCH, markdown, takePanel, setOwnPanel,
   setPhonePage, setPanelHidden, demoStep,
   CHIPS, CHIP_TIPS, START_FEN, baseShapes, cg, closeDemo, evalPill, knightShapes, openDemo, stopAutoplay, syncCards,
 };

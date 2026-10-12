@@ -8,7 +8,7 @@
 
 import {
   $, hooks, state, api, store, recall, esc, addMsg, setReview, setEngineVisible, playView, playChess, botMove,
-  levelForRating, getBotLevels, bumpPlayToken, markBoardTaken, sectionNav, takePanel,
+  levelForRating, getBotLevels, bumpPlayToken, markBoardTaken, sectionNav, takePanel, fireConfetti, fireAntiConfetti,
 } from '../app.js';
 import { lineHtml } from './notation.js';
 
@@ -279,11 +279,14 @@ async function egTakeback(p) {
   renderDrill();
 }
 
-function egFinish(p, ok, text) {
+// `celebrated`: a checkmate already fired the confetti (checkGameOver)
+function egFinish(p, ok, text, celebrated = false) {
   const eg = p.endgame;
   if (eg.done) return;
   eg.done = true;
   eg.ok = ok;
+  if (!ok) fireAntiConfetti();
+  else if (!celebrated) fireConfetti();  // a draw held: done too
   if (ok) egRecord(`${eg.spec}|${eg.mode}`, 'done');
   renderDrill();
   const slips = eg.slips ? ` ${eg.slips} slip${eg.slips > 1 ? 's' : ''} on the way.` : eg.source === 'tablebase' ? ' No slips.' : '';
@@ -310,7 +313,7 @@ function egRetry(p) {
 function egGameOver(p, outcome) {
   const eg = p.endgame;
   if (!eg || eg.done) return;
-  if (outcome === 'win') egFinish(p, true, 'Checkmate.');
+  if (outcome === 'win') egFinish(p, true, 'Checkmate.', true);
   else if (outcome === 'draw') egFinish(p, eg.outcome === 'draw', eg.outcome === 'draw' ? 'Drawn, as the position deserved.' : 'It ended in a draw; the position was a win.');
   else egFinish(p, false, 'The bot won.');
 }

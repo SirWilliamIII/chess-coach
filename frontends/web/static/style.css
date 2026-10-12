@@ -662,6 +662,19 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
   100% { transform: translateY(105vh) translateX(var(--dx)) rotate(var(--spin)); opacity: 0.85; }
 }
 
+/* the other ending (fireAntiConfetti): grey rain falling straight, and the board shakes once */
+.anti-drop { position: absolute; top: -20px; width: 3px; height: 22px; border-radius: 2px; background: #a29f97;
+  animation: anti-fall linear forwards; }
+@keyframes anti-fall {
+  0%   { transform: translateY(-5vh); }
+  100% { transform: translateY(105vh); }
+}
+.board-wrap.shake { animation: board-shake .45s ease-in-out; }
+@keyframes board-shake {
+  20% { transform: translateX(-6px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); }
+}
+@media (prefers-reduced-motion: reduce) { .anti-drop { display: none; } .board-wrap.shake { animation: none; } }
+
 /* ---------- opponent-move card (bot games) ---------- */
 .msg.card { align-self: stretch; max-width: 100%; border-left: 3px solid var(--accent); }
 .card-head { display: flex; align-items: baseline; gap: 8px; cursor: pointer; }
@@ -1074,7 +1087,20 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
   body.m-moves .score-panel, body.m-coach .chat-panel { display: flex; grid-area: one; max-height: none; }
   body.m-moves .chat-panel, body.m-coach .score-panel, .side .panel-tab, .side-split, .panel-hide { display: none; }
 }
-@media (max-width: 360px) { main { --m-rest: 372px; } }  /* the name rows wrap at this width */
+@media (max-width: 360px) { main { --m-rest: 372px; } }
+/* phones, a status above the board (a game over, a drill's result): the name and every button on the first line, the
+   status on one fixed line under them, as puzzles do (user, 2026-10-12: Takeback wrapped to a fourth line and the eval
+   bar covered it). "Review this game" reads "Review" there. The opening pill makes way. */
+@media (max-width: 900px) {
+  .top-row:has(#summary .status) .opening-slot { display: none; }
+  .top-row:has(#summary .status) .head-row, .top-row:has(#summary .status) #summary,
+  .top-row:has(#summary .status) .play-buttons { display: contents; }
+  .top-row:has(#summary .status) .player.top { flex: 1 1 0; min-width: 0; flex-wrap: nowrap; overflow: hidden; }
+  .top-row:has(#summary .status) .btn { flex: none; }
+  .top-row #summary .status { order: 3; flex: 0 0 100%; width: auto; height: 24px; line-height: 24px; font-size: 13px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .top-row .btn .long { display: none; }
+}  /* the name rows wrap at this width */
 
 /* ---------- the scoreboard in a short panel (last: it overrides the scoreboard and game report rules above) ---------- */
 /* a short panel (stacked on laptops up to ~1100 px tall, phones): tighter cards so both lists fit before it scrolls */

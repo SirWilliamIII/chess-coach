@@ -431,6 +431,10 @@ file says what is true now. Last full cleanup: 2026-10-03.
     result) is hidden there. User checked on a real phone 2026-10-09: taps "pretty dang good", the board fits.
     Puzzles on phones (2026-10-10): the top row is name + buttons, then one fixed line (`.pz-status`) for the status
     or the hint (the hint replaces "Black to play"), opening pill hidden, so a hint or a miss never moves the board.
+    The same for any status above the board on phones (2026-10-12; a finished drill's "Draw by stalemate." pushed
+    Takeback to a fourth line under the eval bar): name + every button on line one (`.head-row`, `#summary`,
+    `.play-buttons` are `display: contents` there), the status on a fixed 24 px line, "Review this game" reads
+    "Review" (`.btn .long` hidden). Measured at 375×667: Takeback 36 px clear of the eval bar (was 47 px into it).
   - **Breakpoints:** ≥ 1680 px: board | scoreboard | coach. 901-1679 px: board | one column with the scoreboard
     over the coach and a drag handle between them (`#side-split`, `setSplit()`). Default (2026-10-10, never dragged):
     the coach gets `--chat-h` = clamp(210 px, 28%, 380 px), the scoreboard the rest (was a 0.66 share: at 1440×900
@@ -818,6 +822,11 @@ file says what is true now. Last full cleanup: 2026-10-03.
   line (else 0.00 is often a queen race into perpetual), kept only if it's a draw (tablebase, or |eval| ≤
   0.30 at depth 22); always a Hold-it drill whatever mode is picked (`egModeFor()`). The goal card has "New position" / "Pick other material", so you can skip
   mid-drill (before, the next position came only from the result card).
+- **Endings (2026-10-12; user: after a lost or drawn drill nothing moved and the game looked frozen):** a drill that
+  fails (a loss, or a draw in a Win-it drill) fires `fireAntiConfetti()` (app.js: grey rain over the page and one shake
+  of the board, 4 s, off with prefers-reduced-motion); one that succeeds fires the confetti, including a held draw
+  (a checkmate already fired it in `checkGameOver()`, so `egFinish(…, celebrated)` skips it). Plain bot games and
+  puzzles don't use the rain (not asked).
 - **Modes:** Win it (you're winning), Hold it (draw). Material lies (down material yet a draw or a win) was removed
   2026-10-08 (user's call: Dead even covers its best case); a stored `egMode` "lies" falls back to Win it.
 - **Truth:** ≤ 7 pieces → Lichess tablebase API (`tablebase.probe()`, no token, in-memory cache, one request at
