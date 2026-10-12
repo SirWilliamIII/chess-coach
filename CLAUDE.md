@@ -449,8 +449,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
     Games/Positions/Lines should open straight into the analysis board as "sources" (they mostly do already).
   - **Panels:** both have the same 48 px header (`.panel-head`: title, tools, a minus `[data-hide]` button).
     The players' rating picker is inline in the "Top player moves at ~N ▾" heading (`sbRatePick()`, `.sb-rate`;
-    "What players at ~N play" with the eval off), a mirror of `#maia-rating` (2026-10-10, user's call: in the panel
-    header it read as a random bot setting). `renderKeyCard()` skips while it has focus and catches up on blur.
+    "What players at ~N play" with the eval off), the only picker since 2026-10-12 (`maiaElo` in app.js; 2026-10-10,
+    user's call: in the panel header it read as a random bot setting). `renderKeyCard()` skips while it has focus and catches up on blur.
     Hidden panel (`setPanelHidden()`, `body.hide-score` / `hide-chat`): a 44 px bar when stacked, a 40 px
     vertical tab when side by side (`.panel-tab`); the side column narrows and the board takes the room.
     In the side column the chat's chips are one scrolling line and "Asking about…" shows only while typing.
@@ -489,6 +489,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
     numbers, from the search it already runs, so free); "▸ Lines" in the Top bot moves heading (`.bl-toggle`,
     localStorage `botLines`) shows it under each row (`.bl-line`, Maia lines' `.ml-line` look). The Maia toggle is
     `.ml-toggle:not(.bl-toggle)`. The old Engine lines list goes with the dropdown in step 6.
+    Step 3 ✓: the duplicate Maia list, its on/off checkbox (`maiaOn()` is now just "Maia installed") and the second
+    rating picker are gone; the scoreboard's `.sb-rate` drives `maiaElo` directly.
   - **The line under the board** (`setFoot()` → `#board-sub`, 2026-10-10; user: "it can be really helpful or really
     confusing", after "Opening puzzle · Your game vs … · Caro-Kann Defense: Advance Variation" under a your-mistakes
     puzzle): one line saying what this board is, never what the rows above already say (names, opening pill,
@@ -558,10 +560,11 @@ file says what is true now. Last full cleanup: 2026-10-03.
   Lessons built before then stored `human_rating` 1300 (Lichess); `study.load()` shows it converted (~830)
   unless `human_scale` is `chesscom`. Still on Lichess's scale: the explorer's rating bands (Lichess DB filters,
   e.g. `CURVE_RATINGS`, the coach's `db='lichess'` bands). Not converted: a chess.com blitz/bullet game's
-  ratings (taken as rapid). Panel: "Human moves" under Stockfish's lines with **one rating for both sides** (`maiaRating()`, `#maia-rating`,
-  localStorage `maiaElo`; the opponent at the same rating; user's call 2026-10-07: Stockfish's list is the
-  absolute one, Maia's "the typical player"; the scoreboard's picker in the Top player moves heading mirrors it); a row click plays the move where `canMove` allows it. `pct` is "how likely a
-  human plays it", never quality.
+  ratings (taken as rapid). **One rating for both sides** (`maiaRating()` → `maiaElo`, localStorage `maiaElo`, picked
+  in the Top player moves heading; the opponent at the same rating; user's call 2026-10-07: Stockfish's list is the
+  absolute one, Maia's "the typical player"). Maia's own "Human moves" list, its on/off checkbox and its second
+  picker in the Full Explorer dropdown were removed 2026-10-12 (they repeated Top player moves); `requestMaia()` still
+  runs for the scoreboard's quick numbers. `pct` is "how likely a human plays it", never quality.
 - Setup per clone: `pip install git+https://github.com/CSSLab/maia3.git` (not in `requirements.txt`, torch is
   ~600 MB); the checkpoint downloads from Hugging Face on first use. Missing package = section hidden
   (`maia.available()`). AGPL-3.0: fine for a personal tool, matters if distributed or hosted.

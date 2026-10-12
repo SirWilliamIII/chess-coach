@@ -809,7 +809,6 @@ function requestEval(c) {
       if (token !== evalToken) return;
       lastEval = { fen: c.fen(), lines: data.lines };
       showEval(data);
-      renderMaia();
       renderKeyCard();
     } catch (e) {
       if (token === evalToken) $('engine-lines').textContent = e.message;
@@ -870,16 +869,17 @@ let maiaTimer = null;
 let lastEval = null;  // Stockfish's lines for the shown position, to mark which human move is also best
 let lastMaia = null;
 
+// Maia feeds the scoreboard's Top player moves (its quick numbers before the deep search, the ladder); its own list
+// and on/off switch went with the Full Explorer dropdown (2026-10-12: they repeated Top player moves)
 function maiaOn() {
-  return state.maiaReady && $('maia-toggle').checked;
+  return state.maiaReady;
 }
 
 function requestMaia(c) {
   clearTimeout(maiaTimer);
   const token = ++maiaToken;
   lastMaia = null;
-  if (!maiaOn() || !c) return void ($('maia-lines').innerHTML = '');
-  $('maia-lines').innerHTML = '<div class="eline" style="color:var(--muted)">Thinking…</div>';
+  if (!maiaOn() || !c) return;
   if (state.play?.thinking) return;  // stale before it lands, like requestEval's
   const fen = c.fen();
   const line = currentLine();
@@ -891,11 +891,8 @@ function requestMaia(c) {
       });
       if (token !== maiaToken) return;
       lastMaia = { fen, ...data };
-      renderMaia();
       renderKeyCard();
-    } catch (e) {
-      if (token === maiaToken) $('maia-lines').textContent = e.message;
-    }
+    } catch {}  // only the quick numbers miss out: the scoreboard's own search has Maia's picks too
   }, 200);
 }
 
@@ -913,27 +910,6 @@ function playMaiaMove(uci) {
   onBoardMove(uci.slice(0, 2), uci.slice(2, 4));  // promotions go to a queen, as on the board
 }
 
-function renderMaia() {
-  if (!lastMaia) return;
-  if (!lastMaia.moves.length) return void ($('maia-lines').innerHTML = '<div class="eline">Game over</div>');
-  const sf = lastEval?.fen === lastMaia.fen ? lastEval.lines : [];
-  $('maia-lines').innerHTML = lastMaia.moves.map((m) => {
-    const hit = sf.find((l) => l.uci === m.uci);
-    const best = sf[0]?.uci === m.uci;
-    const [w, d, l] = m.wdl;
-    const tip = `${Math.round(w)}% win / ${Math.round(d)}% draw / ${Math.round(l)}% loss for the mover after this, `
-      + `in games between players of these ratings (Maia's guess, not an engine eval)`
-      + (best ? ". Also Stockfish's top move." : '');
-    // the Stockfish section's number when it has this move, so one move never shows two evals
-    const ev = hit?.eval_white ?? m.eval_white;
-    return `<div class="mline${best ? ' best' : ''}" title="${tip}" data-uci="${esc(m.uci)}">
-      <span class="mmove">${esc(m.move)}</span>
-      <span class="mbar"><span style="width:${Math.max(2, m.pct)}%"></span></span>
-      <span class="mpct">${m.pct < 1 ? '<1' : Math.round(m.pct)}%</span>
-      <span class="ev ${/^#?-/.test(ev ?? '') ? 'b' : 'w'}">${esc(ev ?? '')}</span></div>`;
-  }).join('');
-  $('maia-lines').querySelectorAll('.mline').forEach((el) => { el.onclick = () => playMaiaMove(el.dataset.uci); });
-}
 
 // ---- scoreboard: the two moments a move's numbers matter (user's call, 2026-10-06). Before your move: how
 // forgiving the position is, every legal move on one strip (colour = what it costs, height = how often players
@@ -958,8 +934,9 @@ function moverEval(e, turn) {
 
 // One rating for Maia, whichever side moves, facing the same rating (user's call, 2026-10-07): Stockfish's
 // list is the absolute one, Maia's is "the typical player" at this level
+let maiaElo = 800;  // setupMaia(): your PLAYER_RATING the first time, then what you pick (localStorage maiaElo)
 function maiaRating() {
-  return +$('maia-rating').value || 800;
+  return maiaElo;
 }
 
 // A search for this position at any rating will do: it carries Maia's picks at every rating (`ladder`), so
@@ -1138,9 +1115,10 @@ function sbQuick(fen, turn) {
 // the eval after it, and how often players at the chosen rating play it. The header is only the
 // list's name (user's call, 2026-10-06: no column labels).
 // The players' rating, picked where it's used (user's call, 2026-10-10: in the panel header it read as a random bot
-// setting): a mirror of the Human moves panel's #maia-rating, wired in renderKeyCard()
+// setting); the only picker since the Human moves panel went (2026-10-12), wired in renderKeyCard()
 function sbRatePick() {
-  return `<select class="sb-rate" title="Players' rating, for both sides: what Maia predicts players of this rating play">${$('maia-rating').innerHTML}</select>`;
+  return `<select class="sb-rate" title="Players' rating, for both sides: what Maia predicts players of this rating play">${
+    (state.maiaRatings || []).map((r) => `<option value="${r}"${r === maiaElo ? ' selected' : ''}>~${r}</option>`).join('')}</select>`;
 }
 
 function sbCandidates(rows, turn, bestEval, title = 'Top bot moves', cls = 'sf', busy = '', after = null) {
@@ -1503,12 +1481,17 @@ function renderKeyCard() {
   if (!mlBtn) mlShown = null;  // no live card with player moves: nothing to fetch for
   requestMaiaLines();
 
-  // the rating pickers in the list headings drive the Human moves panel's dropdown, which stores it and refetches
+  // the players' rating: stored, and Maia asked again (the scoreboard redraws at once from its ladder)
   box.querySelectorAll('.sb-rate').forEach((sel) => {
-    sel.value = $('maia-rating').value;
+    sel.value = String(maiaElo);
     sel.onclick = (e) => e.stopPropagation();
     sel.onblur = () => setTimeout(renderKeyCard);
-    sel.onchange = () => { $('maia-rating').value = sel.value; $('maia-rating').dispatchEvent(new Event('change')); };
+    sel.onchange = () => {
+      maiaElo = +sel.value;
+      store('maiaElo', sel.value);
+      requestMaia(state.editor ? null : currentGame());
+      renderKeyCard();
+    };
   });
 
   // Moves on the live card (rows, track segments, the engine's pick): hover draws the move, with no text (user's
@@ -1542,30 +1525,12 @@ function renderKeyCard() {
 
 function setupMaia(cfg) {
   state.maiaReady = !!cfg.maia_ready;
-  $('maia-pane').classList.toggle('hidden', !state.maiaReady);
   if (!state.maiaReady) return;
-  const refresh = () => {
-    requestMaia(state.editor ? null : currentGame());
-    requestScoreboard(state.editor ? null : currentGame());
-    renderKeyCard();
-  };
   // one rating for both sides, chess.com rapid (2026-10-07). The older keys (maiaWhite/maiaBlack/maiaRating) held
   // Lichess numbers, so they're ignored: the first pick is your PLAYER_RATING, rounded to the nearest level
+  state.maiaRatings = cfg.maia_ratings;
   const near = (x) => cfg.maia_ratings.reduce((a, b) => (Math.abs(b - x) < Math.abs(a - x) ? b : a));
-  const saved = near(+(recall('maiaElo') || cfg.player_rating || 800));
-  $('maia-rating').innerHTML = cfg.maia_ratings.map((r) =>
-    `<option value="${r}"${r === saved ? ' selected' : ''}>~${r}</option>`).join('');
-  $('maia-rating').onchange = (e) => { store('maiaElo', e.target.value); refresh(); };
-  const syncDisabled = () => { $('maia-rating').disabled = !$('maia-toggle').checked; };
-  $('maia-toggle').checked = recall('maiaOn') !== '0';
-  syncDisabled();
-  $('maia-toggle').onchange = (e) => {
-    store('maiaOn', e.target.checked ? '1' : '0');
-    syncDisabled();
-    refresh();
-    renderShapes();
-    renderKeyCard();
-  };
+  maiaElo = near(+(recall('maiaElo') || cfg.player_rating || 800));
 }
 
 function setEngineVisible(on) {
