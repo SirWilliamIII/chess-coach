@@ -620,6 +620,7 @@ function renderInfo() {
   document.body.classList.toggle('demo-mode', !!state.demo);
   $('game-info').textContent = '';
   setFoot('');
+  $('demo-pin').classList.toggle('hidden', !state.demo);
   if (state.demo) return renderDemoInfo();
 
   if (state.play) return renderPlayInfo();
@@ -3004,10 +3005,14 @@ function renderDemoInfo() {
   const name = explore ? d.fileName : d.title;
   const off = explore ? 'off the line: your moves' : 'your own moves';
   setFoot(name ? `${name}${d.edited ? ` · ${off}` : ''}` : d.edited ? off[0].toUpperCase() + off.slice(1) : '', name || '');
+  // the move's note pins to the top of the coach panel (user's call, 2026-10-12): in the row above the board it
+  // pushed the board down, and notes run to a couple of lines
   const note = d.step ? d.notes[d.step - 1] : '';
+  $('demo-pin').classList.toggle('hidden', !note);
+  $('demo-pin').innerHTML = note ? `<b class="demo-pin-move">${esc(moveName(demoLabels(d)[d.step - 1], d.moves[d.step - 1]))}</b> ${inline(note)}` : '';
   $('summary').innerHTML = `<div class="play-buttons">
       <button class="btn ghost small" id="demo-replay">Replay</button>
-    </div>${note ? `<div class="demo-note">${inline(note)}</div>` : ''}`;
+    </div>`;
   $('demo-replay').onclick = () => openDemo({ ...d, moves: d.moves, notes: d.notes });
 }
 

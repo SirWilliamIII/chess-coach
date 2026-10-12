@@ -399,7 +399,7 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
   border-radius: 6px; font: inherit; font-size: 11px; letter-spacing: .04em; cursor: pointer; vertical-align: middle; }
 .sb-rate:hover { border-color: #4a4844; }
 .sb-head .sb-rate { font-size: 13px; height: 26px; color: var(--text); }
-.chat-log { flex: 1; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
+.chat-log { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
 .msg { max-width: 92%; padding: 9px 12px; border-radius: 10px; word-wrap: break-word; }
 .msg p { margin: 0 0 16px; }
 .msg p:last-child, .msg ul:last-child, .msg ol.points:last-child, .msg .alert-red:last-child, .msg .protip:last-child { margin-bottom: 0; }
@@ -553,7 +553,14 @@ body.demo-mode .board-wrap { box-shadow: 0 0 0 3px #6d6c68; border-radius: 3px; 
 .demo-sub { color: var(--muted); font-weight: 400; font-size: 13px; }
 .demo-line { font-weight: 600; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #player-top .btn.small { margin-left: auto; padding: 3px 10px; font-size: 13px; }
-.demo-note { margin-top: 8px; font-size: 13px; background: #2d3326; border-radius: 6px; padding: 6px 10px; width: 100%; }
+/* a demo's note for the move on the board, pinned at the top of the coach panel (renderDemoInfo) */
+.demo-pin { flex: 0 1 auto; min-height: 3em; max-height: 40%; overflow-y: auto;  /* shrinks in a short panel: the input always fits */
+  margin: 10px 14px 0; padding: 8px 12px; border-radius: 8px;
+  background: #2d3326; border-left: 3px solid var(--accent); font-size: 13.5px; line-height: 1.5; }
+.demo-pin.hidden { display: none; }
+/* while a note is pinned it says what the board shows: the "Asking about" line goes, so a short panel keeps its input */
+.chat-panel:has(.demo-pin:not(.hidden)) .context { display: none; }
+.demo-pin-move { color: var(--accent); margin-right: 4px; }
 .demo-row { display: grid; grid-template-columns: 44px auto 1fr; gap: 8px; padding: 5px 8px; cursor: pointer; align-items: baseline; }
 .demo-row:hover { background: #3a3835; }
 .demo-row.active { background: #4b4845; }
@@ -907,13 +914,13 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
 /* The row above the board is one line that never changes height (user, 2026-10-12: a status line or a row of buttons
    inserted here pushed the board down and the buttons under it off the screen, and squeezed the opening name; the
    board's size assumes this row is one line). A status shrinks with "…" (its full text is the tooltip; the long
-   version is in the chat), buttons keep their size, the opening takes what's left. A demo's per-move note (lesson
-   notes are ~100 characters) still gets its own line for now. */
+   version is in the chat), buttons keep their size, the opening takes what's left. A demo's per-move note pins to
+   the top of the coach panel instead (.demo-pin). */
 @media (min-width: 901px) {
-  .top-row:not(:has(.demo-note)) { flex-wrap: nowrap; height: 32px; }
+  .top-row { flex-wrap: nowrap; height: 32px; }
   .top-row .player.top { min-width: 0; flex-wrap: nowrap; overflow: hidden; }
   .top-row .head-row { flex: 0 1 auto; min-width: 0; flex-wrap: nowrap; }
-  .top-row:not(:has(.demo-note)) #summary { flex-wrap: nowrap; align-items: center; min-width: 0; }
+  .top-row #summary { flex-wrap: nowrap; align-items: center; min-width: 0; }
   .top-row #summary .status, .top-row #summary .label, .top-row #summary .ed-status {
     width: auto; flex: 0 1 auto; min-width: 0; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .top-row #summary .play-buttons { width: auto; flex: none; flex-wrap: nowrap; margin-top: 0; }

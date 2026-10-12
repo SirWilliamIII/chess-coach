@@ -468,9 +468,11 @@ file says what is true now. Last full cleanup: 2026-10-03.
     puzzle status, the editor's `.ed-status`) shrinks with "…" and carries its text as `title`; buttons keep their
     size; the opening pill takes what's left and hides under 120 px (`.opening-slot` is a size container) instead
     of showing as a sliver. Measured: the end-of-drill row at 1280/1440/1920 keeps the board where it was (the pill
-    hides at 1280 and 1440). **Exception:** a demo's per-move note (`.demo-note`, lesson notes median 101 / max 232
-    characters) still gets its own line and still moves the board; where notes should live is open. Phones keep
-    their own rules (the opening on its own line; puzzles' fixed status line).
+    hides at 1280 and 1440). A demo's per-move note (lesson notes median 101 / max 232 characters) pins to the top of
+    the coach panel instead (`#demo-pin`, user's pick 2026-10-12): the move, then the note; it shrinks and scrolls in a
+    short panel, and the "Asking about" line hides while it shows so the input always fits (measured at 1280×800:
+    the coach panel is 210 px there). On phones it's on the Coach screen. Phones keep their own rules for the row
+    (the opening on its own line; puzzles' fixed status line).
   - **The line under the board** (`setFoot()` → `#board-sub`, 2026-10-10; user: "it can be really helpful or really
     confusing", after "Opening puzzle · Your game vs … · Caro-Kann Defense: Advance Variation" under a your-mistakes
     puzzle): one line saying what this board is, never what the rows above already say (names, opening pill,
