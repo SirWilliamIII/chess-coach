@@ -147,10 +147,12 @@ file says what is true now. Last full cleanup: 2026-10-03.
   Exit, back to the board at its move. Not tested: play-on at a leaf and Back to the lesson, a build left running.
 - Explore lines tested (2026-10-12): list on arrival, search, a line on the demo board, Clear board, back to the board
   at its move, phone width.
-- **Each section its own panel (agreed 2026-10-12)** instead of the shared scoreboard. `takePanel(title, phoneLabel)`
-  (app.js) puts an empty `.own-body` in the scoreboard's place for good (`body.own-panel`; header title `#score-title`,
-  the hidden panel's tab `#score-tab-label`, the phone's middle tab `#m-tab-moves`) and returns it; `ownPanel()` stops
-  the scoreboard's searches. Used by Explore lines (the list) and lessons:
+- **Each section its own panel (2026-10-12)** instead of the shared scoreboard. `takePanel(title, phoneLabel)`
+  (app.js) puts an empty `.own-body` in the scoreboard's place (`body.own-panel`; header title `#score-title`, the
+  hidden panel's tab `#score-tab-label`, the phone's middle tab `#m-tab-moves`) and returns it; `setOwnPanel(on)` hands
+  the place back to the scoreboard and takes it again; `ownPanel()` stops the scoreboard's searches. Panels follow the
+  board through `hooks.afterUpdate`. `sections/notation.js` (+ `.css`) numbers a line of moves (`lineHtml()`,
+  `moveNum()`) for all of them.
   - **Lesson notation** (`renderNotation()` in openings.js, on `hooks.afterUpdate`, 2026-10-12): Learn shows the whole
     tree (main line bold, each branch indented under the move it branches from, Lichess-study style; the board's move
     highlighted, a ✓ after a mastered line's last move); moves you've reached (on the path to the board's move, or
@@ -159,9 +161,19 @@ file says what is true now. Last full cleanup: 2026-10-03.
     highlighted. Rebuilt only when the lesson, mode or mastery changes (`lnKey`), so the scroll survives each move.
     Tested: 149/149 Najdorf moves, 32 branches, highlight follows, click back, Drill shows `1.e4` only. Not tested:
     a family lesson (220 nodes, deep nesting), a phone.
-  - Still to do: Explore lines' opened line as notation under the list (the same renderer); Endgames the drill (goal,
-    material, moves, slips, Hold-it progress); Puzzles the puzzle while solving (where it's from, rating, your level,
-    the session), the scoreboard back once it's over. Then the nav redesign (groups).
+  - **Explore lines:** the open line as notation under the list (`renderLine()`, `#rep-line`): the board's move
+    highlighted, a click goes there, moves you play off the line in italics from where you left it (`demo.line` keeps
+    the file's moves).
+  - **Endgames ("Drill"):** `renderDrill()`: material glyphs, Win it / Hold it, material balance, slips (tablebase
+    drills), a Hold-it drill's moves n/30, ✓ Done / ✗ Not this time, the moves played (click = `playView`). Before a
+    drill a "Pick an ending" button. The eval toggle no longer brings the scoreboard back here.
+  - **Puzzles ("Puzzle"):** `renderPzPanel()` while a puzzle is live and before the first one: Lichess puzzle / Your
+    game, rating or opponent, the opening, your level (not for your games), this visit's solved/tried with dots
+    (`pzSession`, filled by `pzRecord`). Once a puzzle is over, and after Exit, the scoreboard is back
+    (`setOwnPanel(false)` then `update()` so it searches).
+  - Tested (2026-10-12): all three on desktop (line notation + click, a drill's panel, a live puzzle, a skip, Exit →
+    scoreboard). Not tested: a solved puzzle handing over to the scoreboard (same path as Exit), phones.
+  - Next: the nav redesign (Play / Learn / Explore groups) over the sections.
 
 ### Server and state
 

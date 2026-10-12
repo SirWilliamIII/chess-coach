@@ -41,3 +41,14 @@
 .eg-start { margin-top: 20px; }
 .eg-types { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 .eg-sub { font-size: 11.5px; color: var(--muted); line-height: 1.35; text-align: left; }
+/* the drill panel in the scoreboard's place (renderDrill()) */
+.eg-p-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.eg-p-head .eg-art { font-size: 26px; }
+.eg-p-goal { font-weight: 700; font-size: 15px; }
+.eg-p-facts { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 13px; }
+.eg-p-facts b { color: var(--text); font-variant-numeric: tabular-nums; }
+.eg-p-result { font-weight: 700; font-size: 14px; }
+.eg-p-result.ok { color: #7fd36a; }
+.eg-p-result.fail { color: var(--t3-text); }
+.eg-p-moves { flex: 1; min-height: 0; overflow-y: auto; border-top: 1px solid var(--line); padding-top: 10px; font-size: 14px; line-height: 1.9; }
+.ln-empty { display: grid; place-items: center; flex: 1; }

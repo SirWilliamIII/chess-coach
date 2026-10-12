@@ -17,6 +17,7 @@ import {
   currentGame, botMove, levelForRating, getBotLevels, bumpPlayToken, markBoardTaken, sectionNav, setDemoTimer, takePanel,
   CHIPS, CHIP_TIPS, START_FEN, baseShapes, cg, closeDemo, evalPill, knightShapes, openDemo, stopAutoplay, syncCards,
 } from '../app.js';
+import { moveNum, lineHtml } from './notation.js';
 
 
 const studyShown = new Set();   // node ids whose card has been posted this session
@@ -890,16 +891,10 @@ let lnKey = '';  // what the panel shows; rebuilt only when it changes, so its s
 // the lesson on the board, or the one a play-on game came from
 const lnStudy = () => state.study || state.play?.backLesson?.study || null;
 
-// "6." before every White move; "6..." before a Black move only where the line resumes (after a branch)
-function lnNum(fen, force) {
-  const [, turn, , , , n] = fen.split(' ');
-  return turn === 'w' ? `<span class="ln-num">${n}.</span>` : force ? `<span class="ln-num">${n}...</span>` : '';
-}
-
 function lnMove(N, id, force, prog, leaves) {
   const n = N[id];
   const tick = leaves.has(id) && (prog[id] || 0) >= MASTERED ? '<span class="ln-tick" title="Mastered">✓</span>' : '';
-  return `${lnNum(N[n.parent].fen, force)}<button class="ln-mv" data-id="${id}">${esc(n.san)}</button>${tick} `;
+  return `${moveNum(N[n.parent].fen, force)}<button class="ln-mv" data-id="${id}">${esc(n.san)}</button>${tick} `;
 }
 
 // the line on from node `pid`: its main move, then each other try as an indented branch, then on along the main move
@@ -915,16 +910,6 @@ function lnFrom(N, pid, force, prog, leaves) {
     id = main;
   }
   return html;
-}
-
-// the moves played so far, for Drill (and for a game played on past the lesson)
-function lnPlayed(sans) {
-  const c = new Chess(START_FEN);
-  return sans.map((san, i) => {
-    const num = lnNum(c.fen(), i === 0);
-    c.move(san);
-    return `${num}<span class="ln-mv${i === sans.length - 1 ? ' on' : ''}">${esc(san)}</span> `;
-  }).join('');
 }
 
 function renderNotation() {
@@ -943,7 +928,9 @@ function renderNotation() {
     const key = `drill|${state.extra.join(' ')}`;
     if (key === lnKey) return;
     lnKey = key;
-    notePanel.innerHTML = `<div class="ln-tree ln-drill">${lnPlayed(state.extra) || '<span class="ln-num">…</span>'}</div>`;
+    // the moves played so far, the last one highlighted; not buttons (◀ steps back in a drill)
+    const played = lineHtml(state.extra, START_FEN, { on: state.extra.length - 1 }).replaceAll(' reach', '');
+    notePanel.innerHTML = `<div class="ln-tree ln-drill">${played || '<span class="ln-num">…</span>'}</div>`;
     return;
   }
   const prog = studyProgress();

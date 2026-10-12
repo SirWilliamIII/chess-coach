@@ -60,3 +60,13 @@
 .pz-update { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .pz-update .hint { margin: 0; flex: 1 1 260px; }
 .pz-job { color: #f2d06b; }
+/* the puzzle in the scoreboard's place while you solve it (renderPzPanel()) */
+.pz-p-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.pz-p-src { font-weight: 700; font-size: 15px; }
+.pz-p-row { display: flex; align-items: baseline; gap: 8px; font-size: 13.5px; }
+.pz-p-row b { font-variant-numeric: tabular-nums; }
+.pz-p-dots { display: flex; gap: 3px; margin-left: 6px; align-self: center; }
+.pz-p-dots i { width: 8px; height: 8px; border-radius: 50%; }
+.pz-p-dots i.ok { background: #7fd36a; }
+.pz-p-dots i.miss { background: var(--t3); }
+.ln-empty { display: grid; place-items: center; flex: 1; }

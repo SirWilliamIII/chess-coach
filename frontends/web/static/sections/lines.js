@@ -8,9 +8,10 @@
 // Arriving always starts from a fresh analysis board and the whole list, like the other exercise-style sections.
 
 import {
-  $, hooks, api, esc, markdown, openDemo, demoStep, setReview, setPhonePage, takePanel,
+  $, hooks, state, api, esc, markdown, openDemo, demoStep, setReview, setPhonePage, takePanel,
   markBoardTaken, sectionNav, PHONE, TOUCH, START_FEN,
 } from '../app.js';
+import { lineHtml } from './notation.js';
 
 // the list's markup first: the list code below wires listeners on it as it loads
 document.head.insertAdjacentHTML('beforeend', '<link rel="stylesheet" href="/static/sections/lines.css">');
@@ -20,7 +21,8 @@ takePanel('Explore lines', 'Lines').innerHTML = `
     <input id="rep-q" aria-label="Search lines" autocomplete="off" spellcheck="false">
     <button class="rep-clear hidden" id="rep-clear" title="Clear the search"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
   </div>
-  <div id="rep-list" class="rep-list"></div>`;
+  <div id="rep-list" class="rep-list"></div>
+  <div id="rep-line" class="rep-line hidden"></div>`;
 
 let repSections = null, repOpenKey = null;
 let repFetch = null;
@@ -235,7 +237,7 @@ function openRepLine(si, gi, li, end) {
   const branch = g.lines.length > 1 && ln.div ? ` ${ln.div}` : '';
   // a named line's name goes under the board, so the top row only adds which branch it is
   openDemo({ title: `${name}${branch}`, short: ln.name ? branch.trim() : `${g.label}${branch}`, fileName: ln.name,
-    start_fen: START_FEN, moves: ln.moves, notes, explore: true, section: sec.title });
+    start_fen: START_FEN, moves: ln.moves, notes, explore: true, section: sec.title, line: ln.moves });
   if (end != null) demoStep(end + 1);
 }
 
@@ -259,7 +261,28 @@ async function showList() {
   if (!TOUCH) $('rep-q').focus({ preventScroll: true });
 }
 
+// The open line as notation under the list (user's call, 2026-10-12): the move on the board highlighted, a click goes
+// there; moves you play off the line show in italics after where you left it
+function renderLine() {
+  const box = $('rep-line');
+  const d = state.demo;
+  if (!d?.explore) { box.classList.add('hidden'); box.dataset.key = ''; return; }
+  let off = d.moves.findIndex((san, i) => san !== d.line[i]);
+  if (off < 0) off = Infinity;
+  const key = `${d.moves.join(' ')}|${d.step}`;
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.classList.remove('hidden');
+  box.innerHTML = lineHtml(d.moves, d.start_fen, { on: d.step - 1, offFrom: off });
+  box.querySelector('.ln-mv.on')?.scrollIntoView({ block: 'nearest' });
+}
+$('rep-line').onclick = (e) => {
+  const b = e.target.closest('.ln-mv');
+  if (b && state.demo?.explore) demoStep(+b.dataset.i + 1);
+};
+
 Object.assign(hooks, {
+  afterUpdate: renderLine,
   freshOnArrival: true,
   saveable: () => false,
   // a fresh analysis board, so the coach talks about what the lines put on it, not the board page's game

@@ -11,7 +11,7 @@
 import { Chess } from '../vendor/chess-1.4.0.js';
 import {
   $, hooks, state, api, store, recall, esc, addMsg, setReview, setEngineVisible, setFoot, update, renderChips,
-  closeGpDropdown, currentGame, ask, goSection, markBoardTaken, sectionNav,
+  closeGpDropdown, currentGame, ask, goSection, markBoardTaken, sectionNav, takePanel, setOwnPanel,
 } from '../app.js';
 
 
@@ -45,6 +45,7 @@ function pzRate(puzzleRating, won) {
 }
 
 function pzRecord(pz, ok) {
+  pzSession.push(ok);
   const s = pzJson('pzStats', {});
   const keys = [`t:${pzTopicKey(pz.topic)}`, `p:${pzTopicKey(pz.topic)}|${pz.p.pattern}`];
   keys.forEach((k) => { s[k] = { tries: 0, solved: 0, ...s[k] }; s[k].tries++; if (ok) s[k].solved++; });
@@ -477,6 +478,7 @@ function pzExplain(pz) {
 }
 
 function pzExit() {
+  pzExited = true;
   state.puzzle = null;
   pzToken++;
   setEngineVisible(recall('engineOn') !== '0');
@@ -540,7 +542,45 @@ sectionNav('btn-puzzles', () => openPuzzles());
 const EMPTY = { game_id: null, white: '?', black: '?', white_elo: null, black_elo: null, result: '*', opening: null,
   start_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', moves: [], player_color: 'white' };
 
+// ---- the puzzle in the scoreboard's place while you solve it (user's call, 2026-10-12: the scoreboard would give it
+// away): where it's from, the opening, your level, this visit's results. Once it's over (or after Exit) the
+// scoreboard comes back for a look around; before the first puzzle the panel opens the picker.
+
+const pzSession = [];  // this visit's results, true = solved clean (pzRecord)
+const pzPanel = takePanel('Puzzle');
+
+function renderPzPanel() {
+  const pz = state.puzzle;
+  const own = !pz ? !pzSession.length && !pzExited : !pz.done;
+  if (own !== document.body.classList.contains('own-panel')) {
+    setOwnPanel(own);
+    if (!own) return void update();  // the scoreboard searches this position now
+  }
+  if (!own) return;
+  if (!pz) {
+    if (pzPanel.dataset.key === 'none') return;
+    pzPanel.dataset.key = 'none';
+    pzPanel.innerHTML = '<div class="ln-empty"><button class="btn small" id="pz-pick-panel">Puzzles</button></div>';
+    $('pz-pick-panel').onclick = () => openPuzzles();
+    return;
+  }
+  const { p } = pz;
+  const key = `${p.id}|${pzSession.length}`;
+  if (pzPanel.dataset.key === key) return;
+  pzPanel.dataset.key = key;
+  const solved = pzSession.filter(Boolean).length;
+  pzPanel.innerHTML = `<div class="pz-p-head"><span class="pz-p-src">${p.mine ? 'Your game' : 'Lichess puzzle'}</span>`
+    + `<span class="pz-n">${pzWhere(p)}</span></div>`
+    + `<div class="pz-p-row">${esc(p.variation)}</div>`
+    + (pz.pattern ? `<div class="pz-p-row"><span class="pz-k">Drilling</span>${esc(pz.pattern.title)}</div>` : '')
+    + (p.mine ? '' : `<div class="pz-p-row"><span class="pz-k">Your level</span><b>${pzRating()}</b></div>`)
+    + (pzSession.length ? `<div class="pz-p-row"><span class="pz-k">This visit</span><b>${solved}/${pzSession.length}</b>`
+      + `<span class="pz-p-dots">${pzSession.slice(-20).map((ok) => `<i class="${ok ? 'ok' : 'miss'}"></i>`).join('')}</span></div>` : '');
+}
+let pzExited = false;  // after Exit the board is an analysis board: the scoreboard's
+
 Object.assign(hooks, {
+  afterUpdate: renderPzPanel,
   puzzleMove: onPuzzleMove,
   puzzleInfo: renderPuzzleInfo,
   puzzleShapes: pzShapes,

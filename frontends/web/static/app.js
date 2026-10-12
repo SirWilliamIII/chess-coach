@@ -1404,12 +1404,6 @@ function renderKeyCard() {
     box.innerHTML = '<p class="hint sb-off">Hidden until the puzzle is over: the engine\'s moves would give the answer away.</p>';
     return;
   }
-  const off = hooks.keyCardOff?.();  // a section that keeps the numbers hidden says why (an empty panel looked broken)
-  if (off) {
-    box.classList.remove('hidden');
-    box.innerHTML = `<p class="hint sb-off">${esc(off)}</p>`;
-    return;
-  }
   if (state.editor || !state.review || !(sfOn || humansOn)) {
     return void box.classList.add('hidden');
   }
@@ -4614,20 +4608,29 @@ async function openGameAt({ id, ply, note }) {
   update();
 }
 
-// A section page's own panel in the scoreboard's place, for good: its title (header, the hidden panel's tab, the phone's
-// middle tab) and an empty body to fill. The scoreboard stops searching (ownPanel()).
+// A section page's own panel in the scoreboard's place: its title (header, the hidden panel's tab, the phone's middle
+// tab) and an empty body to fill. The scoreboard stops searching while it's up (ownPanel()).
+let ownTitles = null;
 function takePanel(title, phoneLabel = title) {
-  document.body.classList.add('own-panel');
+  ownTitles = { title, phoneLabel };
+  const body = document.createElement('div');
+  body.className = 'own-body';
+  $('score-panel').querySelector('.score-body').after(body);
+  closeGpDropdown();  // it would hang over the panel
+  setOwnPanel(true);
+  return body;
+}
+
+// a section can hand the place back to the scoreboard for a while (Puzzles, once one is over)
+function setOwnPanel(on) {
+  if (on === ownPanel()) return;
+  document.body.classList.toggle('own-panel', on);
+  const { title, phoneLabel } = on ? ownTitles : { title: 'Scoreboard', phoneLabel: 'Moves' };
   $('score-title').textContent = $('score-tab-label').textContent = title;
   $('m-tab-moves').textContent = phoneLabel;
   $('score-hide').title = `Hide ${title.toLowerCase()}`;
   $('score-tab').title = `Show ${title.toLowerCase()}`;
-  if (document.body.classList.contains('hide-score')) setPanelHidden('score', false);  // it's the page's panel
-  closeGpDropdown();  // it would hang over the panel
-  const body = document.createElement('div');
-  body.className = 'own-body';
-  $('score-panel').querySelector('.score-body').after(body);
-  return body;
+  if (on && document.body.classList.contains('hide-score')) setPanelHidden('score', false);  // it's the page's panel
 }
 
 // On a section page its own nav item opens its picker and every other item belongs to the board page: go there and
@@ -4647,7 +4650,7 @@ function setDemoTimer(t) { demoTimer = t; }
 export {
   $, SECTION, hooks, state, api, store, recall, esc, addMsg, setReview, setEngineVisible, setFoot,
   playView, playChess, botMove, levelForRating, getBotLevels, bumpPlayToken, goSection, markBoardTaken,
-  update, renderChips, closeGpDropdown, currentGame, ask, sectionNav, setDemoTimer, PHONE, TOUCH, markdown, takePanel,
+  update, renderChips, closeGpDropdown, currentGame, ask, sectionNav, setDemoTimer, PHONE, TOUCH, markdown, takePanel, setOwnPanel,
   setPhonePage, setPanelHidden, demoStep,
   CHIPS, CHIP_TIPS, START_FEN, baseShapes, cg, closeDemo, evalPill, knightShapes, openDemo, stopAutoplay, syncCards,
 };

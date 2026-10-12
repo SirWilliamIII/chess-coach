@@ -797,7 +797,7 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .pos-actions .link { font-size: 13px; }
 @media (max-width: 520px) { .pos-save-row { flex-direction: column; } }
 /* a section page's own panel in the scoreboard's place (takePanel(): Explore lines, a lesson's notation) */
-body.own-panel .score-body { display: none !important; }
+body.own-panel .score-body, body:not(.own-panel) .own-body { display: none !important; }
 .own-body { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 10px; padding: 14px 14px 0; }
 .score-panel .panel-title { display: flex; align-items: center; gap: 4px; }
 .nav-item.on { background: var(--hover-2); color: var(--text); }

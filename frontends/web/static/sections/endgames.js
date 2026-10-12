@@ -8,8 +8,9 @@
 
 import {
   $, hooks, state, api, store, recall, esc, addMsg, setReview, setEngineVisible, playView, playChess, botMove,
-  levelForRating, getBotLevels, bumpPlayToken, markBoardTaken, sectionNav,
+  levelForRating, getBotLevels, bumpPlayToken, markBoardTaken, sectionNav, takePanel,
 } from '../app.js';
+import { lineHtml } from './notation.js';
 
 
 const EG_MODES = {
@@ -246,6 +247,7 @@ async function egAfterMyMove(p, fenBefore, uci, label) {
     addMsg('coach sb-msg', `<div class="sb-alert t3 fresh"><span class="sb-al">Tablebase</span> 💥 ${esc(label)} throws away ${lost}: it's ${mv.outcome === 'loss' ? 'lost' : 'a draw'} now.`
       + ` ${best.length ? `Best was ${esc(best.join(', '))}.` : ''} Take it back and try again, or play on.</div>`);
     eg.expect = mv.outcome;
+    renderDrill();
   }
 }
 
@@ -257,6 +259,7 @@ async function egMyTurn(p, fen) {
   if (EG_RANK[tb.outcome] > EG_RANK[eg.expect]) {
     addMsg('coach sb-msg', `<div class="sb-alert good fresh"><span class="sb-al">Tablebase</span> The bot slipped: it's ${tb.outcome === 'win' ? 'a win' : 'a draw'} for you again.</div>`);
     eg.expect = tb.outcome;
+    renderDrill();
   }
   // "hold the draw" is done after enough moves with the draw kept
   const mine = Math.ceil(p.moves.length / 2);
@@ -273,6 +276,7 @@ async function egTakeback(p) {
   if (!eg.ok) eg.done = false;
   const tb = await egProbe(playChess(p).fen());
   if (state.play === p && tb.covered) eg.expect = tb.outcome;
+  renderDrill();
 }
 
 function egFinish(p, ok, text) {
@@ -281,6 +285,7 @@ function egFinish(p, ok, text) {
   eg.done = true;
   eg.ok = ok;
   if (ok) egRecord(`${eg.spec}|${eg.mode}`, 'done');
+  renderDrill();
   const slips = eg.slips ? ` ${eg.slips} slip${eg.slips > 1 ? 's' : ''} on the way.` : eg.source === 'tablebase' ? ' No slips.' : '';
   const msg = addMsg('coach sb-msg', `<div class="eg-card ${ok ? 'ok' : 'fail'}"><div class="eg-goal">${ok ? '✓ Drill done' : '✗ Not this time'}</div>`
     + `<div class="card-sub">${esc(text)}${esc(slips)}</div><div class="eg-actions"><button class="btn small" data-a="again">Another one</button>`
@@ -326,7 +331,47 @@ sectionNav('btn-endgames', () => openEndgames());
 const EMPTY = { game_id: null, white: '?', black: '?', white_elo: null, black_elo: null, result: '*', opening: null,
   start_fen: '4k3/8/8/8/8/8/8/4K3 w - - 0 1', moves: [], player_color: 'white' };
 
+// ---- the drill in the scoreboard's place (user's call, 2026-10-12: nothing to score while the eval is hidden): the
+// goal, the material, how it's going (slips, a Hold-it drill's moves so far), the moves played (a click steps there)
+
+const drillPanel = takePanel('Drill');
+drillPanel.onclick = (e) => {
+  const b = e.target.closest('.ln-mv');
+  if (b && state.play?.endgame) playView(+b.dataset.i + 1);
+};
+
+function renderDrill() {
+  const p = state.play;
+  const eg = p?.endgame;
+  if (!eg) {
+    if (drillPanel.dataset.key === 'none') return;
+    drillPanel.dataset.key = 'none';
+    drillPanel.innerHTML = '<div class="ln-empty"><button class="btn small" id="eg-pick-panel">Pick an ending</button></div>';
+    $('eg-pick-panel').onclick = () => openEndgames();
+    return;
+  }
+  const mine = Math.ceil(p.moves.length / 2);
+  const key = [p.moves.join(' '), p.view, eg.slips, eg.expect, eg.done, eg.ok].join('|');
+  if (drillPanel.dataset.key === key) return;
+  drillPanel.dataset.key = key;
+  const white = p.color === 'white';
+  const goal = eg.outcome === 'win' ? 'Win it' : 'Hold it';
+  const diff = eg.points[0] - eg.points[1];
+  const facts = [
+    `<span>Material <b>${diff > 0 ? '+' : diff < 0 ? '−' : '±'}${Math.abs(diff)}</b></span>`,
+    eg.source === 'tablebase' ? `<span>Slips <b>${eg.slips}</b></span>` : '',
+    eg.outcome === 'draw' ? `<span>Moves <b>${Math.min(mine, EG_HOLD_MOVES)}/${EG_HOLD_MOVES}</b></span>` : '',
+  ].filter(Boolean).join('');
+  const result = eg.done ? `<div class="eg-p-result ${eg.ok ? 'ok' : 'fail'}">${eg.ok ? '✓ Done' : '✗ Not this time'}</div>` : '';
+  drillPanel.innerHTML = `<div class="eg-p-head"><span class="eg-art"><span class="${white ? 'w' : 'b'}">${egGlyphs(eg.mine, white)}</span>`
+    + `<span class="eg-vs">vs</span><span class="${white ? 'b' : 'w'}">${egGlyphs(eg.theirs, !white)}</span></span>`
+    + `<span class="eg-p-goal">${goal}</span></div><div class="eg-p-facts">${facts}</div>${result}`
+    + `<div class="ln-tree eg-p-moves">${lineHtml(p.moves, p.startFen, { on: p.view - 1 })}</div>`;
+  drillPanel.querySelector('.ln-mv.on')?.scrollIntoView({ block: 'nearest' });
+}
+
 Object.assign(hooks, {
+  afterUpdate: renderDrill,
   afterMyMove: egAfterMyMove,
   myTurn: egMyTurn,
   gameOver: egGameOver,
@@ -334,8 +379,6 @@ Object.assign(hooks, {
   retry: egRetry,
   foot: (p) => `Endgame drill · ${EG_MODES[egModeFor(p.endgame.spec, p.endgame.mode)][0]} · ${p.endgame.spec === 'pawns:even' ? 'Dead even' : egSpecLabel(p.endgame.spec)}`,
   saveable: () => !!state.play?.endgame,  // only a drill is worth coming back to
-  // with the eval off the numbers would only be half there (and Maia's are no help)
-  keyCardOff: () => (!state.play || !state.engineOn) && 'Off during the drill: the engine would give it away.',
   idleInfo: () => {
     $('summary').innerHTML = '<div class="play-buttons"><button class="btn small" id="eg-pick">Pick an ending</button></div>';
     $('eg-pick').onclick = () => openEndgames();

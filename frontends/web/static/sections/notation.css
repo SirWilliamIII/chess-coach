@@ -1,0 +1,8 @@
+/* numbered moves in a section panel (sections/notation.js): a lesson's notation, Explore lines' open line */
+.ln-num { color: var(--muted); font-size: 12.5px; margin-right: 2px; font-variant-numeric: tabular-nums; }
+.ln-mv { font: inherit; color: inherit; background: none; border: 0; border-radius: 4px; padding: 1px 4px; margin: 0 -1px; cursor: default; }
+.ln-mv.reach { cursor: pointer; }
+.ln-mv.reach:hover { background: var(--hover); }
+.ln-mv.on, .ln-mv.reach.on:hover { background: var(--accent); color: #1c1b19; }
+.ln-mv.off { font-style: italic; color: var(--muted); }
+.ln-mv.off.on { color: #1c1b19; }

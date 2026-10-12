@@ -40,3 +40,7 @@
 .rep-subs { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 6px 15px; padding-left: 10px; border-left: 1px solid var(--line); }
 .rep-row.sub { padding: 5px 8px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .rep-row.sub:hover, .rep-row.sub.on { color: var(--text); }
+/* the open line as notation under the list (renderLine()) */
+.rep-line { flex: none; max-height: 30%; overflow-y: auto; margin: 0 -14px; padding: 10px 14px 14px; border-top: 1px solid var(--line);
+  font-size: 14px; line-height: 1.9; }
+.rep-line.hidden { display: none; }
