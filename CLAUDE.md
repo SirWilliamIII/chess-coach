@@ -462,6 +462,15 @@ file says what is true now. Last full cleanup: 2026-10-03.
     leftover width with basis 0 so a long name shrinks instead of wrapping the row, the pill is centred in it and
     hidden with no opening; its own line ≤ 760 px), and `.head-row` (`#summary`: Play bot from here / game status and
     buttons / the editor's buttons, `#pb-takeback`).
+  - **The row above the board is one fixed line on desktop** (2026-10-12; user: a status or a row of buttons inserted
+    there pushed the board down and the buttons under it off the screen, and squeezed the opening name; the board's
+    size budget assumes one line): `.top-row` 32 px, nowrap ≥ 901 px. A status (`.status`, lesson `.label`s, the
+    puzzle status, the editor's `.ed-status`) shrinks with "…" and carries its text as `title`; buttons keep their
+    size; the opening pill takes what's left and hides under 120 px (`.opening-slot` is a size container) instead
+    of showing as a sliver. Measured: the end-of-drill row at 1280/1440/1920 keeps the board where it was (the pill
+    hides at 1280 and 1440). **Exception:** a demo's per-move note (`.demo-note`, lesson notes median 101 / max 232
+    characters) still gets its own line and still moves the board; where notes should live is open. Phones keep
+    their own rules (the opening on its own line; puzzles' fixed status line).
   - **The line under the board** (`setFoot()` → `#board-sub`, 2026-10-10; user: "it can be really helpful or really
     confusing", after "Opening puzzle · Your game vs … · Caro-Kann Defense: Advance Variation" under a your-mistakes
     puzzle): one line saying what this board is, never what the rows above already say (names, opening pill,

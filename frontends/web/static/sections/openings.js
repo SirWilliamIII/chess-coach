@@ -842,7 +842,7 @@ function renderStudyInfo() {
   else if (st.waiting) status = 'Opponent is moving…';
   else status = studyNodes()[studyNodeHere()].children.length ? 'Play the arrowed move.' : 'End of this line: ◀ to go back and try another.';
   $('summary').innerHTML = `<div class="seg study-mode">${['learn', 'drill'].map((m) => `<button data-mode="${m}" class="${st.mode === m ? 'on' : ''}">${m === 'learn' ? 'Learn' : 'Drill'}</button>`).join('')}</div>`
-    + `<span class="label" title="A line is mastered after ${MASTERED} clean drill runs in a row">${count}/${leaves.length} mastered</span>${status ? `<span class="label">${esc(status)}</span>` : ''}`
+    + `<span class="label" title="A line is mastered after ${MASTERED} clean drill runs in a row">${count}/${leaves.length} mastered</span>${status ? `<span class="label" title="${esc(status)}">${esc(status)}</span>` : ''}`
     + '<button class="btn ghost small" id="study-exit">Exit lesson</button>';
   $('summary').querySelectorAll('[data-mode]').forEach((b) => { b.onclick = () => setStudyMode(b.dataset.mode); });
   $('study-exit').onclick = () => { state.study = null; studyToken++; renderChips(); addMsg('system', 'Left the lesson. The board stays as an analysis board.'); update(); };

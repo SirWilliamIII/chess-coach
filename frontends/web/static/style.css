@@ -900,6 +900,25 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
   -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 /* phones: the opening gets its own line under the name and the buttons */
 @media (max-width: 900px) { .opening-slot { order: 3; flex-basis: 100%; justify-content: flex-start; } }
+/* a name squeezed below readable hides instead of showing as a sliver; it comes back when the buttons go */
+.opening-slot { container-type: inline-size; }
+@container (max-width: 119px) { .opening-box { display: none; } }
+
+/* The row above the board is one line that never changes height (user, 2026-10-12: a status line or a row of buttons
+   inserted here pushed the board down and the buttons under it off the screen, and squeezed the opening name; the
+   board's size assumes this row is one line). A status shrinks with "…" (its full text is the tooltip; the long
+   version is in the chat), buttons keep their size, the opening takes what's left. A demo's per-move note (lesson
+   notes are ~100 characters) still gets its own line for now. */
+@media (min-width: 901px) {
+  .top-row:not(:has(.demo-note)) { flex-wrap: nowrap; height: 32px; }
+  .top-row .player.top { min-width: 0; flex-wrap: nowrap; overflow: hidden; }
+  .top-row .head-row { flex: 0 1 auto; min-width: 0; flex-wrap: nowrap; }
+  .top-row:not(:has(.demo-note)) #summary { flex-wrap: nowrap; align-items: center; min-width: 0; }
+  .top-row #summary .status, .top-row #summary .label, .top-row #summary .ed-status {
+    width: auto; flex: 0 1 auto; min-width: 0; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .top-row #summary .play-buttons { width: auto; flex: none; flex-wrap: nowrap; margin-top: 0; }
+  .top-row #summary .pz-status { flex-wrap: nowrap; min-width: 0; overflow: hidden; }
+}
 
 
 

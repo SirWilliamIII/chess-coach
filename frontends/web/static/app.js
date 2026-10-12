@@ -3172,7 +3172,7 @@ function updateEditor() {
       <button class="btn ghost small" id="ed-analyse" ${problem ? 'disabled' : ''}>Analyze</button>
       <button class="btn ghost small" id="ed-save" ${problem ? 'disabled' : ''} title="Save this set-up to 📌 Positions">💾 Save</button>
       <button class="btn ghost small" id="ed-cancel">Cancel</button>
-    </div><div class="ed-status bad${problem ? '' : ' hidden'}" id="ed-status">${esc(problem || '')}</div>`;  // only what's wrong: a fine position needs no line (it pushed the board down)
+    </div><div class="ed-status bad${problem ? '' : ' hidden'}" id="ed-status" title="${esc(problem || '')}">${esc(problem || '')}</div>`;  // only what's wrong: a fine position needs no line (it pushed the board down)
   $('ed-play').onclick = () => { pendingFen = editorFen(); openPlayDialog(); };
   $('ed-analyse').onclick = analyseEditorPosition;
   $('ed-save').onclick = openSavePosition;
@@ -3196,7 +3196,7 @@ function updateEditor() {
       if (state.engineOn) showEval(data);
     } catch (e) {
       if (token !== evalToken || !state.editor) return;
-      $('ed-status').textContent = e.message;
+      $('ed-status').textContent = $('ed-status').title = e.message;
       $('ed-status').classList.remove('hidden');
       $('ed-play').disabled = $('ed-analyse').disabled = $('ed-save').disabled = true;
       $('engine-lines').innerHTML = '';
@@ -3211,7 +3211,7 @@ async function analyseEditorPosition() {
     setReview(review, 'Analysis board from your set-up position. Move pieces and ask the coach anything.');
     return true;
   } catch (e) {
-    $('ed-status').textContent = e.message;
+    $('ed-status').textContent = $('ed-status').title = e.message;
     $('ed-status').classList.add('bad');
     return false;
   }
@@ -3837,7 +3837,7 @@ function renderPlayInfo() {
     : (p.thinking ? '<button class="btn ghost small" id="pb-stop">Stop bot</button>' : '');
   const back = p.back ? '<button class="btn ghost small" id="pb-back">Back to the game</button>'
     : p.backLesson ? '<button class="btn ghost small" id="pb-lesson">Back to the lesson</button>' : '';
-  $('summary').innerHTML = `${status ? `<div class="status ${cls}">${esc(status)}</div>` : ''}<div class="play-buttons">${buttons}${back}</div>`;
+  $('summary').innerHTML = `${status ? `<div class="status ${cls}" title="${esc(status)}">${esc(status)}</div>` : ''}<div class="play-buttons">${buttons}${back}</div>`;
   $('pb-back')?.addEventListener('click', backToGame);
   $('pb-lesson')?.addEventListener('click', () => hooks.backToLesson());
   $('pb-review')?.addEventListener('click', reviewPlayedGame);
