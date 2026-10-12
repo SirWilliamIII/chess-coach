@@ -970,11 +970,12 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 Add an entry the moment something is noticed, even when it's out of scope for the work at hand; delete it when fixed.
 
-- **The Lichess games section is still partly below the fold at 1440×900 on a loaded game.** User picked "shorten the
-  lists" (2026-10-12): `sbRows()` gives Top bot / Top player moves 3 rows while the section shows. Fits on a fresh
-  board; on a loaded game (move strip + report strip + your-move card above) the heading and first row show and the
-  rest is ~80 px under the panel's edge (measured at ply 4). Next knobs: 3 Lichess rows (~50 px), or fold the
-  report strip during the opening. Ask before more layout changes.
+- **Lichess games' last row is cut at 1440×900 on a loaded game** (26 px short, measured at ply 4). In the opening
+  (while the section shows) every list has 3 rows (`sbRows()`, the section's own included) and the report strip
+  drops its graph (`reportStrip(rep, opening)`); user's calls 2026-10-12. Panel at 1440×900: header 49, move strip 75,
+  report strip 41, your-move card 74, the three lists 97/99/101. The rest would come out of the coach panel, against
+  the standing call that at limited heights the scoreboard scrolls and the split handle decides; left there. Tighter
+  rows/gaps were tried and made it worse (43 px short). Fits at 1920×1080; 1366×768 scrolls ~160 px.
 - **Explorer request rate:** ~20 requests per game's opening read slowly and uncached (measured 2026-10-12). Lichess
   publishes no explorer limit; its guidance is one request at a time and a full minute's wait after a 429, which
   `frontends/lichess/explorer.py` does (`RATE_LIMIT_WAIT` 61 s). Unofficial figures (~15/min anonymous, ~60/min with a

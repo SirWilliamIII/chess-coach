@@ -1302,10 +1302,12 @@ function reportGraph(rep, tall) {
     + `${now ? `<i class="rp-now" style="left:${100 * now / n}%"></i>` : ''}${dots}</div>`;  // at move 0 it was a stray line on the edge
 }
 
-function reportStrip(rep) {
-  if (!rep) return '<section class="sb-card report-strip"><div class="rp-graph skel"></div></section>';
+// `opening`: while Lichess games shows, the whole-game graph waits (it matters least there, and the three lists need
+// the room at 1440×900); the accuracies and the way into the report stay
+function reportStrip(rep, opening = false) {
+  if (!rep) return opening ? '' : '<section class="sb-card report-strip"><div class="rp-graph skel"></div></section>';
   const a = (c) => rep.sides[c].accuracy ?? '–';
-  return `<section class="sb-card report-strip">${reportGraph(rep, false)}<div class="rp-strip-row">`
+  return `<section class="sb-card report-strip">${opening ? '' : reportGraph(rep, false)}<div class="rp-strip-row">`
     + `<span>Accuracy <b>${a('white')}</b> · <b>${a('black')}</b></span><button class="rp-toggle">▸ Game report</button></div></section>`;
 }
 
@@ -1377,7 +1379,7 @@ function renderKeyCard() {
   // a loaded game's report: the whole card at its start (user's call, 2026-10-09), a strip above the cards after
   const rg = reportGame();
   const atStart = rg && state.ply === 0 && !state.extra.length;
-  if (rg) cards.push(atStart || reportOpen() ? reportFull(getReport(), !atStart) : reportStrip(getReport()));
+  if (rg) cards.push(atStart || reportOpen() ? reportFull(getReport(), !atStart) : reportStrip(getReport(), !!sbExplorer(fen)));
   if (!atStart) {
     if (k && sfOn) cards.push(sbAfter(L, k, u));
     if (now != null) cards.push(sbBefore(L, now, u));
@@ -1528,15 +1530,16 @@ function requestExplorer(c) {
   }, X_DWELL_MS);
 }
 
-// 3 rows per list while Lichess games shows, 5 otherwise (user's call, 2026-10-12: at 1440×900 the section sat
-// below the fold; the 4th and 5th candidates matter least in the opening)
+// In the opening (while Lichess games shows) every list has 3 rows, its own included, and the report strip drops its
+// graph (user's calls, 2026-10-12: at 1440×900 the section sat below the fold; the 4th and 5th candidates matter least
+// in the opening)
 const sbRows = (fen) => (sbExplorer(fen) ? 3 : 5);
 
 // the section under Top player moves: the moves Lichess players play here, how often, and how they score
 function sbExplorer(fen) {
   const d = xCache.get(fen);
   if (!d || d.total < X_MIN_GAMES || !d.moves.length) return '';
-  const rows = d.moves.slice(0, 5).map((m) => `<button class="sb-row x-db" data-uci="${esc(m.uci)}" title="${m.games.toLocaleString()} games · average rating ${m.avg_rating ?? '?'}">`
+  const rows = d.moves.slice(0, 3).map((m) => `<button class="sb-row x-db" data-uci="${esc(m.uci)}" title="${m.games.toLocaleString()} games · average rating ${m.avg_rating ?? '?'}">`
     + `<span class="sb-rank"></span><b class="sb-mv">${esc(m.san)}</b><span class="x-pct">${m.share}%</span>`
     + `<span class="x-bar"><i class="w" style="width:${m.white}%">${m.white >= 18 ? Math.round(m.white) : ''}</i>`
     + `<i class="d" style="width:${m.draws}%">${m.draws >= 18 ? Math.round(m.draws) : ''}</i>`
