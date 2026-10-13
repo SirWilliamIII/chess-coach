@@ -239,7 +239,18 @@ def search(q: str, limit: int = 30) -> list[dict]:
                 b.push_san(san)
             sub_rows.append({**_entry(o), "short": o["name"][len(g):].lstrip(":, "), "in_lesson": b.epd() in epds})
         out.append({**head, "subs": sub_rows})
-    return out
+    # lessons from your opening files first: built already, named by you, so matched on their name only
+    mine = []
+    for s in file_lessons():
+        if words and not match(s["name"]):
+            continue
+        line, k = [], s["nodes"][s["root"]]["main"]
+        while k is not None and len(line) < 8:
+            line.append(s["nodes"][k]["san"])
+            k = s["nodes"][k]["main"]
+        mine.append({"name": s["name"], "eco": s["eco"], "moves": line, "color": s["color"], "built": True,
+                     "subs": []})
+    return mine + out
 
 
 def load(name: str, color: str) -> dict | None:
@@ -487,7 +498,11 @@ def _facts(board: chess.Board, move: chess.Move) -> list[str]:
     return out
 
 
-def _notes_prompt(opening: dict, color: str, tree: dict) -> str:
+MASTERS_ORIGIN = "built from master games and checked by Stockfish"
+FILE_ORIGIN = "taken from the student's own opening file (their chosen repertoire) and checked by Stockfish"
+
+
+def _notes_prompt(opening: dict, color: str, tree: dict, origin: str = MASTERS_ORIGIN) -> str:
     nodes = tree["nodes"]
     rows = []
     for n in nodes.values():
@@ -521,7 +536,7 @@ def _notes_prompt(opening: dict, color: str, tree: dict) -> str:
         rows.append(" · ".join(bits))
     return f"""You are writing a study guide for the {opening['name']} ({opening['eco']}), for a student who plays {color}.
 
-Below is the lesson tree: every line the student will drill, built from master games and checked by Stockfish. Each row is one move: the node id, the move with its correct move number (use exactly that number when you name it), the full line up to and including it, who played it, how often masters play it, the engine's evaluation after it (White's point of view), and board facts.
+Below is the lesson tree: every line the student will drill, {origin}. Each row is one move: the node id, the move with its correct move number (use exactly that number when you name it), the full line up to and including it, who played it, how often masters play it, the engine's evaluation after it (White's point of view), and board facts.
 
 Write:
 1. "overview": what this opening is about for {color}. summary (3-4 sentences); key_ideas (the plans and piece placements that must be played, 4-6 items); pawn_breaks (which breaks, when, and what they aim at); wait_for (what to watch for from the opponent and the right reaction: their typical attacking setups, the signal that says it's time for a break, the moment a standard sacrifice works); common_mistakes (mistakes students make in this opening, 3-5 items).
@@ -578,7 +593,8 @@ def _verified(note: str, nid: str, nodes: dict, tree_sans: set[str]) -> bool:
     return True
 
 
-def _write_notes(opening: dict, color: str, tree: dict, model: str = STUDY_MODEL) -> tuple[dict, int]:
+def _write_notes(opening: dict, color: str, tree: dict, model: str = STUDY_MODEL,
+                 origin: str = MASTERS_ORIGIN) -> tuple[dict, int]:
     client = anthropic.Anthropic()
     t0 = time.monotonic()
     with client.beta.messages.stream(
@@ -588,7 +604,7 @@ def _write_notes(opening: dict, color: str, tree: dict, model: str = STUDY_MODEL
         output_config={"effort": "high", "format": {"type": "json_schema", "schema": NOTES_SCHEMA}},
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",   # a safety-classifier decline is rerouted instead of failing the build
-        messages=[{"role": "user", "content": _notes_prompt(opening, color, tree)}],
+        messages=[{"role": "user", "content": _notes_prompt(opening, color, tree, origin)}],
     ) as stream:
         response = stream.get_final_message()
     try:
@@ -627,6 +643,11 @@ def build(name: str, color: str, engine: Engine, explore, progress=lambda msg: N
     study = {"name": name, "eco": opening["eco"], "color": color, "slug": slug(name, color),
              "built": time.strftime("%Y-%m-%d"), "model": STUDY_MODEL, "overview": overview,
              "dropped_notes": dropped, **tree}
+    return _finish(study, engine, explore, progress)
+
+
+def _finish(study: dict, engine: Engine, explore, progress) -> dict:
+    """The steps after the notes, shared by both kinds of build: curveballs, moments, save."""
     try:
         add_curveballs(study, engine, explore, progress)
     except Exception:  # noqa: BLE001 — curveballs are extra; the lesson works without them
@@ -640,11 +661,140 @@ def build(name: str, color: str, engine: Engine, explore, progress=lambda msg: N
     return study
 
 
+# ---------------------------------------------------------------- lessons from your opening files
+# The same kind of lesson, but the lines come from one of your opening files (core.repertoire) instead of a
+# walk through master games: your moves are the file's and the opponent's tries are whatever the file
+# covers. Where the file gives you two moves in one position, the one more of its lines go through is the
+# main move and the other an `alt` (explored in Learn, not drilled), like a family lesson's alternatives.
+# Not in the ECO picker (the name is yours); search() lists them from data/studies/ (`from_file`).
+
+def file_lines(path: Path, only: list[str] = (), skip: list[str] = ()) -> list[list[str]]:
+    """The file's lines as SAN lists, kept when they start with one of `only` (if given) and with none of
+    `skip`; prefixes are space-separated SAN without numbers ("d4 f5 c4")."""
+    from core import repertoire
+    starts = lambda m, prefixes: any(m[:len(p)] == p for p in prefixes)
+    only_p, skip_p = [p.split() for p in only], [p.split() for p in skip]
+    return [ln["moves"] for ln in repertoire.parse(path.read_text())
+            if (not only_p or starts(ln["moves"], only_p)) and not starts(ln["moves"], skip_p)]
+
+
+def file_side(lines: list[list[str]]) -> str:
+    """The side the file is a repertoire for: the one that branches less (you pick one move, they have many)."""
+    kids: dict[tuple, set] = {}
+    for m in lines:
+        for i in range(len(m)):
+            kids.setdefault(tuple(m[:i]), set()).add(m[i])
+    branching = [len(k) % 2 for k, v in kids.items() if len(v) > 1]   # 0: White to move there
+    return "black" if branching.count(1) < branching.count(0) else "white"
+
+
+def _tree_from_lines(lines: list[list[str]], color: str, engine: Engine, progress) -> tuple[dict, list[dict]]:
+    """The lesson tree for the file's lines, plus the places where the file's main move is clearly worse
+    than the engine's best (ENGINE_SLACK), for the builder to show; the lesson still teaches the file."""
+    mine = chess.WHITE if color == "white" else chess.BLACK
+    nodes: dict[str, dict] = {"0": {"id": "0", "parent": None, "san": None, "uci": None,
+                                    "fen": chess.STARTING_FEN, "children": [], "main": None}}
+    through: dict[str, int] = {"0": 0}   # how many of the file's lines pass through each node
+    for m in lines:   # in file order, so a tie for the main move goes to the line written first
+        b, nid = chess.Board(), "0"
+        for san in m:
+            mv = b.parse_san(san)
+            kid = next((k for k in nodes[nid]["children"] if nodes[k]["uci"] == mv.uci()), None)
+            if kid is None:
+                kid = str(len(nodes))
+                nodes[kid] = {"id": kid, "parent": nid, "san": b.san(mv), "uci": mv.uci(), "children": [],
+                              "main": None, "source": "file"}
+                nodes[nid]["children"].append(kid)
+            b.push(mv)
+            nodes[kid]["fen"] = b.fen()
+            through[kid] = through.get(kid, 0) + 1
+            nid = kid
+    for n in nodes.values():
+        if n["children"]:
+            n["main"] = max(n["children"], key=lambda k: through[k])   # max keeps the first of equals
+            if chess.Board(n["fen"]).turn == mine:
+                for k in n["children"]:
+                    if k != n["main"]:
+                        nodes[k]["alt"] = True
+    # the trunk: the moves every line shares (studyOpeningName and add_human treat it as the way in)
+    trunk_end = "0"
+    nodes["0"]["trunk"] = True
+    while len(nodes[trunk_end]["children"]) == 1:
+        trunk_end = nodes[trunk_end]["children"][0]
+        nodes[trunk_end]["trunk"] = True
+
+    progress("Checking every position with the engine…")
+    sign = 1 if mine == chess.WHITE else -1
+    warnings = []
+    for i, n in enumerate(nodes.values()):
+        progress(f"Checking every position with the engine… ({i + 1}/{len(nodes)})")
+        b = chess.Board(n["fen"])
+        n["ply"] = _ply_of(nodes, n)
+        n["eval_white"] = engine.evaluate(b, seconds=0.5, depth=16)["eval_white"] if not b.is_game_over() else None
+        if b.turn != mine or not n["children"]:
+            continue
+        # the engine's view of your move here, for the notes (and to flag a file move it dislikes)
+        top = engine.lines(b, multipv=2, seconds=2, depth=18)
+        if not top:
+            continue
+        n["engine_top"] = [f"{t['move']} ({t['eval_white']})" for t in top]
+        main = nodes[n["main"]]
+        ours = next((t for t in top if t["uci"] == main["uci"]), None)
+        if ours is None:
+            nb = b.copy(stack=False)
+            nb.push_uci(main["uci"])
+            ours_cp = engine.evaluate(nb, seconds=2, depth=18)["cp_white"]
+        else:
+            ours_cp = ours["cp_white"]
+        loss = sign * (top[0]["cp_white"] - ours_cp)
+        if loss > ENGINE_SLACK:
+            warnings.append({"id": main["id"], "line": numbered(_line(nodes, main["id"])),
+                             "best": top[0]["move"], "loss": loss})
+    return {"root": "0", "trunk_end": trunk_end, "nodes": nodes}, warnings
+
+
+def build_from_lines(name: str, color: str, lines: list[list[str]], source: str, engine: Engine, explore,
+                     progress=lambda msg: None) -> dict:
+    if not lines:
+        raise ValueError("no lines to build from")
+    tree, warnings = _tree_from_lines(lines, color, engine, progress)
+    nodes = tree["nodes"]
+    # the ECO code of the deepest named position along the main line, for the picker row and the notes
+    eco_code, k = "", "0"
+    from core import eco
+    while k is not None:
+        hit = eco.lookup(chess.Board(nodes[k]["fen"]))
+        eco_code = hit["eco"] if hit else eco_code
+        k = nodes[k]["main"]
+    progress("The coach is writing the notes… (1-2 minutes)")
+    overview, dropped = _write_notes({"name": name, "eco": eco_code}, color, tree, origin=FILE_ORIGIN)
+    study = {"name": name, "eco": eco_code, "color": color, "slug": slug(name, color),
+             "built": time.strftime("%Y-%m-%d"), "model": STUDY_MODEL, "overview": overview,
+             "dropped_notes": dropped, "from_file": source, "file_warnings": warnings, **tree}
+    return _finish(study, engine, explore, progress)
+
+
+def file_lessons() -> list[dict]:
+    """Saved lessons built from opening files."""
+    out = []
+    for f in sorted(STUDY_DIR.glob("*.json")):
+        s = json.loads(f.read_text())
+        if s.get("from_file"):
+            out.append(s)
+    return out
+
+
+def color_of(name: str) -> str:
+    """The side a lesson is for: a file lesson's own, else what side() reads from the ECO name."""
+    return next((s["color"] for s in file_lessons() if s["name"] == name), None) or side(name)
+
+
 def coach_note(study: dict) -> str:
     """What the coach is told when a study starts (so its answers match the lesson)."""
     o = study["overview"]
+    origin = "built from the player's own opening file" if study.get("from_file") else "written from master games"
     return (f"The player is studying the {study['name']} as {study['color']} in the app's opening "
-            f"trainer. The lesson's overview (written from master games and checked by the engine): "
+            f"trainer. The lesson's overview ({origin} and checked by the engine): "
             f"{o['summary']} Key ideas: {'; '.join(o['key_ideas'])}. Pawn breaks: {'; '.join(o['pawn_breaks'])}. "
             f"What to wait for: {'; '.join(o['wait_for'])}. Keep answers consistent with this lesson and "
             f"teach: explain the why, the plans, and what the opponent is trying, not just the moves.")
@@ -972,6 +1122,39 @@ if __name__ == "__main__":
             engine.close()
         sys.stdout.flush()
         os._exit(0)  # the engine thread keeps the process alive otherwise
+    if sys.argv[1:2] == ["file"]:
+        # python -m core.study file PATH --name NAME [--color white|black] [--only "d4 f5 c4" …] [--skip …] [--dry-run]
+        import argparse
+        from frontends.lichess import explorer
+        ap = argparse.ArgumentParser(prog="python -m core.study file")
+        ap.add_argument("path", type=Path)
+        ap.add_argument("--name", required=True)
+        ap.add_argument("--color", choices=["white", "black"])
+        ap.add_argument("--only", action="append", default=[], help="keep lines starting with these moves")
+        ap.add_argument("--skip", action="append", default=[], help="drop lines starting with these moves")
+        ap.add_argument("--dry-run", action="store_true", help="count lines and positions, build nothing")
+        a = ap.parse_args(sys.argv[2:])
+        lines = file_lines(a.path, a.only, a.skip)
+        color = a.color or file_side(lines)
+        positions = len({tuple(m[:i]) for m in lines for i in range(1, len(m) + 1)}) + 1
+        print(f"{a.name}: {len(lines)} lines, {positions} positions, you play {color}")
+        if a.dry_run or not lines:
+            sys.exit(0)
+        engine = Engine(threads=4, hash_mb=256)
+        try:
+            t0 = time.monotonic()
+            study = build_from_lines(a.name, color, lines, a.path.name, engine,
+                                     functools.partial(explorer.explore, patient=True),
+                                     lambda msg: print(f"  {msg}", end="\r", flush=True))
+            print(f"\n  saved {study['slug']}.json in {(time.monotonic() - t0) / 60:.1f} min: "
+                  f"{sum(1 for n in study['nodes'].values() if n.get('note'))} notes ({study['dropped_notes']} dropped), "
+                  f"{sum(len(n.get('curveballs', [])) for n in study['nodes'].values())} curveballs")
+            for w in study["file_warnings"]:
+                print(f"  engine prefers {w['best']} over the file's move: {w['line']} (-{w['loss'] / 100:.2f})")
+        finally:
+            engine.close()
+        sys.stdout.flush()
+        os._exit(0)
     if sys.argv[1:2] == ["human"]:
         # python -m core.study human [--write] [--rating N] [slug ...]: prints what it would add; saves only with --write
         from core import maia as maia_mod

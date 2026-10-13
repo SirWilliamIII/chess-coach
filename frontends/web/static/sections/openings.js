@@ -859,7 +859,7 @@ function studyWalkthrough() {
   let branch = id;
   while (studyNodes()[branch].children.length === 1) branch = studyNodes()[branch].children[0];
   const tries = studyNodes()[branch].children.length > 1
-    ? ` Where the opponent has a choice (after ${studyLine(branch).slice(-1)[0] || 'the start'}), the lesson covers: ${studyNodes()[branch].children.map((k) => `${studyNodes()[k].san} (${studyNodes()[k].share}%)`).join(', ')}.` : '';
+    ? ` Where the opponent has a choice (after ${studyLine(branch).slice(-1)[0] || 'the start'}), the lesson covers: ${studyNodes()[branch].children.map((k) => studyNodes()[k].san + (studyNodes()[k].share != null ? ` (${studyNodes()[k].share}%)` : '')).join(', ')}.` : '';
   ask(`Walk me through this position in the ${st.data.name} lesson (I play ${st.data.color}): what I'm aiming for, `
     + `what my opponent is trying, and what to watch for. The lesson continues ${main.join(' ') || '(it ends here)'}.${tries} `
     + 'Explain the ideas behind those moves; keep it concise.', { hideQuestion: true });

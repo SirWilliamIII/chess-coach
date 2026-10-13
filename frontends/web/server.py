@@ -456,7 +456,7 @@ def study_openings(q: str = ""):
 
 
 class StudyReq(BaseModel):
-    name: str  # the side isn't chosen: study.side() decides it from the name
+    name: str  # the side isn't chosen: study.color_of() (a file lesson's own, else from the ECO name)
 
 
 def _study_job(name: str, color: str):
@@ -471,7 +471,7 @@ def _study_job(name: str, color: str):
 
 @app.post("/api/study/build")
 def study_build(req: StudyReq):
-    color = study.side(req.name)
+    color = study.color_of(req.name)
     if study.load(req.name, color):
         return {"status": "done"}
     if not explorer.available():
@@ -494,7 +494,7 @@ def study_job():
 def study_start(req: StudyReq):
     """Open a built study: a fresh analysis board from the start position with a coach that knows
     the lesson. Returns the study and the review, like the other mode switches."""
-    color = study.side(req.name)
+    color = study.color_of(req.name)
     s = study.load(req.name, color)
     if not s:
         raise HTTPException(404, "that lesson hasn't been built yet")

@@ -24,6 +24,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   | Scandinavian (B) | 150 | ✓ | ✓ | | ✓ |
   | Dragon, Accelerated Dragon, Nimzo, QGA, Italian Two Knights (B); Catalan, English, Alapin Sicilian, Caro-Kann Modern, Vienna Gambit/Max Lange (W) | 23-90 | ✓ | ✓ | | |
   | Catalan Open Defense Classical, English Anglo-Dutch (B); Dutch Leningrad Carlsbad (W) | 34-90 | | ✓ | | |
+  | From `combined-dutch.md` (B): "Dutch (my lines): 2.c4", "…: Nf3, g3, c4", "…: Anti-Dutch", "…: 1...e6" (2026-10-12, see "Lessons from your opening files") | 117-306 | ✓ | ✓ | | |
 
   Notes read through by the user: Najdorf and Dragon only.
 - **Human moves in lessons** (first version, Najdorf + Vienna Game only; see the lessons section). Not done:
@@ -920,6 +921,17 @@ file says what is true now. Last full cleanup: 2026-10-03.
   follows only your main move.
 - **Play on:** at a Learn leaf a bot game starts after `PLAY_ON_DELAY_MS` 1.5 s (`studyPlayOn()`, Maia
   1100-1800 chess.com, the line as `play.prefix`), with "Back to the lesson". Drill's line-complete card has a button.
+- **Lessons from your opening files** (2026-10-12; user: their Dutch file and the masters-built Dutch lesson parted
+  after ~4 plies): `python -m core.study file PATH --name NAME [--color] [--only "d4 f5 c4" …] [--skip …] [--dry-run]`
+  → `build_from_lines()`. The tree is the file's lines (`file_lines()`, prefixes are SAN without numbers), not the
+  masters walk; where the file has two moves for you, the one more lines go through is main, the other `alt`; the
+  shared prefix is the trunk; the side is the one that branches less (`file_side()`). Then the usual steps (evals,
+  `engine_top` on your moves, notes with `FILE_ORIGIN` wording, curveballs, moments; `_finish()` is shared with
+  `build()`). File moves the engine rates > `ENGINE_SLACK` worse are kept and listed in `file_warnings` (CLI prints
+  them). Saved with `from_file`; `search()` lists them first (by name, no ECO entry), `color_of()` gives the server
+  their side. No picker button to build one; the whole Dutch file is 1,016 positions, so it was split into four
+  (≤ 306 each, user's pick). No `share` on file nodes, so opponent replies are uniform. Rebuild after editing the
+  file: there's no link back, the lesson is a snapshot.
 - **Lesson text** (`lessonText()`/`lessonInline()`): its own tokenizer so moves resolve to lesson nodes
   (`studyFindMove()`), rendered as `.lm` buttons that play from where your board and that line split
   (`LESSON_STEP_MS` 650 ms).
