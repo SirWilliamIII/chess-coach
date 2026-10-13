@@ -229,7 +229,7 @@ $('board').addEventListener('mousedown', (e) => {
     requestAnimationFrame(() => {
       if (cg.state.drawable.current) cg.state.drawable.current.brush = drawBrush(drawMods) || 'drawNone';
     });
-  } else if (e.button === 0) {
+  } else if (e.button === 0 && !state.editor) {
     clearUserShapes();
   }
 }, true);
@@ -279,7 +279,7 @@ function renderBoard() {
       movable: { free: true, color: 'both', dests: undefined },
       draggable: { deleteOnDropOff: true },
     });
-    cg.setAutoShapes(overlayShapes());
+    cg.setAutoShapes([...overlayShapes(), ...drawnShapes()]);
     return null;
   }
   const c = currentGame();
@@ -2266,7 +2266,7 @@ function setOverlay(key, on) {
   overlays = { ...overlays, [key]: on };
   store('overlays', JSON.stringify(overlays));
   syncOverlayButton();
-  if (state.editor) cg.setAutoShapes(overlayShapes());
+  if (state.editor) renderBoard();
   else renderShapes();
 }
 
@@ -2286,10 +2286,17 @@ document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#ov-wra
 syncOverlayButton();
 
 // ---- your own arrows and circles (right-drag; modifier = colour). They belong to the position they
-// were drawn on: drawnShapes() drops them once the board shows anything else.
+// were drawn on: drawnShapes() drops them once the board shows anything else. On the set-up board they belong to
+// the board itself ('editor'), so moving pieces around doesn't drop them.
 
 let drawings = [];
 let drawingsFen = null;
+// the colour of a plain right-click/drag, picked in Set up's Marks row; a modifier key still wins
+let drawColor = 'drawNone';
+// marks that came with a saved position (or a set-up board's Analyze): they come back whenever the board is on that
+// position again, so a left click or a walk through the line doesn't lose them (only right-clicking one removes it)
+let savedMarks = null;
+const DRAW_BRUSHES = ['drawNone', 'drawCtrl', 'drawCmd', 'drawOpt', 'drawFn'];
 
 function drawBrush(m) {
   if (!m) return null;
@@ -2301,38 +2308,49 @@ function drawBrush(m) {
   return null;
 }
 
+const drawKey = () => (state.editor ? 'editor' : state.review || state.demo ? currentGame().fen() : null);
+
+// the drawings for the board as it stands, seeded from savedMarks when the board is back on that position
+function currentDrawings() {
+  const key = drawKey();
+  if (!key) return [];
+  if (drawingsFen !== key && savedMarks?.fen === key) { drawings = savedMarks.list.map((d) => ({ ...d })); drawingsFen = key; }
+  return drawingsFen === key ? drawings : [];
+}
+
 // Right-drag: an arrow. Right-click on an empty square (or on any square with a modifier): fill it.
-// Plain right-click on a piece: its threat arrows. A second right-click on the same square undoes it.
+// Plain right-click on a piece: its threat arrows (on the set-up board, which has none: fill it). A second
+// right-click on the same square undoes it.
 function userShape(s) {
-  const brush = drawBrush(drawMods);
-  if (s.dest) toggleDrawing({ orig: s.orig, dest: s.dest, brush: brush || 'drawNone' });
-  else if (brush || !cg.state.pieces.get(s.orig)) toggleDrawing({ orig: s.orig, brush: brush || 'drawNone' });
+  const brush = drawBrush(drawMods) || drawColor;
+  if (s.dest) toggleDrawing({ orig: s.orig, dest: s.dest, brush });
+  else if (drawBrush(drawMods) || state.editor || !cg.state.pieces.get(s.orig)) toggleDrawing({ orig: s.orig, brush });
   else holdThreatSquare(s.orig);
 }
 
 // drawing the same arrow again removes it (as chessground does), a different colour recolours it;
 // a filled square is cleared by any second right-click on it
 function toggleDrawing(shape) {
-  const fen = currentGame().fen();
+  const fen = drawKey();
+  currentDrawings();
   if (drawingsFen !== fen) { drawings = []; drawingsFen = fen; }
   const i = drawings.findIndex((d) => d.orig === shape.orig && d.dest === shape.dest);
   const keep = i < 0 || (shape.dest && drawings[i].brush !== shape.brush);
   if (i >= 0) drawings.splice(i, 1);
   if (keep) drawings.push(shape);
-  renderShapes();
+  if (savedMarks?.fen === fen) savedMarks.list = drawings.map((d) => ({ ...d }));
+  if (state.editor) renderBoard(); else renderShapes();
   paintSquares();
 }
 
 // filled squares, painted through chessground's square highlights (paintSquares), keyed by brush
 function drawnSquares() {
-  if (!drawings.length || drawingsFen !== currentGame().fen()) return [];
-  return drawings.filter((d) => !d.dest).map((d) => [d.orig, `sq-fill-${d.brush}`]);
+  return currentDrawings().filter((d) => !d.dest).map((d) => [d.orig, `sq-fill-${d.brush}`]);
 }
 
 // a knight-shaped arrow (a8 to b6) is drawn as an L, like the hover arrows
 function drawnShapes() {
-  if (!drawings.length || drawingsFen !== currentGame().fen()) return [];
-  return drawings.flatMap((d) => {
+  return currentDrawings().flatMap((d) => {
     if (!d.dest) return [];  // a filled square, see drawnSquares
     const df = Math.abs(d.orig.charCodeAt(0) - d.dest.charCodeAt(0)), dr = Math.abs(+d.orig[1] - +d.dest[1]);
     return df * dr === 2 ? knightShapes(d.orig, d.dest, d.brush) : [d];
@@ -2342,6 +2360,7 @@ function drawnShapes() {
 function clearUserShapes() {
   const had = drawings.length || heldSquares.size;
   drawings = [];
+  drawingsFen = null;  // so savedMarks come back on the next render
   heldSquares.clear();
   heldThreats = [];
   if (had) { renderShapes(); paintSquares(); }
@@ -2660,6 +2679,7 @@ function resetChatUi(note) {
 
 function setReview(review, note, play = null, { keepChat = false } = {}) {
   abPicking = false;  // a half-open "Play bot from here" picker belongs to the board it was opened on
+  savedMarks = null;
   closeDemo(false);
   state.study = null;
   closeEditor(false);
@@ -3012,7 +3032,10 @@ function editorProblem(fen) {
 function openEditor() {
   closeDemo(false);
   const c = state.review ? currentGame() : new Chess();
+  const marks = state.review ? currentDrawings().slice() : [];
   state.editor = { tool: 'move', turn: c.turn() === 'w' ? 'white' : 'black' };
+  drawings = marks;
+  drawingsFen = 'editor';
   cg.set({ fen: c.fen(), lastMove: undefined });
   // the tools beside the board, in the scoreboard's place (nothing to score while setting up; 2026-10-12, they were in
   // the Full Explorer dropdown). On a phone that panel is another screen, so they go under the board there.
@@ -3047,6 +3070,9 @@ function buildEditorPanel() {
       <button class="pal-mode" data-tool="remove">🗑 Remove</button>
     </div>
     ${tools}
+    <div class="field"><span class="label">Marks</span>
+      <div class="ed-marks">${DRAW_BRUSHES.map((b) => `<button class="mk-sw sq-fill-${b}" data-brush="${b}" title="Right-click a square or right-drag an arrow"></button>`).join('')}
+        <button class="link" id="ed-marks-clear">Clear marks</button></div></div>
     <div class="field"><span class="label">Side to move</span>
       <div class="seg" id="ed-turn"><button data-turn="white">White</button><button data-turn="black">Black</button></div></div>
     <div class="play-buttons">
@@ -3064,6 +3090,10 @@ function buildEditorPanel() {
   $('ed-turn').querySelectorAll('button').forEach((b) => {
     b.onclick = () => { state.editor.turn = b.dataset.turn; updateEditor(); };
   });
+  $('editor-body').querySelectorAll('[data-brush]').forEach((b) => {
+    b.onclick = () => { drawColor = b.dataset.brush; updateEditor(); };
+  });
+  $('ed-marks-clear').onclick = () => { drawings = []; updateEditor(); };
   const load = (fen) => {
     const [placement, turn] = fen.split(' ');
     cg.set({ fen: placement });
@@ -3114,6 +3144,8 @@ function updateEditor() {
   const problem = editorProblem(fen);
   $('editor-body').querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === ed.tool));
   $('ed-turn').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.turn === ed.turn));
+  $('editor-body').querySelectorAll('[data-brush]').forEach((b) => b.classList.toggle('on', b.dataset.brush === drawColor));
+  paintSquares();
   if (document.activeElement !== $('ed-fen')) $('ed-fen').value = fen;
 
   $('player-top').innerHTML = '<span class="demo-tag">Set-up board</span>';
@@ -3157,9 +3189,11 @@ function updateEditor() {
 
 async function analyseEditorPosition() {
   const fen = editorFen();
+  const list = currentDrawings().slice();
   try {
     const review = await api('/api/analysis', { fen });
     setReview(review, 'Analysis board from your set-up position. Move pieces and ask the coach anything.');
+    if (list.length) { savedMarks = { fen: currentGame().fen(), list }; update(); }
     return true;
   } catch (e) {
     $('ed-status').textContent = $('ed-status').title = e.message;
@@ -3906,7 +3940,7 @@ async function startGame() {
 const PIECE_GLYPH = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
 
 // a small static board for the list and the save dialog (no chessground: dozens of these at once)
-function miniBoard(fen, orientation = 'white') {
+function miniBoard(fen, orientation = 'white', fills = new Map()) {
   const rows = fen.split(' ')[0].split('/');
   const cells = [];
   rows.forEach((row, r) => {
@@ -3921,14 +3955,14 @@ function miniBoard(fen, orientation = 'white') {
     }
   });
   if (orientation === 'black') cells.reverse();
-  return cells.map(({ r, f, piece }) => `<span class="pm-sq ${(r + f) % 2 ? 'd' : 'l'}">${piece
+  return cells.map(({ r, f, piece }) => `<span class="pm-sq ${(r + f) % 2 ? 'd' : 'l'} ${fills.has('abcdefgh'[f] + (8 - r)) ? `sq-fill-${fills.get('abcdefgh'[f] + (8 - r))}` : ''}">${piece
     ? `<span class="pm-pc ${piece === piece.toUpperCase() ? 'w' : 'b'}">${PIECE_GLYPH[piece.toLowerCase()]}</span>` : ''}</span>`).join('');
 }
 
 // what's on the board now, as a line, plus a few words about where it came from
 function boardToSave() {
   if (state.editor) {
-    return { start_fen: editorFen(), moves: [], fen: editorFen(), source: 'Set-up position' };
+    return { start_fen: editorFen(), moves: [], fen: editorFen(), source: 'Set-up position', marks: currentDrawings().slice() };
   }
   const line = currentLine();
   const moves = line.sans.slice(0, line.at);
@@ -3937,8 +3971,11 @@ function boardToSave() {
     : state.study ? `Lesson: ${state.study.data?.name || 'opening'}`
     : r.moves.length ? `${r.white} vs ${r.black}`
     : line.startFen !== START_FEN ? 'Set-up position' : 'Analysis board';
-  return { start_fen: line.startFen, moves, fen: currentGame().fen(), source };
+  return { start_fen: line.startFen, moves, fen: currentGame().fen(), source, marks: currentDrawings().slice() };
 }
+
+// a mini board's filled squares, from a position's saved marks
+const markFills = (marks) => new Map((marks || []).filter((m) => !m.dest).map((m) => [m.orig, m.brush]));
 
 function openSavePosition() {
   if (!state.review && !state.editor) return;
@@ -3946,14 +3983,14 @@ function openSavePosition() {
   const [, turn, , , , num] = b.fen.split(' ');
   const where = `Move ${num}, ${turn === 'w' ? 'White' : 'Black'} to move`;
   const opening = $('opening-tag').classList.contains('hidden') ? '' : $('opening-tag').querySelector('.ot-name')?.textContent || '';
-  $('pos-save-board').innerHTML = miniBoard(b.fen, state.orientation);
+  $('pos-save-board').innerHTML = miniBoard(b.fen, state.orientation, markFills(b.marks));
   $('pos-title').value = opening ? `${opening.split(',')[0]}, move ${num}` : where;
   $('pos-save-sub').textContent = `${where} · ${b.source}`;
   $('pos-save-go').onclick = async () => {
     const title = $('pos-title').value.trim();
     if (!title) return void $('pos-title').focus();
     try {
-      await api('/api/positions', { title, start_fen: b.start_fen, moves: b.moves, orientation: state.orientation, source: b.source });
+      await api('/api/positions', { title, start_fen: b.start_fen, moves: b.moves, orientation: state.orientation, source: b.source, marks: b.marks });
     } catch (e) {
       $('pos-save-sub').textContent = e.message;
       return;
@@ -3985,7 +4022,7 @@ function renderPositions() {
     const [, turn, , , , num] = p.fen.split(' ');
     const date = new Date(p.created_at * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
     return `<div class="pos-item" data-id="${p.id}">
-      <button class="pos-mini" title="Open on the analysis board">${miniBoard(p.fen, p.orientation)}</button>
+      <button class="pos-mini" title="Open on the analysis board">${miniBoard(p.fen, p.orientation, markFills(p.marks))}</button>
       <div class="pos-info">
         <div class="pos-title" title="Double-click to rename">${esc(p.title)}</div>
         <div class="card-sub">Move ${num}, ${turn === 'w' ? 'White' : 'Black'} to move${p.opening ? ` · ${esc(p.opening)}` : ''}</div>
@@ -4023,11 +4060,13 @@ async function openSavedPosition(p) {
   setReview(review, null);
   state.extra = p.moves.slice();
   state.orientation = p.orientation;
+  if (p.marks?.length) savedMarks = { fen: currentGame().fen(), list: p.marks };
   update();
   addMsg('system', `📌 ${esc(p.title)}${p.source ? ` (${esc(p.source)})` : ''}`);
 }
 
 $('nav-save').onclick = openSavePosition;
+$('nav-keys').onclick = () => $('dlg-keys').showModal();
 
 // ---------------------------------------------------------------- recording a game
 // ⏺ under the board starts a recording from the line on the board now (the moves that led here included). From

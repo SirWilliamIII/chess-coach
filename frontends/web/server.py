@@ -311,6 +311,7 @@ class PositionReq(BaseModel):
     moves: list[str] = []  # SAN, from start_fen to the saved position
     orientation: str = "white"
     source: str | None = None
+    marks: list = []  # [{orig, dest?, brush}]: arrows and filled squares drawn on the position
 
 
 @app.post("/api/positions")
@@ -320,7 +321,7 @@ def position_save(req: PositionReq):
         raise HTTPException(400, "give the position a title")
     parse_fen(req.start_fen)  # 400 on a bad start position
     try:
-        return positions.save(title, req.start_fen, req.moves, req.orientation, (req.source or "")[:200] or None)
+        return positions.save(title, req.start_fen, req.moves, req.orientation, (req.source or "")[:200] or None, req.marks)
     except ValueError:
         raise HTTPException(400, "those moves don't replay from the start position")
 

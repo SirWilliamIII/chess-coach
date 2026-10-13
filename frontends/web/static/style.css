@@ -510,6 +510,11 @@ body.editor-mode .score-body, body.editor-mode .move-strip { display: none; }
 .pal-tools { display: flex; gap: 6px; }
 .pal-mode { flex: 1; background: #3c3a37; color: var(--text); border: 0; border-radius: 5px; padding: 6px; font-size: 13px; }
 .pal-row { display: flex; gap: 4px; }
+/* Set up's Marks row: the colour of a plain right-click / right-drag */
+.ed-marks { display: flex; align-items: center; gap: 6px; }
+.mk-sw { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; padding: 0; cursor: pointer; }
+.mk-sw.on { border-color: var(--text); }
+.ed-marks .link { margin-left: auto; }
 .pal { flex: 1; aspect-ratio: 1; max-width: 44px; background-color: #3c3a37; background-size: 85%; background-position: center;
        background-repeat: no-repeat; border: 2px solid transparent; border-radius: 6px; }
 .pal:hover, .pal-mode:hover { background-color: #4b4845; }
@@ -621,11 +626,11 @@ cg-board square.sq-hover { background: rgba(255, 196, 0, .55); box-shadow: inset
 cg-board square.sq-next { background: rgba(21, 120, 27, .5); box-shadow: inset 0 0 0 3px #15781b; }
 cg-board square.sq-next-opp { background: rgba(0, 48, 136, .4); box-shadow: inset 0 0 0 3px rgba(0, 48, 136, .8); }
 /* squares you fill with a right-click (drawBrush colours in app.js) */
-cg-board square.sq-fill-drawNone { background: rgba(247, 184, 140, .85); }
-cg-board square.sq-fill-drawCmd { background: rgba(160, 182, 236, .85); }
-cg-board square.sq-fill-drawOpt { background: rgba(140, 212, 206, .85); }
-cg-board square.sq-fill-drawCtrl { background: rgba(242, 160, 160, .85); }
-cg-board square.sq-fill-drawFn { background: rgba(204, 172, 232, .85); }
+cg-board square.sq-fill-drawNone, .mk-sw.sq-fill-drawNone, span.pm-sq.sq-fill-drawNone { background: rgba(247, 184, 140, .85); }
+cg-board square.sq-fill-drawCmd, .mk-sw.sq-fill-drawCmd, span.pm-sq.sq-fill-drawCmd { background: rgba(160, 182, 236, .85); }
+cg-board square.sq-fill-drawOpt, .mk-sw.sq-fill-drawOpt, span.pm-sq.sq-fill-drawOpt { background: rgba(140, 212, 206, .85); }
+cg-board square.sq-fill-drawCtrl, .mk-sw.sq-fill-drawCtrl, span.pm-sq.sq-fill-drawCtrl { background: rgba(242, 160, 160, .85); }
+cg-board square.sq-fill-drawFn, .mk-sw.sq-fill-drawFn, span.pm-sq.sq-fill-drawFn { background: rgba(204, 172, 232, .85); }
 cg-board square.sq-pin { background: rgba(255, 140, 0, .45); box-shadow: inset 0 0 0 4px #ff8c00; }
 
 /* ---------- library ---------- */
@@ -1164,3 +1169,6 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
 /* the engine on/off in the scoreboard's header (2026-10-12; it was the Full Explorer's "Engine lines" checkbox) */
 .engine-switch { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: var(--muted); cursor: pointer; }
 .engine-switch input { margin: 0; }
+
+/* the shortcuts list is keys and right-clicks: nothing a touch screen has */
+@media (pointer: coarse) { #nav-keys { display: none; } }

@@ -418,6 +418,20 @@ file says what is true now. Last full cleanup: 2026-10-03.
   discovered attacks count) with the moved piece safe. Not built: mating-net threats (a quiet move threatening mate).
   "Defended" = any attacker of that square, so pins and x-rays aren't weighed. Any board, including the set-up board
   (once its FEN is valid); off while a puzzle is live. Not tested: Safari/Firefox, a real touch screen.
+- **Marks saved with positions** (2026-10-13, user: key squares and sidelines on the set-up board): Set up's panel has a
+  **Marks** row (the five drawing colours as swatches = the colour of a plain right-click/drag, `drawColor`, per page
+  load, applies on every board; a modifier still wins; Clear marks). On the set-up board drawings are keyed `'editor'`
+  (`drawKey()`), not by FEN, so editing pieces keeps them, a right-click on a piece fills it (no threat arrows there),
+  and a left click doesn't clear them. Opening Set up brings the board's marks along; Analyze carries them onto the
+  analysis board. 💾 from any board saves the current position's drawings (`positions.marks`, JSON, `clean_marks()`;
+  the column is added by `ALTER` on old DBs); the mini boards show the filled squares (not arrows). Opening a saved
+  position sets `savedMarks`: they come back whenever the board is on that FEN (`currentDrawings()` seeds `drawings`
+  from it), so a left click or a move and ◀ don't lose them; right-clicking one removes it until the page reloads
+  (re-save to keep that). Not restored on refresh; no drawing on touch screens (needs right-click). Tested
+  (Playwright, 2026-10-13): draw in Set up, move a piece, save, Analyze, open from Positions, a move and ◀,
+  right-click removal.
+- **Shortcuts list** (`dlg-keys`, key `?`): also the keyboard button `#nav-keys`, last in the row under the board
+  (2026-10-13), hidden on touch screens.
 - **No hover arrows on the board** (user's call): hovering pieces draws nothing. Board arrows come from
   right-clicks/drags, the lesson guide, the coach's demos, and hovering a scoreboard row (user's call,
   2026-10-04: rows are the exception).

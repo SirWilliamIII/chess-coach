@@ -92,6 +92,7 @@
         </div>
         <button class="navbtn" id="nav-save" title="Save this position (s)" data-tip="Save position (s)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-3.75L7 20z"/></svg></button>
         <button class="navbtn" id="nav-rec" title="Record a game" data-tip="Record a game"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle class="rec-dot" cx="12" cy="12" r="3.5"/></svg><span class="rec-count" id="rec-count"></span></button>
+        <button class="navbtn" id="nav-keys" title="Keyboard shortcuts (?)" data-tip="Shortcuts (?)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.75" y="6.25" width="18.5" height="11.5" rx="2"/><path d="M6.5 10h1M10 10h1M13.5 10h1M17 10h.5M6.5 13.5h.5M9.5 13.5h5M17 13.5h.5"/></svg></button>
       </div>
     </section>
 
@@ -225,16 +226,17 @@
       <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Back / forward one move</td></tr>
       <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Start / last move</td></tr>
       <tr><td><kbd>f</kbd></td><td>Flip the board</td></tr>
-      <tr><td><kbd>s</kbd></td><td>Save this position</td></tr>
+      <tr><td><kbd>s</kbd></td><td>Save this position (with its drawings)</td></tr>
       <tr><td><kbd>v</kbd></td><td>Overlays: captures, checks, threats</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>Clear marked squares, or close a demo board</td></tr>
       <tr><td><kbd>?</kbd></td><td>This list</td></tr>
       <tr><th colspan="2">Drawing on the board</th></tr>
-      <tr><td>Right-drag</td><td>Arrow (orange)</td></tr>
+      <tr><td>Right-drag</td><td>Arrow (orange, or the colour picked in Set up → Marks)</td></tr>
       <tr><td>+ <kbd>⌃</kbd> <kbd>⌥</kbd> <kbd>⌘</kbd> <kbd>⇧</kbd></td><td>Red / teal / blue / purple</td></tr>
       <tr><td>Right-click empty square</td><td>Fill it (with a modifier: any square)</td></tr>
-      <tr><td>Right-click a piece</td><td>Show what it attacks (again to hide)</td></tr>
-      <tr><td>Left-click</td><td>Clear drawings</td></tr>
+      <tr><td>Right-click a piece</td><td>Show what it attacks (again to hide); in Set up, fill it</td></tr>
+      <tr><td>Same again</td><td>Remove that arrow or fill</td></tr>
+      <tr><td>Left-click</td><td>Clear drawings (not in Set up, not marks saved with a position)</td></tr>
       <tr><th colspan="2">Chat</th></tr>
       <tr><td><kbd>Enter</kbd></td><td>Send (<kbd>⇧</kbd> <kbd>Enter</kbd> for a new line)</td></tr>
     </table>
