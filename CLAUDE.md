@@ -95,8 +95,11 @@ file says what is true now. Last full cleanup: 2026-10-03.
   (org-spend card), `COACH_MODEL`, `STUDY_MODEL`, `COACH_EFFORT`, `COACH_THINKING`, `COACH_ENGINE_DEPTH`.
   One clone on this machine, `/Users/will/chess-coach` (the second, `~/Projects/chess-coach`, was deleted
   2026-10-10 at the user's request; its 3 saved answers are in `data/library-projects-clone-2026-09-26.sqlite`).
-- **Other devices (tailnet):** the primary clone keeps localhost and runs `tailscale serve --bg --http=80
-  localhost:8000` (2026-10-09), so other devices open `http://mbp.mastodon-snake.ts.net` (or `http://mbp`). The
+- **Other devices (tailnet):** the primary clone keeps localhost and `tailscale serve` proxies it, HTTPS only
+  (2026-10-13, user's call; the `--http=80` route from 2026-10-09 was removed): other devices open
+  `https://mbp.mastodon-snake.ts.net` (also a duplicate on `:9443`). `http://mbp` no longer answers. Tailnet-only, no
+  Funnel (public) route. localStorage is per origin, so each device's snapshot and settings from the old http URL
+  didn't carry over. The
   serve config persists in tailscaled; `tailscale serve status` / `tailscale serve reset`. There is no auth: every device shares the one global state (below),
   coach questions bill your API key, and `/usage` + `/lessons` expose org spend and saved answers.
 - **The server does not hot-reload Python.** Restart after editing `core/*.py` or `server.py`; `prompts/` and
