@@ -375,6 +375,10 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - **While the bot thinks**, `requestEval`/`requestMaia` don't search (2026-10-10): the reply (~0.45 s) made their
   result stale before it landed, and they held `S.engine`/`S.card_engine`/Maia for the position after it.
 - **Clock** exists only in fresh "Play a game" games, not in games played on from a position.
+- **Try again** (2026-10-12, user's call): a finished bot game that started from a position (`fromPosition()`: a
+  `play.prefix`, or a start FEN that isn't the standard one) offers "Try again" instead of "New game";
+  `retryPosition()` cuts the moves back to the prefix (the server's move endpoint is stateless) and the bot moves
+  first if it's its turn. Tested (Playwright): mate from an analysis-board FEN, Try again, same position, mate again.
 
 ### Board (chessground)
 
@@ -528,7 +532,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
     with no dwell, cutoff or cache check). At 1440×900 on a loaded game the section sits below the fold (move strip,
     report strip, your-move card and both lists come first); fits at 1920×1080 on a fresh board.
     Step 5 ✓: Set up's tools (`#editor-body`, `buildEditorPanel()`: presets, Move/Remove, the palette, side to move,
-    Clear / Starting position / Kings only, FEN) sit in the scoreboard's place while editing (`body.editor-mode`, panel
+    Clear / Starting position / Kings only, FEN, and a PGN box whose Review game loads it like Your games → Paste PGN,
+    a multi-game paste taking its first game) sit in the scoreboard's place while editing (`body.editor-mode`, panel
     title "Set up"); on phones they go under the board (moved there by `openEditor()`), and the board screen scrolls
     while editing (an exception to the no-scroll rule: the tools don't fit; its parts don't shrink, or the eval bar
     covered the wrapped Cancel/Analyze row). The ◀ ▶ row is `visibility: hidden` in Set up on desktop, not `display:

@@ -3055,6 +3055,8 @@ function buildEditorPanel() {
       <button class="btn ghost small" id="ed-kings">Kings only</button>
     </div>
     <label class="field"><span class="label">FEN</span><input id="ed-fen" spellcheck="false"></label>
+    <label class="field"><span class="label">PGN</span><textarea id="ed-pgn" rows="4" spellcheck="false"></textarea></label>
+    <button class="btn small" id="ed-pgn-go">Review game</button>
   </div>`;
   $('editor-body').querySelectorAll('[data-tool]').forEach((b) => {
     b.onclick = () => { state.editor.tool = b.dataset.tool; cg.set({ selected: undefined }); updateEditor(); };
@@ -3083,6 +3085,12 @@ function buildEditorPanel() {
   // mousedown, so a click on Play/Analyse right after editing the FEN was lost)
   const core = (fen) => fen.split(/\s+/).slice(0, 2).join(' ');
   $('ed-fen').onblur = () => { const v = $('ed-fen').value.trim(); if (v && core(v) !== core(editorFen())) load(v); };
+  // same path as Your games → Paste PGN; a multi-game paste takes its first game (that tab lists them all),
+  // and anything splitPgn doesn't see as a PGN (a game link) goes to the server as it is
+  $('ed-pgn-go').onclick = () => {
+    const text = $('ed-pgn').value.trim();
+    if (text) loadGame(splitPgn(text)[0] || text);
+  };
 }
 
 function onEditorSelect(key) {
@@ -3798,7 +3806,7 @@ function renderPlayInfo() {
   } else if (p.view < p.moves.length && !p.thinking) status = 'Viewing an earlier position; press → or ⏭ to return';
   const buttons = p.over
     ? `<button class="btn small" id="pb-review">Review<span class="long"> this game</span></button>
-       <button class="btn ghost small" id="pb-again">${p.endgame ? 'Try again' : 'New game'}</button>`
+       <button class="btn ghost small" id="pb-again">${p.endgame || fromPosition(p) ? 'Try again' : 'New game'}</button>`
     : (p.thinking ? '<button class="btn ghost small" id="pb-stop">Stop bot</button>' : '');
   const back = p.back ? '<button class="btn ghost small" id="pb-back">Back to the game</button>'
     : p.backLesson ? '<button class="btn ghost small" id="pb-lesson">Back to the lesson</button>' : '';
@@ -3806,8 +3814,24 @@ function renderPlayInfo() {
   $('pb-back')?.addEventListener('click', backToGame);
   $('pb-lesson')?.addEventListener('click', () => hooks.backToLesson());
   $('pb-review')?.addEventListener('click', reviewPlayedGame);
-  $('pb-again')?.addEventListener('click', p.endgame && hooks.retry ? () => hooks.retry(p) : openPlayDialog);
+  $('pb-again')?.addEventListener('click', p.endgame && hooks.retry ? () => hooks.retry(p)
+    : fromPosition(p) ? () => retryPosition(p) : openPlayDialog);
   $('pb-stop')?.addEventListener('click', stopBotThinking);
+}
+
+// a game played on from a position (a game's move, the analysis board, a set-up position, a lesson leaf):
+// its end offers that position again instead of the new-game dialog
+function fromPosition(p) {
+  return p.prefix > 0 || p.startFen !== START_FEN;
+}
+
+function retryPosition(p) {
+  playToken++;  // drop any bot reply in flight
+  const floor = p.prefix || 0;
+  Object.assign(p, { moves: p.moves.slice(0, floor), over: null, thinking: false });
+  if (p.clock?.start) Object.assign(p.clock, { white: p.clock.start, black: p.clock.start, lastTick: Date.now() });
+  playView(floor);
+  if (playChess(p).turn() !== p.color[0]) botMove();
 }
 
 let playColor = 'white';
@@ -3865,7 +3889,7 @@ async function startGame() {
     return;
   }
   const clock = clockOn
-    ? { white: clockMinutes * 60, black: clockMinutes * 60, increment: clockIncrement, lastTick: Date.now() }
+    ? { white: clockMinutes * 60, black: clockMinutes * 60, start: clockMinutes * 60, increment: clockIncrement, lastTick: Date.now() }
     : null;
   const play = { color, level, levelName, startFen: review.start_fen, moves: [], view: 0, over: null, thinking: false, clock };
   setEngineVisible($('play-engine').checked);

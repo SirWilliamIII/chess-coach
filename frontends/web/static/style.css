@@ -516,7 +516,9 @@ body.editor-mode .score-body, body.editor-mode .move-strip { display: none; }
 .pal.on, .pal-mode.on { border-color: var(--accent); background-color: #4b4845; }
 .pal-mode.on { box-shadow: inset 0 0 0 2px var(--accent); }
 .editor .field { margin: 4px 0; }
-.editor input { width: 100%; font-family: ui-monospace, monospace; font-size: 12px; }
+.editor input, .editor textarea { width: 100%; font-family: ui-monospace, monospace; font-size: 12px; }
+.editor textarea { resize: vertical; }
+#ed-pgn-go { align-self: flex-end; }
 .ed-status { font-size: 12px; color: var(--accent); margin-top: 6px; width: 100%; }
 .ed-status.bad { color: #ff8a80; }
 /* the ◀ ▶ row has nothing to step through in Set up: hidden but keeping its space, or the centred column moved the
