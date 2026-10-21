@@ -4,6 +4,7 @@
 #   ./start                 web app on http://localhost:8000 (or CHESS_HOST/CHESS_PORT from .env)
 #   ./start --host 0.0.0.0  reachable from other devices on your network (flags beat .env)
 #   ./start cli review 1 --me <user>   terminal version instead
+#   CHESS_IN_TAB=1 ./start  in this terminal, not a new kitty tab
 #
 # The web server's output is also appended to data/logs/server-YYYY-MM-DD.log.
 #
@@ -43,6 +44,23 @@ fi
 if [[ "${1:-}" == "cli" ]]; then
   shift
   exec .venv/bin/python cli.py "$@"
+fi
+
+# Inside kitty, run the server in its own tab without taking focus, so this terminal stays free. CHESS_IN_TAB
+# marks the relaunched copy (else it would open tabs forever); `kitty @ ls` fails when remote control is off,
+# and then the server runs here as before.
+if [[ -n "${KITTY_WINDOW_ID:-}" && -z "${CHESS_IN_TAB:-}" ]] && kitty @ ls >/dev/null 2>&1; then
+  # Checked here because a tab whose server dies on "address in use" closes before you can read why.
+  # Only the .env port: a --port flag isn't parsed here.
+  if lsof -ti tcp:"${CHESS_PORT:-8000}" -sTCP:LISTEN >/dev/null; then
+    echo "Something is already listening on port ${CHESS_PORT:-8000} (lsof -ti :${CHESS_PORT:-8000} | xargs kill to stop it)." >&2
+    exit 1
+  fi
+  # The tab gets kitty's environment, not this shell's: without PATH there's no /opt/homebrew/bin, so no stockfish.
+  kitty @ launch --type=tab --tab-title chess-coach --keep-focus --cwd "$PWD" \
+    --env CHESS_IN_TAB=1 --env PATH="$PATH" ./start "$@" >/dev/null
+  echo "Server started in the kitty tab 'chess-coach' (⌃C there stops it; log: data/logs/server-$(date +%F).log)."
+  exit 0
 fi
 # Everything the server prints also goes to data/logs/server-<day it started>.log (appended; data/ is gitignored),
 # so requests, coach timings, job progress and errors outlive the terminal. Unbuffered, or Python holds lines back

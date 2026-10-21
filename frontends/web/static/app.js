@@ -114,7 +114,7 @@ const cg = Chessground($('board'), {
   movable: { free: false, showDests: true, events: { after: onBoardMove } },
   premovable: { enabled: false },
   events: {
-    select: (key) => onEditorSelect(key),
+    select: (key) => { onEditorSelect(key); onPlayerSquare(key); },
     change: () => { if (state.editor) updateEditor(); },  // e.g. a piece dragged off the board
   },
   drawable: {
@@ -1386,6 +1386,7 @@ function renderKeyCard() {
     else if (!currentGame().isGameOver()) cards.push(sbWaiting());
   }
   box.innerHTML = cards.join('');
+  paintSquares();  // the player-move squares follow the search, the rating and the tactic hint
   wireReport(box);
   box.querySelectorAll('.sb-tac-btn').forEach((b) => {
     b.onclick = () => {
@@ -1802,7 +1803,9 @@ const pinnedSquares = new Set();
 let hoverSquare = null;
 
 function paintSquares() {
-  const marks = new Map([...(state.study && !state.demo ? hooks.studyNextSquares() : []), ...drawnSquares()]);
+  hmSquares = playerMoveSquares();
+  const marks = new Map([...[...hmSquares].map(([sq, m]) => [sq, `hm-${m.grade}`]),
+    ...(state.study && !state.demo ? hooks.studyNextSquares() : []), ...drawnSquares()]);
   pinnedSquares.forEach((sq) => marks.set(sq, 'sq-pin'));
   if (hoverSquare) marks.set(hoverSquare, 'sq-hover');
   cg.set({ highlight: { custom: marks } });
@@ -2208,6 +2211,62 @@ function ovCheckWorthIt(c, m, me, them) {
 const ovMine = () => overlays.mine !== false;
 const ovAny = () => !!(overlays.captures || overlays.checks || overlays.threats) && (ovMine() || !!overlays.theirs);
 
+// ---- player moves on the board ("Player moves" in the eye menu, 2026-10-21; user's picks): the squares Maia's top 5
+// at the players' rating move to, filled in chess.com's grade colours, and a click or tap on one plays that move.
+// Only where you could make the move yourself, and never while a puzzle, a lesson or an unshown tactic hint would be
+// given away. Two moves to one square: the more popular one has it.
+let hmSquares = new Map();  // square → {uci, grade}, as last painted
+const HM_TOP = 5;
+
+function playerMoveSquares() {
+  const out = new Map();
+  if (!overlays.players || !state.engineOn || state.editor || state.study || puzzleLive() || !state.review) return out;
+  const c = currentGame();
+  if (!canMove(c, c.turn() === 'w' ? 'white' : 'black')) return out;
+  const fen = c.fen();
+  const sb = sbGet(fen);
+  if (!sb || sb.over) return out;
+  const t = tacticHere();
+  if (t && t.fen === fen && t.level < 4) return out;  // the Great/Brilliant square would be the answer
+  const pcts = sbPcts(sb, maiaRating());
+  for (const [uci] of [...pcts].sort((a, b) => b[1] - a[1]).slice(0, HM_TOP)) {
+    const r = sb.all.find((x) => x.uci === uci);
+    const sq = uci.slice(2, 4);
+    if (r && !out.has(sq)) out.set(sq, { uci, grade: hmGrade(c, sb, r) });
+  }
+  return out;
+}
+
+// Great = the only good move (the tactics finder fired on it, a free piece aside); Brilliant = the best move when it
+// sacrifices material. Excellent and Good share Best's green (user's call)
+function hmGrade(c, sb, r) {
+  if (r.rank === 1) {
+    if (hmSacrifice(c, r.uci)) return 'brilliant';
+    return sb.tactic?.uci === r.uci && sb.tactic.kind !== 'free' ? 'great' : 'best';
+  }
+  const d = r.drop ?? 0;
+  return d < SB_GOOD ? 'best' : d < 15 ? 'inaccuracy' : d < 30 ? 'mistake' : 'blunder';
+}
+
+// a sacrifice: the moved piece can be won where it lands and is worth ≥ 2 more than what it took (a piece, not a
+// pawn: gambit pawns like the Queen's Gambit's c4 would all read Brilliant). First guess, not checked on games
+function hmSacrifice(c, uci) {
+  const g = new Chess(c.fen());
+  let m;
+  try { m = g.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || 'q' }); } catch { return false; }
+  if (m.piece === 'k' || g.isCheckmate()) return false;
+  const gave = OV_VALUE[m.piece] - (m.captured ? OV_VALUE[m.captured] : 0);
+  return gave >= 2 && !ovSafe(g, m.to, m.piece, m.color, m.color === 'w' ? 'b' : 'w');
+}
+
+// chessground calls this before handling the click: with nothing selected a coloured square plays its move (a
+// selected piece keeps the click, so its own moves work as always). Deferred so chessground finishes with the old board
+function onPlayerSquare(key) {
+  const m = hmSquares.get(key);
+  if (!m || state.editor || cg.state.selected) return;
+  setTimeout(() => onBoardMove(m.uci.slice(0, 2), m.uci.slice(2, 4)));
+}
+
 // the last position's shapes: hovering a scoreboard row redraws the board, and the threats play and undo every move
 let ovMemo = { key: null, shapes: [] };
 
@@ -2267,11 +2326,11 @@ function setOverlay(key, on) {
   store('overlays', JSON.stringify(overlays));
   syncOverlayButton();
   if (state.editor) renderBoard();
-  else renderShapes();
+  else { renderShapes(); paintSquares(); }
 }
 
 function syncOverlayButton() {
-  $('nav-ov').classList.toggle('on', ovAny());
+  $('nav-ov').classList.toggle('on', ovAny() || !!overlays.players);
   $('ov-menu').querySelectorAll('[data-ov]').forEach((b) => { b.checked = b.dataset.ov === 'mine' ? ovMine() : !!overlays[b.dataset.ov]; });
 }
 
@@ -4336,6 +4395,7 @@ $('load-go').onclick = () => {
 // the section pages' items (a section page rewires its own)
 if (SECTION === 'board') {
   navOn('btn-analysis');  // the board page is Analysis, whatever is on it
+  $('btn-analysis').querySelector('.nav-label').textContent = 'Start over';  // here it starts a fresh board
   $('btn-study').onclick = () => goSection('openings');
   $('btn-repertoire').onclick = () => goSection('lines');
   $('btn-endgames').onclick = () => goSection('endgames');
@@ -4481,10 +4541,13 @@ document.addEventListener('keydown', (e) => {
   $('engine-toggle').checked = engineOn;
   state.engineOn = engineOn;
   $('evalbar').classList.toggle('off', !engineOn);
-  const review = await api('/api/review');
+  let review = await api('/api/review');
   const linked = +(location.hash.match(/ply=(\d+)/)?.[1] || 0);
   if (SECTION !== 'board') await import(`./sections/${SECTION}.js`);  // fills `hooks`
   const intent = takeIntent();
+  // A browser's first visit starts from the starting position: the server's one board is whatever any device or
+  // section left on it last (a drill, a puzzle), which looked like scattered pieces (user, 2026-10-14)
+  if (SECTION === 'board' && !snapshot() && !linked && !intent) review = await api('/api/analysis', {});
   const taken = recall('boardTakenBy');
   if (SECTION === 'board') store('boardTakenBy', undefined);
   // Work sections (the board: games, analysis, bot games) come back where you left them; exercise sections

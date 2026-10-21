@@ -25,6 +25,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   | Dragon, Accelerated Dragon, Nimzo, QGA, Italian Two Knights (B); Catalan, English, Alapin Sicilian, Caro-Kann Modern, Vienna Gambit/Max Lange (W) | 23-90 | ✓ | ✓ | | |
   | Catalan Open Defense Classical, English Anglo-Dutch (B); Dutch Leningrad Carlsbad (W) | 34-90 | | ✓ | | |
   | From `combined-dutch.md` (B): "Dutch (my lines): 2.c4", "…: Nf3, g3, c4", "…: Anti-Dutch", "…: 1...e6" (2026-10-12, see "Lessons from your opening files") | 117-306 | ✓ | ✓ | | |
+  | From `data/Reti-2.json` / `data/Reti.json` (W): "Réti (my lines): 2.c4" (146), "…: 2.g3 and the rest" (293; = `openings6.md`'s `## Reti`) (2026-10-13; no 2...c6/...g6/...b6 lines after 2.c4 in the files) | 146-293 | ✓ | ✓ | | |
 
   Notes read through by the user: Najdorf and Dragon only.
 - **Human moves in lessons** (first version, Najdorf + Vienna Game only; see the lessons section). Not done:
@@ -89,7 +90,10 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 - `./start` (venv on first run, then the web app on :8000; host/port from `CHESS_HOST`/`CHESS_PORT` in `.env`,
   default 127.0.0.1:8000, flags override; the primary clone's `.env` binds 127.0.0.1 behind `tailscale serve`, see below) or
-  `.venv/bin/python -m frontends.web.server [--host H] [--port P]`. Default host `127.0.0.1`.
+  `.venv/bin/python -m frontends.web.server [--host H] [--port P]`. Default host `127.0.0.1`. Run from kitty
+  (remote control on), `./start` opens the server in its own tab, `chess-coach`, without taking focus, and returns
+  (2026-10-14); it refuses if `CHESS_PORT` is already taken. `CHESS_IN_TAB=1 ./start` runs it in place. The tab gets
+  kitty's environment, not the shell's, so `PATH` is passed through explicitly (without it: "Stockfish not found").
 - **`.env` is gitignored** and must exist per clone: `ANTHROPIC_API_KEY`, `LICHESS_TOKEN`, optional
   `CHESS_USER`, `PLAYER_RATING` (chess.com rapid since 2026-10-07, default 800; the primary clone has 790), `ANTHROPIC_ADMIN_KEY` + `MONTHLY_SPEND_LIMIT`
   (org-spend card), `COACH_MODEL`, `STUDY_MODEL`, `COACH_EFFORT`, `COACH_THINKING`, `COACH_ENGINE_DEPTH`.
@@ -150,7 +154,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
   `reopen` recipe. The server still holds one board, so a section page that replaces it calls `markBoardTaken()`
   (localStorage `boardTakenBy`); the board page then reopens its own on load (`reopenBoard()`: `/api/play/new` for a bot
   game, `/api/saved/open` for a saved review, else `/api/analysis`), and only then, so a game loaded on another
-  device still wins a plain refresh. **Work vs exercise sections** (user's call, 2026-10-11): the board page (games,
+  device still wins a plain refresh. A browser with no `board` snapshot (first visit) gets a fresh board from the starting position
+  instead of the server's (2026-10-14: it showed whatever drill or puzzle was left there). **Work vs exercise sections** (user's call, 2026-10-11): the board page (games,
   analysis, bot games) always resumes; an exercise section (`hooks.freshOnArrival`: Endgames) resumes only on a
   refresh (`performance` navigation type `reload`) and otherwise starts fresh: Endgames opens the picker on the
   Start step with the last choices. Puzzles and Learn openings aren't restored at all, not even on a refresh (the
@@ -421,6 +426,20 @@ file says what is true now. Last full cleanup: 2026-10-03.
   discovered attacks count) with the moved piece safe. Not built: mating-net threats (a quiet move threatening mate).
   "Defended" = any attacker of that square, so pins and x-rays aren't weighed. Any board, including the set-up board
   (once its FEN is valid); off while a puzzle is live. Not tested: Safari/Firefox, a real touch screen.
+- **Player moves on the board** (2026-10-21, user's idea; "Player moves" in the eye menu, `overlays.players`, off by
+  default): the destination squares of Maia's top 5 at the players' rating (`playerMoveSquares()`, from the scoreboard's
+  search: `sbPcts()` + `sb.all`), filled in chess.com's grade colours (user's list: Brilliant #1baca6, Great #4b8fbc,
+  Best #81b64c, Inaccuracy #e3b134, Mistake #e58f2a, Blunder #b23330; Excellent/Good share Best's green, user's
+  call). Great = the #1 move when the tactics finder fired on it (not a free piece); Brilliant = the #1 move when it's a
+  sacrifice (`hmSacrifice()`: the piece can be won where it lands and is worth ≥ 2 more than it took; first guess).
+  A click or tap on a square with nothing selected plays the move (chessground's `select` event → `onPlayerSquare()`,
+  deferred a tick); two moves to one square, the more popular wins. Painted through `paintSquares()` (under drawn
+  fills), refreshed from `renderKeyCard()`. Only where you can move (`canMove()`); off in lessons, live puzzles, the
+  editor, with the engine off, and while a tactic hint hides the lists. Tested (Playwright, 2026-10-21): start
+  position (5 greens, click e4 plays it), Greek gift (Bxh7+ Brilliant, click/tap on h7 plays it, phone 390 px).
+  Inaccuracy yellow seen on a loaded game; WebKit draws the squares. The user saw them live (after a hard reload:
+  a cached `app.js` shows the checkbox but no squares). Not checked: Mistake/Blunder squares, whether Brilliant fires
+  on the right moves in real games.
 - **Marks saved with positions** (2026-10-13, user: key squares and sidelines on the set-up board): Set up's panel has a
   **Marks** row (the five drawing colours as swatches = the colour of a plain right-click/drag, `drawColor`, per page
   load, applies on every board; a modifier still wins; Clear marks). On the set-up board drawings are keyed `'editor'`
@@ -430,7 +449,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
   the column is added by `ALTER` on old DBs); the mini boards show the filled squares (not arrows). Opening a saved
   position sets `savedMarks`: they come back whenever the board is on that FEN (`currentDrawings()` seeds `drawings`
   from it), so a left click or a move and ◀ don't lose them; right-clicking one removes it until the page reloads
-  (re-save to keep that). Not restored on refresh; no drawing on touch screens (needs right-click). Tested
+  (re-save to keep that). Not restored on refresh; no drawing on touch screens (needs right-click), so the swatches are
+  hidden there (`pointer: coarse`; Clear marks stays). Viewing saved marks on a phone isn't tested. Tested
   (Playwright, 2026-10-13): draw in Set up, move a piece, save, Analyze, open from Positions, a move and ◀,
   right-click removal.
 - **Shortcuts list** (`dlg-keys`, key `?`): also the keyboard button `#nav-keys`, last in the row under the board
@@ -484,7 +504,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   - **Nav** (rebuilt 2026-10-12; user: "I don't want to build a chess app like the 1000 others": playing is the least
     used, analysis the most). Order: **Analysis** (`#btn-analysis`, home: first and bigger, `.nav-home`; lit on the
     board page whatever is on it; from a section page it goes back to the board as you left it, on the board page it
-    starts a fresh analysis board), **Open ▾** (Your games `#btn-games`, Positions, Opening files `#btn-repertoire`
+    starts a fresh analysis board; labelled "Start over" on the board page, 2026-10-14), **Open ▾** (Your games `#btn-games`, Positions, Opening files `#btn-repertoire`
     → `/lines`), **Set up** (`#btn-setup`), **Learn ▾** (Openings `#btn-study`, Puzzles, Endgames), then **Play a
     bot** (`#btn-play`, `.nav-play`, last and smaller, a direct click). Open and Learn are menus on every screen
     (`.nav-grp` + `.nav-menu`, `closeNavMenus()`: a choice, a click elsewhere or Esc closes; user's call), beside the
@@ -1039,8 +1059,21 @@ Add an entry the moment something is noticed, even when it's out of scope for th
   publishes no explorer limit; its guidance is one request at a time and a full minute's wait after a 429, which
   `frontends/lichess/explorer.py` does (`RATE_LIMIT_WAIT` 61 s). Unofficial figures (~15/min anonymous, ~60/min with a
   token) aren't from Lichess. If "rate limited" comes back, raise `X_DWELL_MS` first.
+- **Board squares vanish now and then in Safari** (user, 2026-10-13, screenshot): pieces, last-move highlights,
+  coords and arrows still draw; only `cg-board`'s background (the `repeating-conic-gradient` in `style.css`) is gone
+  until a refresh. Nothing in JS touches `--sq-light`/`--sq-dark`. Suspected (not verified): a WebKit repaint drop of
+  the gradient layer. Next time: Web Inspector → `cg-board`, toggle any style; if the squares come back it's paint,
+  not CSS. Candidate fix: an SVG data-URI board like chessground's own themes.
+- **Accents in lesson search and slugs:** the Learn openings picker finds nothing for "Reti" (only "Réti"), and
+  lesson files drop the letter: `data/studies/r-ti-my-lines-…json` (2026-10-13).
 - **Right-drag arrows in Safari not confirmed:** Playwright's WebKit drew no arrow on a right-drag (Chromium and
   Firefox did); may be the test driver, not Safari. Check on a real Safari.
+- **A bot game started on your move looks like nothing happened** (user, 2026-10-21: "clicking Play bot from here
+  doesn't do anything", then "I don't see the button anymore"): from the start position as White the board doesn't
+  change, `#summary` comes back empty (`renderPlayInfo()` mid-game has no buttons), and refresh restores the bot game.
+  The only signs are the top name "Bot (~1100)", "Bot game" under the board, Takeback and one coach line. No way out
+  but the nav's "Start over". Not decided: a status or an "End game" button in that row (the "Your move" text was
+  removed on purpose earlier).
 - **Not tested on purpose:** coming back to /openings during a lesson build (a real build costs ~$0.25 and 4-6 min;
   user's call 2026-10-12).
 - **Decided, left as is (user, 2026-10-12):** with the scoreboard hidden, the Engine switch and the move strip are

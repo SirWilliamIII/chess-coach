@@ -632,6 +632,17 @@ cg-board square.sq-fill-drawOpt, .mk-sw.sq-fill-drawOpt, span.pm-sq.sq-fill-draw
 cg-board square.sq-fill-drawCtrl, .mk-sw.sq-fill-drawCtrl, span.pm-sq.sq-fill-drawCtrl { background: rgba(242, 160, 160, .85); }
 cg-board square.sq-fill-drawFn, .mk-sw.sq-fill-drawFn, span.pm-sq.sq-fill-drawFn { background: rgba(204, 172, 232, .85); }
 cg-board square.sq-pin { background: rgba(255, 140, 0, .45); box-shadow: inset 0 0 0 4px #ff8c00; }
+/* player moves (the eye menu's "Player moves"): chess.com's grade colours, user's picks 2026-10-21; translucent so a
+   piece to capture still shows; a solid edge with a dark rim, since Best's green is the board's own dark green */
+cg-board square[class*="hm-"] { background: color-mix(in srgb, var(--hm) 70%, transparent);
+  box-shadow: inset 0 0 0 4px var(--hm), inset 0 0 0 5px rgba(0, 0, 0, .45), 0 0 0 1px rgba(0, 0, 0, .45); }
+cg-board square.hm-brilliant { --hm: #1baca6; }
+cg-board square.hm-great { --hm: #4b8fbc; }
+cg-board square.hm-best { --hm: #81b64c; }
+cg-board square.hm-inaccuracy { --hm: #e3b134; }
+cg-board square.hm-mistake { --hm: #e58f2a; }
+cg-board square.hm-blunder { --hm: #b23330; }
+.ov-players { height: 10px; width: 10px; border-radius: 2px; background: linear-gradient(90deg, #81b64c 50%, #e58f2a 50%); }
 
 /* ---------- library ---------- */
 dialog.wide { width: min(720px, calc(100vw - 32px)); }
@@ -1171,4 +1182,5 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
 .engine-switch input { margin: 0; }
 
 /* the shortcuts list is keys and right-clicks: nothing a touch screen has */
-@media (pointer: coarse) { #nav-keys { display: none; } }
+/* touch screens can't draw (needs right-click), so no colour swatches; Clear marks stays for marks brought along */
+@media (pointer: coarse) { #nav-keys, .mk-sw { display: none; } }
