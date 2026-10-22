@@ -14,6 +14,9 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 ## Current state (2026-10-12)
 
+- **Built 2026-10-21:** scoreboard rows show 5 dots (your chances after the move) instead of the eval number (see
+  "Scoreboard").
+
 - **Opening lessons built** (`data/studies/`, per clone):
 
   | Lesson | Nodes | Curveballs | Moments | Human (Maia) | Family build |
@@ -662,7 +665,12 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 - **Built around the two moments a move's numbers matter** (user's call, 2026-10-06): before your move ("what
   does a ~600 / a GM play here, is it any good, what are the 5 best") and after it ("was it good or bad, how
-  much": "You played b8, the 28th best move"). **Each row shows the eval after that move**, from
+  much": "You played b8, the 28th best move"). **Rows show dots, not numbers** (2026-10-21, user's pick: the colour
+  helped, the number never read intuitively): `sbMeter()` = 5 dots for the mover's chances after the move (`sbLevel()`:
+  the eval bar's win % bands, ≤ −30 losing, ≤ −5 worse, < 5 equal, < 30 better, else winning; mates 5 or 1), coloured by
+  the row's tier, the change in words + the number as tooltip ("Drops to equal (+0.30)", "Throws away the win: …").
+  Coarse on purpose: +0.1 and +0.4 both read 3 dots. No tooltip on touch, so phones get dots only. `±` in the Top bot
+  moves header switches back to numbers (localStorage `sbMeter` '0'). With numbers: **each row shows the eval after that move**, from
   White's side like the eval bar (`sbEvalAfter()`: "+1.50", "−0.31", "#3", "#−2"; so on Black's turn the best
   row has the lowest number), coloured by win % lost for the mover. White's view since 2026-10-07 (user's
   call): from the mover's side the sign flipped every card and "−0.59 then +0.65" didn't read as one eval. History: costs
