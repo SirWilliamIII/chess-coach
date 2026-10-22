@@ -21,7 +21,8 @@ if [[ -f .env ]]; then
 fi
 
 if ! command -v stockfish >/dev/null && [[ ! -x /usr/games/stockfish && -z "${STOCKFISH_PATH:-}" ]]; then
-  echo "Stockfish not found. Install it with: sudo apt install stockfish" >&2
+  echo "Stockfish not found. Install it with: brew install stockfish (macOS) or sudo apt install stockfish (Linux)," >&2
+  echo "or set STOCKFISH_PATH in .env." >&2
   exit 1
 fi
 
