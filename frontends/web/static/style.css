@@ -672,41 +672,29 @@ cg-board square.sq-fill-drawOpt, .mk-sw.sq-fill-drawOpt, span.pm-sq.sq-fill-draw
 cg-board square.sq-fill-drawCtrl, .mk-sw.sq-fill-drawCtrl, span.pm-sq.sq-fill-drawCtrl { background: rgba(242, 160, 160, .85); }
 cg-board square.sq-fill-drawFn, .mk-sw.sq-fill-drawFn, span.pm-sq.sq-fill-drawFn { background: rgba(204, 172, 232, .85); }
 cg-board square.sq-pin { background: rgba(255, 140, 0, .45); box-shadow: inset 0 0 0 4px #ff8c00; }
-/* player moves (the eye menu's "Player moves", 2026-10-21, user's picks): the top-5 squares filled in the moving
-   piece's colour (translucent, so a piece to capture still shows), the grade as a chess.com-style badge in the corner;
-   a selected piece's moves as dots in the grade's colour */
-cg-board square.hm-g-brilliant { --g: #1baca6; --gt: '!!'; }
-cg-board square.hm-g-great { --g: #4b8fbc; --gt: '!'; }
-cg-board square.hm-g-best { --g: #81b64c; --gt: '✓'; }
-cg-board square.hm-g-inaccuracy { --g: #e3b134; --gt: '?!'; }
-cg-board square.hm-g-mistake { --g: #e58f2a; --gt: '?'; }
-cg-board square.hm-g-blunder { --g: #b23330; --gt: '??'; }
-cg-board square.hm-p-p { --pc: #6fa8dc; }
-cg-board square.hm-p-n { --pc: #b48ad8; }
-cg-board square.hm-p-b { --pc: #4fbfa8; }
-cg-board square.hm-p-r { --pc: #e8955a; }
-cg-board square.hm-p-q { --pc: #e07a9a; }
-cg-board square.hm-p-k { --pc: #8f9aa3; }
-/* solid, so a colour reads the same on cream and tan (pieces draw above the square, so a capture still shows); every
-   circle (dots, rings, badges) has the same solid dark edge, --hm-edge (user, 2026-10-21) */
+/* player moves (the eye menu's "Player moves", 2026-10-21, user's picks): the top 5, or a selected piece's moves, as
+   circles in the grade's colour (a ring on a capture), each with its number in the square's corner (#hm-nums) */
+cg-board square.hm-g-brilliant { --g: #1baca6; }
+cg-board square.hm-g-great { --g: #4b8fbc; }
+cg-board square.hm-g-best { --g: #81b64c; }
+cg-board square.hm-g-inaccuracy { --g: #e3b134; }
+cg-board square.hm-g-mistake { --g: #e58f2a; }
+cg-board square.hm-g-blunder { --g: #b23330; }
+/* every circle (dots, rings) has the same solid dark edge, --hm-edge (user, 2026-10-21) */
 cg-board { --hm-edge: #1f1d1a; }
-cg-board square[class*="hm-p-"] { background: var(--pc); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--pc) 72%, #000); }  /* neighbours stay apart */
-/* the badge sits above the pieces (z-index; squares make no stacking context) so a capture square still shows it */
-cg-board square[class*="hm-p-"]::after { content: var(--gt); position: absolute; top: 3%; right: 3%; z-index: 3;
-  width: 34%; height: 34%; border-radius: 50%; background: var(--g); color: #fff; display: grid; place-items: center;
-  font: 800 calc(var(--board-w) / 8 * .17) / 1 system-ui, sans-serif; letter-spacing: -.04em;
-  border: 1.5px solid var(--hm-edge); box-sizing: border-box; }
 cg-board square.hm-dot { background: radial-gradient(circle closest-side, var(--g) 0 32%, var(--hm-edge) 33% 38%, transparent 39%); }
-cg-board square.hm-dot.oc { background: radial-gradient(circle closest-side, transparent 0 78%, var(--hm-edge) 79% 82%,
+cg-board square.hm-dot.oc, cg-board square.hm-dot.hm-cap { background: radial-gradient(circle closest-side, transparent 0 78%, var(--hm-edge) 79% 82%,
   var(--g) 83% 94%, var(--hm-edge) 95% 98%, transparent 99%); }
-/* the hovered move's number (showHmValue): a solid dark pill bottom-left in its square, so it reads the same on any
-   square or fill */
-#hm-val { position: absolute; width: 12.5%; height: 12.5%; z-index: 4; pointer-events: none; display: flex;
-  align-items: flex-end; padding: 0 0 4% 4%; box-sizing: border-box; }
-#hm-val::after { content: attr(data-v); padding: 2px 5px; border-radius: 5px; background: #1f1d1a; color: #fff;
-  font: 700 calc(var(--board-w) / 8 * .16) / 1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
-#hm-val.neg::after { color: #ff9d94; }
-.ov-players { height: 10px; width: 10px; border-radius: 2px; background: linear-gradient(90deg, #6fa8dc 50%, #b48ad8 50%); }
+/* the previewed move (a first click on its circle): the square filled in its grade colour; a second click plays it */
+cg-board square.hm-dot.hm-armed { background: var(--g); box-shadow: inset 0 0 0 2px var(--hm-edge); }
+/* the circles' numbers (showHmNumbers): white text in each square's top-right corner, no bubble (user's call), with a
+   dark outline so it reads on cream as on tan. Padding in px: a % would be of the whole board's width */
+#hm-nums { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+.hm-num { position: absolute; width: 12.5%; height: 12.5%; display: flex; justify-content: flex-end; align-items: flex-start;
+  padding: 3px 5px 0 0; box-sizing: border-box; }
+.hm-num b { color: #fff; font: 800 calc(var(--board-w) / 8 * .17) / 1 system-ui, sans-serif; font-variant-numeric: tabular-nums;
+  text-shadow: -1px -1px 0 #1f1d1a, 1px -1px 0 #1f1d1a, -1px 1px 0 #1f1d1a, 1px 1px 0 #1f1d1a, 0 0 3px #1f1d1a; }
+.ov-players { height: 10px; width: 10px; border-radius: 2px; background: linear-gradient(90deg, #81b64c 50%, #e58f2a 50%); border-radius: 50%; }
 
 /* ---------- library ---------- */
 dialog.wide { width: min(720px, calc(100vw - 32px)); }

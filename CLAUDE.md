@@ -457,19 +457,21 @@ file says what is true now. Last full cleanup: 2026-10-03.
   editor, with the engine off, and while a tactic hint hides the lists. Tested (Playwright, 2026-10-21): start
   position (5 greens, click e4 plays it), Greek gift (Bxh7+ Brilliant, click/tap on h7 plays it, phone 390 px).
   Inaccuracy yellow seen on a loaded game; WebKit draws the squares.
-  **Reworked the same day (user's picks):** a fill is now the moving piece's colour (`hm-p-<piece>`: pawn blue, knight
-  lavender, bishop teal, rook orange, queen pink, king grey; solid, so a colour reads the same on cream and tan,
-  with a darker edge of its own colour so neighbours stay apart) and the grade a corner badge (`hm-g-<grade>`, `--gt`: !! ! ✓ ?! ? ??, above the pieces via z-index). A selected piece shows every
-  one of its moves as a dot in its grade colour, a ring on captures (dots, rings and badges share one solid dark edge,
-  `--hm-edge`) (`selectedMoveGrades()` from `sb.all`; the select
-  event repaints a tick later), instead of the fills. Hovering a fill or a dot draws its arrow and lights its
-  scoreboard rows (`onBoardHover()`, `cg.getKeyAtDomPos`, `hmHoverable`; not on touch). One toggle for all of it.
-  Hover also shows the move's number in its square (`hmValue()` → `#hm-val`, a solid dark pill): the eval after the
-  move minus the material on the board now, both from the mover's side (user's call: "down 5, a 3-point capture reads
-  3.00"; measured from the engine's own eval the best move would always read 0.00). It's the engine's eval, so
-  position counts too: down a rook with a free knight to take read +1.59, not +3.00; quiet moves there −2.7 to −3.4.
-  Tested (Playwright): start position fills, hover e4 (arrow + rows), Ng1 dots (Nf3 green, Nh3 yellow), deselect, click
-  e4 plays, Qd8 after exd5 (ring on d5). The user saw them live (after a hard reload:
+  **Reworked the same day (user's picks, final form):** nothing shows until you **select a piece**; then every one of
+  its moves is a circle in its grade colour (a ring on a capture; `selectedMoveGrades()` from `sb.all`, the select
+  event repaints a tick later; one solid dark edge, `--hm-edge`), each with its number in white, dark-outlined, in the
+  square's top-right corner (`showHmNumbers()` → `#hm-nums`; padding in px, a % is of the board's width). **Two clicks
+  to move** (user: a stray click shouldn't move): the first click on a circle previews it (`hmArmed`: the square
+  filled in its grade colour, the arrow kept; the board's capture-phase mousedown stops chessground seeing it), a
+  second click on it plays it, any other click cancels; dragging still moves in one go. Dropped the same day: Maia's
+  top 5 marked with nothing selected (fills in grade, then piece colours, badges, circles; `playerMoveSquares()`,
+  `onPlayerSquare()` are gone). The number (`hmValue()`): the eval after the move minus the material on the board
+  now, both from the mover's side (user's call: "down 5, a 3-point capture reads 3.00"; from the engine's own eval the
+  best move would always read 0.00); it's the engine's eval, so position counts too (down a rook with a free knight to
+  take read +1.36, not +3.00). Hovering a circle draws its arrow and lights its scoreboard rows (`onBoardHover()`,
+  `cg.getKeyAtDomPos`, `hmHoverable`; not on touch). The toggle is still called "Player moves".
+  Tested (Playwright): nothing selected shows nothing; Ng1 → dots with numbers, first click on f3 previews (filled,
+  arrow, stays when the mouse leaves), second click plays; preview then a click elsewhere cancels; drag e2-e4 moves. The user saw them live (after a hard reload:
   a cached `app.js` shows the checkbox but no squares). Not checked: Mistake/Blunder squares, whether Brilliant fires
   on the right moves in real games.
 - **Marks saved with positions** (2026-10-13, user: key squares and sidelines on the set-up board): Set up's panel has a
