@@ -114,7 +114,8 @@ const cg = Chessground($('board'), {
   movable: { free: false, showDests: true, events: { after: onBoardMove } },
   premovable: { enabled: false },
   events: {
-    select: (key) => { onEditorSelect(key); onPlayerSquare(key); },
+    // chessground calls select before it changes the selection: repaint after, for the selected piece's graded dots
+    select: (key) => { onEditorSelect(key); onPlayerSquare(key); setTimeout(paintSquares); },
     change: () => { if (state.editor) updateEditor(); },  // e.g. a piece dragged off the board
   },
   drawable: {
@@ -1850,7 +1851,12 @@ let hoverSquare = null;
 
 function paintSquares() {
   hmSquares = playerMoveSquares();
-  const marks = new Map([...[...hmSquares].map(([sq, m]) => [sq, `hm-${m.grade}`]),
+  // a selected piece: graded dots on its squares instead of the top-5 fills (fills: the piece's colour + a grade badge)
+  const dots = selectedMoveGrades();
+  hmHoverable = new Map([...(dots.size ? dots : hmSquares)].map(([sq, m]) => [sq, m.uci]));
+  const hm = dots.size ? [...dots].map(([sq, m]) => [sq, `hm-dot hm-g-${m.grade}`])
+    : [...hmSquares].map(([sq, m]) => [sq, `hm-p-${m.piece} hm-g-${m.grade}`]);
+  const marks = new Map([...hm,
     ...(state.study && !state.demo ? hooks.studyNextSquares() : []), ...drawnSquares()]);
   pinnedSquares.forEach((sq) => marks.set(sq, 'sq-pin'));
   if (hoverSquare) marks.set(hoverSquare, 'sq-hover');
@@ -2258,29 +2264,70 @@ const ovMine = () => overlays.mine !== false;
 const ovAny = () => !!(overlays.captures || overlays.checks || overlays.threats) && (ovMine() || !!overlays.theirs);
 
 // ---- player moves on the board ("Player moves" in the eye menu, 2026-10-21; user's picks): the squares Maia's top 5
-// at the players' rating move to, filled in chess.com's grade colours, and a click or tap on one plays that move.
-// Only where you could make the move yourself, and never while a puzzle, a lesson or an unshown tactic hint would be
-// given away. Two moves to one square: the more popular one has it.
-let hmSquares = new Map();  // square → {uci, grade}, as last painted
+// at the players' rating move to, filled in the moving piece's colour with a chess.com-style grade badge (!!, !, ✓,
+// ?!, ?, ??), and a click or tap on one plays that move. A selected piece shows every one of its moves as a dot in
+// its grade colour instead (from the scoreboard's all-moves search). Hovering either draws the move and lights its
+// scoreboard row. Only where you could make the move yourself, and never while a puzzle, a lesson or an unshown
+// tactic hint would be given away. Two moves to one square: the more popular one has it.
+let hmSquares = new Map();    // square → {uci, grade, piece}, the top-5 fills as last painted
+let hmHoverable = new Map();  // square → uci: what hovering draws (the fills, or the selected piece's dots)
 const HM_TOP = 5;
+
+// the position when the overlay may show, with its scoreboard search
+function hmContext() {
+  if (!overlays.players || !state.engineOn || state.editor || state.study || puzzleLive() || !state.review) return null;
+  const c = currentGame();
+  if (!canMove(c, c.turn() === 'w' ? 'white' : 'black')) return null;
+  const fen = c.fen();
+  const sb = sbGet(fen);
+  if (!sb || sb.over) return null;
+  const t = tacticHere();
+  if (t && t.fen === fen && t.level < 4) return null;  // the Great/Brilliant square would be the answer
+  return { c, sb };
+}
 
 function playerMoveSquares() {
   const out = new Map();
-  if (!overlays.players || !state.engineOn || state.editor || state.study || puzzleLive() || !state.review) return out;
-  const c = currentGame();
-  if (!canMove(c, c.turn() === 'w' ? 'white' : 'black')) return out;
-  const fen = c.fen();
-  const sb = sbGet(fen);
-  if (!sb || sb.over) return out;
-  const t = tacticHere();
-  if (t && t.fen === fen && t.level < 4) return out;  // the Great/Brilliant square would be the answer
+  const ctx = hmContext();
+  if (!ctx) return out;
+  const { c, sb } = ctx;
   const pcts = sbPcts(sb, maiaRating());
   for (const [uci] of [...pcts].sort((a, b) => b[1] - a[1]).slice(0, HM_TOP)) {
     const r = sb.all.find((x) => x.uci === uci);
     const sq = uci.slice(2, 4);
-    if (r && !out.has(sq)) out.set(sq, { uci, grade: hmGrade(c, sb, r) });
+    if (r && !out.has(sq)) out.set(sq, { uci, grade: hmGrade(c, sb, r), piece: c.get(uci.slice(0, 2))?.type });
   }
   return out;
+}
+
+// the selected piece's moves, graded (promotions: the queen's)
+function selectedMoveGrades() {
+  const out = new Map();
+  const from = cg.state.selected;
+  const ctx = from && hmContext();
+  if (!ctx) return out;
+  for (const r of ctx.sb.all) {
+    if (!r.uci.startsWith(from) || (r.uci.length === 5 && r.uci[4] !== 'q')) continue;
+    out.set(r.uci.slice(2, 4), { uci: r.uci, grade: hmGrade(ctx.c, ctx.sb, r) });
+  }
+  return out;
+}
+
+// hovering a fill or a dot: the move's arrow and its scoreboard row, like hovering the row
+let hmHoverSq = null;
+function onBoardHover(e) {
+  const sq = cg.getKeyAtDomPos([e.clientX, e.clientY]);
+  const uci = hmHoverable.get(sq);
+  if (sq === hmHoverSq) return;
+  if (hmHoverSq) { document.querySelectorAll('.score-body .hot').forEach((t) => t.classList.remove('hot')); sbHideMove(); }
+  hmHoverSq = uci ? sq : null;
+  if (!uci) return;
+  sbShowMove(uci);
+  document.querySelectorAll(`.score-body .live [data-uci="${uci}"]`).forEach((t) => t.classList.add('hot'));
+}
+if (!TOUCH) {
+  $('board').addEventListener('mousemove', onBoardHover);
+  $('board').addEventListener('mouseleave', () => onBoardHover({ clientX: -1, clientY: -1 }));
 }
 
 // Great = the only good move (the tactics finder fired on it, a free piece aside); Brilliant = the best move when it

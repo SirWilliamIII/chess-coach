@@ -451,7 +451,15 @@ file says what is true now. Last full cleanup: 2026-10-03.
   fills), refreshed from `renderKeyCard()`. Only where you can move (`canMove()`); off in lessons, live puzzles, the
   editor, with the engine off, and while a tactic hint hides the lists. Tested (Playwright, 2026-10-21): start
   position (5 greens, click e4 plays it), Greek gift (Bxh7+ Brilliant, click/tap on h7 plays it, phone 390 px).
-  Inaccuracy yellow seen on a loaded game; WebKit draws the squares. The user saw them live (after a hard reload:
+  Inaccuracy yellow seen on a loaded game; WebKit draws the squares.
+  **Reworked the same day (user's picks):** a fill is now the moving piece's colour (`hm-p-<piece>`: pawn blue, knight
+  lavender, bishop teal, rook orange, queen pink, king grey; 80% so tan squares don't turn it grey) and the grade a
+  corner badge (`hm-g-<grade>`, `--gt`: !! ! ✓ ?! ? ??, above the pieces via z-index). A selected piece shows every
+  one of its moves as a dot in its grade colour, a ring on captures (`selectedMoveGrades()` from `sb.all`; the select
+  event repaints a tick later), instead of the fills. Hovering a fill or a dot draws its arrow and lights its
+  scoreboard rows (`onBoardHover()`, `cg.getKeyAtDomPos`, `hmHoverable`; not on touch). One toggle for all of it.
+  Tested (Playwright): start position fills, hover e4 (arrow + rows), Ng1 dots (Nf3 green, Nh3 yellow), deselect, click
+  e4 plays, Qd8 after exd5 (ring on d5). The user saw them live (after a hard reload:
   a cached `app.js` shows the checkbox but no squares). Not checked: Mistake/Blunder squares, whether Brilliant fires
   on the right moves in real games.
 - **Marks saved with positions** (2026-10-13, user: key squares and sidelines on the set-up board): Set up's panel has a
