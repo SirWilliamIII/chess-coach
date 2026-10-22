@@ -649,8 +649,10 @@ file says what is true now. Last full cleanup: 2026-10-03.
     `--t0..--t3` (+ `--t3-text`) for win chance lost (< 5, 5-15, 15-30, 30+), used by every scoreboard mark.
   - **Full Explorer** (the dropdown with the move list, engine lines, Maia, the opening explorer and the editor
     palette) was dissolved 2026-10-12: see "Move strip" for where each part went.
-  - **Static files aren't cache-busted:** no `Cache-Control`, so a browser can keep an old `style.css`/`app.js`
-    after edits. Ask for a hard reload (⌘⇧R) before chasing a layout report that doesn't reproduce.
+  - **Pages and static files are sent with `Cache-Control: no-cache`** (`revalidate_static` middleware in `server.py`,
+    2026-10-21; everything but `/api/`): the browser revalidates every load and gets a 304 when nothing changed. Before,
+    Chrome guessed freshness from Last-Modified and ran week-old `app.js` on the phone clone after an update. A browser
+    still holding files from before this change needs one last hard reload (⌘⇧R).
 - **Analysis board: "Play bot from here"** (2026-10-09, user's calls: always there; the level picker only after
   it's clicked, then the button reads Start, ✕ cancels; `abPicking`, kept across re-renders and moves, reset by `setReview()` so a
   new board never opens with it showing). In
