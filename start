@@ -5,6 +5,9 @@
 #   ./start --host 0.0.0.0  reachable from other devices on your network (flags beat .env)
 #   ./start cli review 1 --me <user>   terminal version instead
 #   CHESS_IN_TAB=1 ./start  in this terminal, not a new kitty tab
+#   ./start --lan           for other devices on the same network, no internet needed: port 80 on every interface,
+#                           announced as http://chess.local (re-announced when the network changes). One machine
+#                           at a time; the tailnet https address (port 8000) is off until a plain ./start.
 #
 # The web server's output is also appended to data/logs/server-YYYY-MM-DD.log.
 #
@@ -50,19 +53,34 @@ fi
 # Inside kitty, run the server in its own tab without taking focus, so this terminal stays free. CHESS_IN_TAB
 # marks the relaunched copy (else it would open tabs forever); `kitty @ ls` fails when remote control is off,
 # and then the server runs here as before.
+# --lan (user, 2026-10-21: "chess.local on all devices" instead of ip:port): listen on every interface, port 80, and
+# announce chess.local. Taken out of the arguments here; the kitty relaunch below passes "$@" on, so it's seen again.
+env_port="${CHESS_PORT:-8000}"
+LAN=
+args=()
+for a in "$@"; do if [[ "$a" == "--lan" ]]; then LAN=1; else args+=("$a"); fi; done
+if [[ -n "$LAN" ]]; then CHESS_HOST=0.0.0.0; CHESS_PORT=80; fi
+
 # A server already on the port (an old one) is stopped first, so ./start is also a restart (user, 2026-10-21).
 # LISTEN only: without it lsof also lists clients connected to the port, like the browser showing the app. Only
 # the .env port: a --port flag isn't parsed here. Skipped in the relaunched tab, which the outer run already cleared.
-port="${CHESS_PORT:-8000}"
-if [[ -z "${CHESS_IN_TAB:-}" ]] && pids=$(lsof -ti tcp:"$port" -sTCP:LISTEN); then
-  echo "Stopping what's listening on port $port (pid $(echo $pids))…"
-  kill $pids
-  for _ in {1..50}; do lsof -ti tcp:"$port" -sTCP:LISTEN >/dev/null || break; sleep 0.1; done
-  if lsof -ti tcp:"$port" -sTCP:LISTEN >/dev/null; then
-    echo "Port $port is still taken after 5 s; not starting." >&2
-    exit 1
+# The other mode's port is cleared too (the .env port, or --lan's 80), so the two never run side by side; there
+# only a chess-coach server is stopped, never another program that happens to use the port.
+for port in $(printf '%s\n' "${CHESS_PORT:-8000}" "$env_port" 80 | sort -u); do
+  pids=$(lsof -ti tcp:"$port" -sTCP:LISTEN || true)
+  if [[ "$port" != "${CHESS_PORT:-8000}" ]]; then
+    pids=$(for p in $pids; do ps -o args= -p "$p" | grep -q "frontends.web.server" && echo "$p"; done || true)
   fi
-fi
+  if [[ -z "${CHESS_IN_TAB:-}" && -n "$pids" ]]; then
+    echo "Stopping what's listening on port $port (pid $(echo $pids))…"
+    kill $pids
+    for _ in {1..50}; do lsof -ti tcp:"$port" -sTCP:LISTEN >/dev/null || break; sleep 0.1; done
+    if lsof -ti tcp:"$port" -sTCP:LISTEN >/dev/null; then
+      echo "Port $port is still taken after 5 s; not starting." >&2
+      exit 1
+    fi
+  fi
+done
 
 if [[ -n "${KITTY_WINDOW_ID:-}" && -z "${CHESS_IN_TAB:-}" ]] && kitty @ ls >/dev/null 2>&1; then
   # The tab gets kitty's environment, not this shell's: without PATH there's no /opt/homebrew/bin, so no stockfish.
@@ -79,5 +97,37 @@ log="data/logs/server-$(date +%F).log"
 echo "=== $(date '+%F %T') ./start $* ===" >> "$log"
 exec > >(tee -a "$log") 2>&1
 export PYTHONUNBUFFERED=1
+
+# --lan: announce chess.local → this machine's current address (dns-sd on macOS, avahi-publish on Linux if installed),
+# checked every 5 s so joining another network (a phone's hotspot) re-announces it; ends with the server, whose PID is
+# this shell's ($$) once exec replaces it below.
+lan_ip() {
+  if [[ "$(uname)" == Darwin ]]; then ipconfig getifaddr en0 || ipconfig getifaddr en1; else hostname -I 2>/dev/null | awk '{print $1}'; fi
+}
+lan_announce() {
+  set +e  # a background loop: a kill of an announcement that already ended must not stop it
+  local server=$1 ip="" pub="" now
+  while kill -0 "$server" 2>/dev/null; do
+    now=$(lan_ip 2>/dev/null || true)
+    if [[ "$now" != "$ip" ]]; then
+      [[ -n "$pub" ]] && kill "$pub" 2>/dev/null
+      pub="" ip="$now"
+      if [[ -z "$ip" ]]; then
+        echo "chess.local: no network yet"
+      elif command -v dns-sd >/dev/null; then
+        dns-sd -P chess _http._tcp local "$CHESS_PORT" chess.local "$ip" >/dev/null 2>&1 & pub=$!
+        echo "chess.local → $ip   open http://chess.local on the other device"
+      elif command -v avahi-publish >/dev/null; then
+        avahi-publish -a -R chess.local "$ip" >/dev/null 2>&1 & pub=$!
+        echo "chess.local → $ip   open http://chess.local on the other device"
+      else
+        echo "No dns-sd or avahi-publish here: use http://$ip"
+      fi
+    fi
+    sleep 5
+  done
+  [[ -n "$pub" ]] && kill "$pub" 2>/dev/null
+}
+if [[ -n "$LAN" ]]; then lan_announce $$ & fi
 # .env defaults first: argparse keeps the last value, so flags given to ./start still win
-exec .venv/bin/python -m frontends.web.server --host "${CHESS_HOST:-127.0.0.1}" --port "${CHESS_PORT:-8000}" "$@"
+exec .venv/bin/python -m frontends.web.server --host "${CHESS_HOST:-127.0.0.1}" --port "${CHESS_PORT:-8000}" ${args[@]+"${args[@]}"}

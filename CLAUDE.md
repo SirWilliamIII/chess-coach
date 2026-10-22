@@ -110,6 +110,25 @@ file says what is true now. Last full cleanup: 2026-10-03.
   didn't carry over. The
   serve config persists in tailscaled; `tailscale serve status` / `tailscale serve reset`. There is no auth: every device shares the one global state (below),
   coach questions bill your API key, and `/usage` + `/lessons` expose org spend and saved answers.
+- **`./start --lan`** (2026-10-21, user: "chess.local on all devices" instead of ip:port): port 80 on every interface
+  (no sudo on macOS), announced as `http://chess.local` by `dns-sd -P` (`avahi-publish` on Linux if installed), the
+  current IP re-checked every 5 s so joining another network re-announces it; the announcer ends with the server
+  (`lan_announce $$`, `set +e` inside). Either mode's start also stops the other mode's chess-coach server (only a
+  process running `frontends.web.server` on the other port). One machine at a time per network; the tailnet
+  https address proxies 8000, so it's off until a plain `./start`. Tested on the Air: chess.local → 192.168.50.47
+  served 200 from this Mac; plain `./start` stopped it and the announcement; other devices may cache the name ~2 min.
+- **Offline, phone → MacBook Air (tested 2026-10-21, user):** no internet or cell service needed; the phone's own
+  hotspot is the network. (1) Air: `./start --lan` (then `http://chess.local` in step 4; `mb-air.local:8000` also
+  worked with `--host 0.0.0.0`), or `./start --host 0.0.0.0` for the plain IP. (2) Phone:
+  airplane mode, then Wi-Fi hotspot on (it worked in airplane mode on the user's phone; the hotspot showed up on
+  the Air as "Evil Crow RF"). (3) Air: join it, `ipconfig getifaddr en0` (was 10.192.197.141; may change each time).
+  (4) Phone Chrome: `http://<that address>:8000` (type `http://`). macOS asks once to let Python accept incoming
+  connections: Allow (tied to the venv's Python, so it may ask again after a Homebrew Python rebuild). Tailscale
+  `.ts.net` addresses don't work offline (no coordination server); use the plain IP. Works offline: Stockfish, Maia,
+  saved games, positions, puzzles, lessons, endgames (Stockfish instead of the tablebase); not: the coach, loading
+  new games, the explorer beyond its disk cache. Back home: rejoin Wi-Fi, plain `./start`. Android USB tethering
+  usually needs drivers on a Mac (not tried). Other Macs: the Air's clone is `~/Projects/programming/chess-coach`
+  (`ssh will@mb-air`, served at `https://mb-air.mastodon-snake.ts.net`, set up 2026-10-21).
 - **The server does not hot-reload Python.** Restart after editing `core/*.py` or `server.py`; `prompts/` and
   `static/` are re-read live. Its output goes to the terminal that started it and, through `./start` (2026-10-09),
   is appended to `data/logs/server-<day it started>.log` (`tee`, `PYTHONUNBUFFERED`); a server started some other
