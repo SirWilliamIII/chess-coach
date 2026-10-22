@@ -1009,6 +1009,34 @@ function sbEvalAfter(r, turn, bestEval) {
   return fmt(Math.abs(v) < 0.005 ? '0.00' : v.toFixed(2));
 }
 
+// The mover's chances after a move as 5 dots instead of the number (user's pick 2026-10-21: the colour helped, the
+// number never read intuitively), with the change in words as the tooltip. Bands are the eval bar's (equal < 5 win %
+// off 50, better < 30, else winning). ± in the Top bot moves header switches back to numbers, localStorage `sbMeter`
+// ('0' = numbers).
+const sbMeterOn = () => recall('sbMeter') !== '0';
+const SB_LEVEL = ['', 'losing', 'worse', 'equal', 'better', 'winning'];
+
+function sbLevel(ev, turn) {
+  const s = (ev ?? '').replace('−', '-');
+  if (s.startsWith('#')) return s.includes('-') === (turn === 'b') ? 5 : 1;
+  const cp = parseFloat(s) * 100 * (turn === 'w' ? 1 : -1);
+  if (Number.isNaN(cp)) return 0;
+  const d = winPct(Math.max(-1500, Math.min(1500, cp))) - 50;
+  return d <= -30 ? 1 : d <= -5 ? 2 : d < 5 ? 3 : d < 30 ? 4 : 5;
+}
+
+function sbMeter(r, turn, bestEval) {
+  const ev = sbEvalAfter(r, turn, bestEval);
+  const lv = sbLevel(ev, turn);
+  const top = sbLevel(fmtEval(bestEval), turn);
+  if (!lv) return '';
+  const name = SB_LEVEL[lv];
+  const words = lv >= top ? (lv === 3 ? 'Keeps it equal' : `Keeps you ${name}`)
+    : top === 5 && lv <= 3 ? `Throws away the win: ${lv === 3 ? 'equal' : `you're ${name}`}`
+    : lv === 3 ? 'Drops to equal' : lv === 4 ? 'Still better, less so' : `Now you're ${name}`;
+  return `<span class="sb-meter" title="${words} (${ev})">${[1, 2, 3, 4, 5].map((i) => `<i${i <= lv ? ' class="on"' : ''}></i>`).join('')}</span>`;
+}
+
 // The quick candidates before the deep search lands: the eval's few lines and Maia's list, scored against the
 // eval's best line (Maia's own moves carry a short search's eval)
 function sbQuick(fen, turn) {
@@ -1052,7 +1080,7 @@ function sbCandidates(rows, turn, bestEval, title = 'Top bot moves', cls = 'sf',
   return `<div class="sb-table ${cls}"><div class="sb-cols"><span>${title}${busy}${cue}</span></div>${
     rows.map((r) => `<button class="sb-row t${r.tier}${r.rank === 1 ? ' best' : ''}" data-uci="${esc(r.uci)}">`
       + `<span class="sb-rank">${r.rank ?? '·'}</span><b class="sb-mv">${esc(r.move)}</b>`
-      + `<span class="sb-cost">${sbEvalAfter(r, turn, bestEval)}</span>`
+      + `<span class="sb-cost">${sbMeterOn() ? sbMeter(r, turn, bestEval) : sbEvalAfter(r, turn, bestEval)}</span>`
       + pop(r) + '</button>'
       + (after ? after(r) : '')).join('')}</div>`;
 }
@@ -1223,9 +1251,10 @@ function sbBefore(L, now, u) {
   // these moves and evals; only the continuations were its own). From the deep search, so free.
   const blOpen = recall('botLines') === '1';
   const blToggle = `<button class="ml-toggle bl-toggle" title="How Stockfish goes on after each move">${blOpen ? '▾' : '▸'} Lines</button>`;
+  const meterToggle = `<button class="ml-toggle sb-meter-toggle" title="${sbMeterOn() ? 'Show evals' : 'Show dots'}">${sbMeterOn() ? '±' : '●●●'}</button>`;
   const blLine = (r) => (r.cont ? `<div class="ml-line bl-line">${esc(r.cont)}</div>` : '');
   return `<section class="sb-card live"><div class="sb-body${hide ? ' tac-hide' : ''}">${tac && tac.fen === fen ? sbTactic(tac) : ''}<div>`
-    + sbCandidates(best, turn, engine.eval_white, `Top bot moves${blToggle}`, 'sf', '', blOpen ? blLine : null)
+    + sbCandidates(best, turn, engine.eval_white, `Top bot moves${blToggle}${meterToggle}`, 'sf', '', blOpen ? blLine : null)
     + (players.length ? sbCandidates(players, turn, engine.eval_white, `Top player moves at ${sbRatePick()}${toggle}`, 'maia', '', open ? (r) => mlHtml(fen, r.uci) : null) : '')
     + sbExplorer(fen)
     + `</div>${sb.ladder?.length ? `<div><div class="sb-sub-h"><span>Top pick by rating</span><span class="sb-engine" data-uci="${esc(engine.uci)}">Engine <b>${esc(engine.move)}</b></span></div>${sbTrack(sb, rating)}</div>` : ''}`
@@ -1397,7 +1426,9 @@ function renderKeyCard() {
       renderShapes();
     };
   });
-  const mlBtn = box.querySelector('.ml-toggle:not(.bl-toggle):not(.x-lines-btn)');
+  const mlBtn = box.querySelector('.ml-toggle:not(.bl-toggle):not(.x-lines-btn):not(.sb-meter-toggle)');
+  const meterBtn = box.querySelector('.sb-meter-toggle');
+  if (meterBtn) meterBtn.onclick = () => { store('sbMeter', sbMeterOn() ? '0' : '1'); renderKeyCard(); };
   if (mlBtn) mlBtn.onclick = () => { store('maiaLines', mlOpen() ? '0' : '1'); renderKeyCard(); };
   box.querySelector('.x-lines-btn')?.addEventListener('click', (e) => { e.stopPropagation(); showLines(); });
   const blBtn = box.querySelector('.bl-toggle');

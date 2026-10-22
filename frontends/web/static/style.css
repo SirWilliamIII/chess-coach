@@ -960,6 +960,11 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
 .sb-row.t1 .sb-cost { color: var(--t1); }
 .sb-row.t2 .sb-cost { color: var(--t2); }
 .sb-row.t3 .sb-cost, .sb-row.t3 .sb-mv { color: var(--t3-text); }
+/* Dots instead of the eval (2026-10-21), coloured by the row's tier */
+.sb-meter { display: inline-flex; gap: 3px; justify-content: flex-end; width: 100%; }
+.sb-meter i { width: 7px; height: 7px; border-radius: 50%; background: var(--inset); }
+.sb-meter i.on { background: currentColor; }
+.sb-row.t0 .sb-meter { color: var(--t0); }
 .sb-pop { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .sb-pbar { flex: 1; height: 6px; border-radius: 99px; background: var(--inset); overflow: hidden; }
 .sb-pbar span { display: block; height: 100%; border-radius: 99px; background: var(--maia); transition: width .3s ease; }
