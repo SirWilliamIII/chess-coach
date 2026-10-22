@@ -82,6 +82,11 @@ async def lifespan(app):
 
 app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
+# a chess.com piece set fetched by scripts/fetch_pieces.py (their artwork: gitignored data/, not static/); without
+# it /pieces/pieces.css 404s and the vendored free set shows (the folder is made so a missing one isn't a 500)
+PIECES = STATIC.parent.parent.parent / "data" / "pieces"
+PIECES.mkdir(parents=True, exist_ok=True)
+app.mount("/pieces", StaticFiles(directory=PIECES), name="pieces")
 
 
 def parse_fen(fen: str) -> chess.Board:

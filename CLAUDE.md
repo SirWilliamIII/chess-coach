@@ -14,7 +14,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 ## Current state (2026-10-12)
 
-- **Built 2026-10-21:** scoreboard rows show 5 dots (your chances after the move) instead of the eval number (see
+- **Built 2026-10-21:** scoreboard rows show the move's grade as dots (1-5, chess.com-style colours) instead of the eval number (see
   "Scoreboard").
 
 - **Opening lessons built** (`data/studies/`, per clone):
@@ -95,7 +95,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
   default 127.0.0.1:8000, flags override; the primary clone's `.env` binds 127.0.0.1 behind `tailscale serve`, see below) or
   `.venv/bin/python -m frontends.web.server [--host H] [--port P]`. Default host `127.0.0.1`. Run from kitty
   (remote control on), `./start` opens the server in its own tab, `chess-coach`, without taking focus, and returns
-  (2026-10-14); it refuses if `CHESS_PORT` is already taken. `CHESS_IN_TAB=1 ./start` runs it in place. The tab gets
+  (2026-10-14). A server already listening on `CHESS_PORT` is stopped first (`lsof -sTCP:LISTEN` + `kill`, waits up to
+  5 s; 2026-10-21, user's call), so `./start` doubles as a restart; LISTEN only, or the browser's connection is killed too. `CHESS_IN_TAB=1 ./start` runs it in place. The tab gets
   kitty's environment, not the shell's, so `PATH` is passed through explicitly (without it: "Stockfish not found").
 - **`.env` is gitignored** and must exist per clone: `ANTHROPIC_API_KEY`, `LICHESS_TOKEN`, optional
   `CHESS_USER`, `PLAYER_RATING` (chess.com rapid since 2026-10-07, default 800; the primary clone has 790), `ANTHROPIC_ADMIN_KEY` + `MONTHLY_SPEND_LIMIT`
@@ -157,8 +158,11 @@ file says what is true now. Last full cleanup: 2026-10-03.
   `reopen` recipe. The server still holds one board, so a section page that replaces it calls `markBoardTaken()`
   (localStorage `boardTakenBy`); the board page then reopens its own on load (`reopenBoard()`: `/api/play/new` for a bot
   game, `/api/saved/open` for a saved review, else `/api/analysis`), and only then, so a game loaded on another
-  device still wins a plain refresh. A browser with no `board` snapshot (first visit) gets a fresh board from the starting position
-  instead of the server's (2026-10-14: it showed whatever drill or puzzle was left there). **Work vs exercise sections** (user's call, 2026-10-11): the board page (games,
+  device still wins a plain refresh. The app's first load in a tab (sessionStorage `appTab`, set by every page) or a browser with no `board`
+  snapshot gets a fresh board from the starting position instead of the server's (2026-10-14 first visits only:
+  it showed whatever drill or puzzle was left there; every new tab since 2026-10-21, user's call). A refresh or
+  another section → Analysis in the same tab still resumes. A new tab replaces the server's one board, so another
+  device's loaded game shows the starting position on its next refresh (single global state; not tested). **Work vs exercise sections** (user's call, 2026-10-11): the board page (games,
   analysis, bot games) always resumes; an exercise section (`hooks.freshOnArrival`: Endgames) resumes only on a
   refresh (`performance` navigation type `reload`) and otherwise starts fresh: Endgames opens the picker on the
   Start step with the last choices. Puzzles and Learn openings aren't restored at all, not even on a refresh (the
@@ -394,6 +398,13 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 ### Board (chessground)
 
+- **Look** (2026-10-21, user's picks): squares cream #fbfae9 / tan #cea861 (`--sq-light`/`--sq-dark`, from chess.com's
+  board; was green). Pieces: chess.com's **Neo** on this machine only: `scripts/fetch_pieces.py [set]` downloads the 12
+  PNGs (300 px; their server 403s without a browser user agent) to gitignored `data/pieces/` and writes
+  `data/pieces/pieces.css`, served at `/pieces/` (`server.py` makes the folder, else a missing one is a 500) and linked
+  after the vendored set. Their artwork and the repo is public, so never commit it. Without the files the board shows
+  **gioco** (`vendor/chessground.gioco.css`, CC BY-NC-SA, credited in `vendor/README.md`; the user didn't like it,
+  it's only the fallback). `pieceImages()` reads the computed CSS, so the captured row and Set up's palette follow.
 - **Right-click/drag** (`drawable.onChange` in `app.js`): we call `cg.setShapes([])` after every change, so
   each call carries only the new shape. A right-drag is your arrow (`userShape()` → `drawings`, per position
   via `drawnShapes()`); a right-click on an empty square, or with a modifier on any square, **fills** it
@@ -591,7 +602,14 @@ file says what is true now. Last full cleanup: 2026-10-03.
     game" / "Playing on from A vs B" (`play.from`) / "Played on from the X lesson" / "Endgame drill · Hold it · …";
     puzzle "From your game vs X" / "Lichess puzzle · rated ~N"; lesson "Lesson · <name>"; coach demo its title
     (+ "· your own moves"); Explore lines the file's name; editor and analysis board nothing.
-  - **Sizes:** `--board-w` = min(`--board-max` 880, `100vh - --head-h - 244px`, the width left beside the nav and
+  - **Desktop: bar left, buttons right** (2026-10-21; user: the board should be the focus, the 13" MacBook matters
+    most): ≥ 901 px the eval bar stands vertical left of the board (fills from your side, `.flip` set in
+    `renderInfo()`; JS sets `--white`, a width on phones, a height here) and the ◀ ▶ row is a 40 px column right of
+    it (`.board-col` gets a second grid column; `main` has 3 rows, `.side` spans 2-3). The height reserve is 166 px
+    instead of 244, `--strip` 46 (bar + rank labels), `--nav-col` 52 in the width term. Measured: 1440×790 (a 13"
+    with Chrome's bars) 546 → 624 px, 1440×900 656 → 734, 2560×1440 880 (cap; the handle grows it), no page scroll.
+    Phones unchanged. Tooltips and the overlays menu open to the right.
+  - **Sizes:** `--board-w` = min(`--board-max` 880, `100vh - --head-h - 244px` (166 px on desktop, above), the width left beside the nav and
     `--side-w`); `main` is `min-height: 100vh; align-content: center`, so when the width limits the board the spare
     height splits above and below; `--strip` (rank labels only, 18 px; 0 on phones, where the labels sit inside the board so it's
     centred). 1440×900: 656 px (height-bound); 1920×1080: 820.
@@ -666,11 +684,13 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - **Built around the two moments a move's numbers matter** (user's call, 2026-10-06): before your move ("what
   does a ~600 / a GM play here, is it any good, what are the 5 best") and after it ("was it good or bad, how
   much": "You played b8, the 28th best move"). **Rows show dots, not numbers** (2026-10-21, user's pick: the colour
-  helped, the number never read intuitively): `sbMeter()` = 5 dots for the mover's chances after the move (`sbLevel()`:
-  the eval bar's win % bands, ≤ −30 losing, ≤ −5 worse, < 5 equal, < 30 better, else winning; mates 5 or 1), coloured by
-  the row's tier, the change in words + the number as tooltip ("Drops to equal (+0.30)", "Throws away the win: …").
-  Coarse on purpose: +0.1 and +0.4 both read 3 dots. No tooltip on touch, so phones get dots only. `±` in the Top bot
-  moves header switches back to numbers (localStorage `sbMeter` '0'). With numbers: **each row shows the eval after that move**, from
+  helped, the number never read intuitively): `sbMeter()` = the row's grade as dots, in the Player moves colours
+  (`sbRowGrade()` → `hmGrade()`; before the deep search lands, from the quick tier). The count says how much a move
+  stands out (user's call): Brilliant 3 teal, Great 2 blue, Good/Excellent/Best 1 green, Inaccuracy 1 yellow, Mistake
+  1 orange, Blunder 5 red (`SB_DOTS`). Tooltip: grade · the change in the eval bar's bands (`sbLevel()`: ≤ −30 losing,
+  ≤ −5 worse, < 5 equal, < 30 better, else winning: "Drops to equal", "Still better, but the win is gone") · the
+  number. No tooltip on touch. Brilliant/Great are first guesses (see "Player moves on the board"). `±` in the Top
+  bot moves header switches back to numbers (localStorage `sbMeter` '0'). With numbers: **each row shows the eval after that move**, from
   White's side like the eval bar (`sbEvalAfter()`: "+1.50", "−0.31", "#3", "#−2"; so on Black's turn the best
   row has the lowest number), coloured by win % lost for the mover. White's view since 2026-10-07 (user's
   call): from the mover's side the sign flipped every card and "−0.59 then +0.65" didn't read as one eval. History: costs
@@ -1082,6 +1102,9 @@ Add an entry the moment something is noticed, even when it's out of scope for th
   The only signs are the top name "Bot (~1100)", "Bot game" under the board, Takeback and one coach line. No way out
   but the nav's "Start over". Not decided: a status or an "End game" button in that row (the "Your move" text was
   removed on purpose earlier).
+- **Board smaller at 1680-2000 px wide** (2026-10-21, from the bar-left/buttons-right change): the three-column layout
+  is width-bound there and the new bar + button column take 80 px of width: 1920×1080 820 → 740 px. Fix if it
+  matters: let the `#side-resize` drag shrink `--side-w` (it can only raise `--board-max` now).
 - **Not tested on purpose:** coming back to /openings during a lesson build (a real build costs ~$0.25 and 4-6 min;
   user's call 2026-10-12).
 - **Decided, left as is (user, 2026-10-12):** with the scoreboard hidden, the Engine switch and the move strip are

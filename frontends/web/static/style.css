@@ -7,8 +7,8 @@
   --muted: #a7a6a2;
   --accent: #81b64c;
   --accent-dark: #5d8a33;
-  --sq-light: #ebecd0;
-  --sq-dark: #739552;
+  --sq-light: #fbfae9;  /* chess.com-style cream and tan (user, 2026-10-21; was #ebecd0 / #739552 green) */
+  --sq-dark: #cea861;
   --inaccuracy: #f7c045;
   --mistake: #e58f2a;
   --blunder: #ca3431;
@@ -219,13 +219,48 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
 }
 /* horizontal, in words (user's call, 2026-10-09, after Chessiro): White's share fills from the left whichever way
    the board faces; the number is only in the tooltip */
-.evalbar .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 50%; background: #f1eee6; transition: width .35s ease; }
+.evalbar .fill { position: absolute; left: 0; top: 0; bottom: 0; width: var(--white, 50%); background: #f1eee6; transition: width .35s ease, height .35s ease; }
 .evalbar span {
   position: absolute; top: 0; bottom: 0; left: 10px; display: flex; align-items: center;
   font-size: 12px; font-weight: 600; color: #2b2a27; z-index: 1; white-space: nowrap;
 }
 .evalbar.black-better span { left: auto; right: 10px; color: #f1eee6; }
 .evalbar.off { visibility: hidden; }
+
+/* Desktop (2026-10-21; user: the board should be the focus, and on a 13" laptop it's height-bound): the eval bar
+   stands left of the board and the ◀ ▶ row becomes a column right of it, giving the board the 78 px of height they
+   took (30 + 48: the 244 in --board-w becomes 166). --strip now holds the bar too, so everything aligned to the
+   board's left edge stays aligned. Phones keep both horizontal. */
+@media (min-width: 901px) {
+  main {
+    --strip: 46px;     /* 20 bar + 8 + 18 rank labels */
+    --nav-col: 52px;   /* 40 buttons + 12 gap */
+    --board-w: min(var(--board-max), calc(100vh - var(--head-h, 0px) - 166px),
+      calc(100vw - var(--nav-w) - var(--side-w) - 2 * var(--pad-x) - var(--gap) - var(--strip) - var(--nav-col)));
+    grid-template-rows: repeat(3, auto);
+  }
+  .board-col { grid-row: 1 / span 3; grid-template-columns: auto auto; column-gap: 12px; }
+  .board-col > * { grid-column: 1; }
+  .top-row { grid-row: 1; }
+  .board-row { grid-row: 2; position: relative; }
+  .bottom-row { grid-row: 3; }
+  .side { grid-row: 2 / span 2; }
+  .board-col > .nav { grid-column: 2; grid-row: 2; flex-direction: column; width: 40px; margin-left: 0; align-self: start; }
+  .nav .navbtn, .nav .ov-wrap { flex: none; }
+  .nav .navbtn { height: 36px; width: 100%; }
+  /* tooltips and the overlays menu open to the right (.board-col: the base rules come later in this file) */
+  .board-col .navbtn:hover::after, .board-col .navbtn:focus::after { left: calc(100% + 8px); bottom: auto; top: 50%; transform: translateY(-50%); }
+  .board-col .ov-menu { left: calc(100% + 8px); bottom: auto; top: 0; transform: none; }
+
+  .evalbar { position: absolute; left: 0; top: 0; width: 20px; height: var(--board-w); }
+  .evalbar .fill { top: auto; bottom: 0; right: 0; width: auto; height: var(--white, 50%); }
+  .evalbar.flip .fill { top: 0; bottom: auto; }
+  /* the words run up the bar at the leading side's end */
+  .evalbar span, .evalbar.black-better span { writing-mode: vertical-rl; transform: rotate(180deg); left: 0; right: 0;
+    justify-content: center; top: auto; bottom: 8px; }
+  .evalbar.black-better span, .evalbar.flip span { top: 8px; bottom: auto; }
+  .evalbar.flip.black-better span { top: auto; bottom: 8px; }
+}
 
 /* max-width = eval bar strip (--strip, same as padding-left) + board, so a right-aligned item lines up with the board's right edge */
 .player { max-width: calc(var(--strip) + var(--board-w)); box-sizing: border-box; font-weight: 600; padding-left: var(--strip); min-height: 24px; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -960,11 +995,15 @@ body.editor-mode .opening-slot { visibility: hidden; }  /* the opening of a posi
 .sb-row.t1 .sb-cost { color: var(--t1); }
 .sb-row.t2 .sb-cost { color: var(--t2); }
 .sb-row.t3 .sb-cost, .sb-row.t3 .sb-mv { color: var(--t3-text); }
-/* Dots instead of the eval (2026-10-21), coloured by the row's tier */
+/* Dots instead of the eval (2026-10-21): the grade's count, in the board's Player moves colours */
 .sb-meter { display: inline-flex; gap: 3px; justify-content: flex-end; width: 100%; }
-.sb-meter i { width: 7px; height: 7px; border-radius: 50%; background: var(--inset); }
-.sb-meter i.on { background: currentColor; }
-.sb-row.t0 .sb-meter { color: var(--t0); }
+.sb-meter i { width: 7px; height: 7px; border-radius: 50%; background: var(--g); }
+.sb-meter.g-brilliant { --g: #1baca6; }
+.sb-meter.g-great { --g: #4b8fbc; }
+.sb-meter.g-best { --g: #81b64c; }
+.sb-meter.g-inaccuracy { --g: #e3b134; }
+.sb-meter.g-mistake { --g: #e58f2a; }
+.sb-meter.g-blunder { --g: #b23330; }
 .sb-pop { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .sb-pbar { flex: 1; height: 6px; border-radius: 99px; background: var(--inset); overflow: hidden; }
 .sb-pbar span { display: block; height: 100%; border-radius: 99px; background: var(--maia); transition: width .3s ease; }

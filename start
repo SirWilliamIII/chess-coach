@@ -49,13 +49,21 @@ fi
 # Inside kitty, run the server in its own tab without taking focus, so this terminal stays free. CHESS_IN_TAB
 # marks the relaunched copy (else it would open tabs forever); `kitty @ ls` fails when remote control is off,
 # and then the server runs here as before.
-if [[ -n "${KITTY_WINDOW_ID:-}" && -z "${CHESS_IN_TAB:-}" ]] && kitty @ ls >/dev/null 2>&1; then
-  # Checked here because a tab whose server dies on "address in use" closes before you can read why.
-  # Only the .env port: a --port flag isn't parsed here.
-  if lsof -ti tcp:"${CHESS_PORT:-8000}" -sTCP:LISTEN >/dev/null; then
-    echo "Something is already listening on port ${CHESS_PORT:-8000} (lsof -ti :${CHESS_PORT:-8000} | xargs kill to stop it)." >&2
+# A server already on the port (an old one) is stopped first, so ./start is also a restart (user, 2026-10-21).
+# LISTEN only: without it lsof also lists clients connected to the port, like the browser showing the app. Only
+# the .env port: a --port flag isn't parsed here. Skipped in the relaunched tab, which the outer run already cleared.
+port="${CHESS_PORT:-8000}"
+if [[ -z "${CHESS_IN_TAB:-}" ]] && pids=$(lsof -ti tcp:"$port" -sTCP:LISTEN); then
+  echo "Stopping what's listening on port $port (pid $(echo $pids))…"
+  kill $pids
+  for _ in {1..50}; do lsof -ti tcp:"$port" -sTCP:LISTEN >/dev/null || break; sleep 0.1; done
+  if lsof -ti tcp:"$port" -sTCP:LISTEN >/dev/null; then
+    echo "Port $port is still taken after 5 s; not starting." >&2
     exit 1
   fi
+fi
+
+if [[ -n "${KITTY_WINDOW_ID:-}" && -z "${CHESS_IN_TAB:-}" ]] && kitty @ ls >/dev/null 2>&1; then
   # The tab gets kitty's environment, not this shell's: without PATH there's no /opt/homebrew/bin, so no stockfish.
   kitty @ launch --type=tab --tab-title chess-coach --keep-focus --cwd "$PWD" \
     --env CHESS_IN_TAB=1 --env PATH="$PATH" ./start "$@" >/dev/null

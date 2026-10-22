@@ -6,3 +6,6 @@ Local copies of the browser libraries so the app works without internet.
   `chess-1.4.0.js` is jsDelivr's ESM bundle.
 
 To upgrade, download the new versions the same way and update the paths in index.html / app.js.
+- gioco piece set (sadsnake1, CC BY-NC-SA 4.0) - https://github.com/lichess-org/lila/tree/master/public/piece/gioco
+  `chessground.gioco.css` embeds its 12 SVGs (user's pick 2026-10-21, a free look-alike of chess.com's Neo, which is
+  chess.com's own artwork). `chessground.cburnett.css` (the old set) is kept for switching back in index.html.

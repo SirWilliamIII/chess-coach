@@ -605,6 +605,7 @@ function renderInfo() {
   const mat = material(currentGame());
   $('player-top').innerHTML = playerLine(top) + capturedHtml(top, mat);
   $('player-bottom').innerHTML = playerLine(state.orientation) + capturedHtml(state.orientation, mat);
+  $('evalbar').classList.toggle('flip', state.orientation === 'black');  // the vertical bar fills from your side
   syncTakeback();
   document.querySelectorAll('.you-pick').forEach((el) => { el.onclick = () => setYou(el.dataset.color); });
   document.body.classList.toggle('demo-mode', !!state.demo);
@@ -760,7 +761,7 @@ function setEvalBar(quick) {
   const ev = deep || quick.eval;
   const cp = deep ? (deep.startsWith('#') ? (deep.includes('-') ? -10000 : 10000) : Math.round(parseFloat(deep) * 100)) : quick.cp;
   const w = winPct(Math.max(-1500, Math.min(1500, cp)));
-  $('evalfill').style.width = `${w}%`;
+  $('evalbar').style.setProperty('--white', `${w}%`);  // a width on phones, a height in the desktop's vertical bar
   $('evalbar').classList.toggle('black-better', cp < 0);
   $('evaltext').textContent = evalBarWords(ev, w);
   $('evalbar').title = fmtEval(ev);
@@ -1025,6 +1026,19 @@ function sbLevel(ev, turn) {
   return d <= -30 ? 1 : d <= -5 ? 2 : d < 5 ? 3 : d < 30 ? 4 : 5;
 }
 
+// The row's grade as dots, in the board's Player moves colours (user's call, 2026-10-21: the count says how much it
+// stands out, so good, inaccurate and mistaken moves read about the same, one dot each, and only Great, Brilliant
+// and Blunder get more). Grades as on the board (hmGrade); before the deep search lands, from the quick tier.
+const SB_DOTS = { brilliant: 3, great: 2, best: 1, inaccuracy: 1, mistake: 1, blunder: 5 };
+const SB_GRADE_NAME = { brilliant: 'Brilliant', great: 'Great', best: 'Good', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder' };
+
+function sbRowGrade(r) {
+  const c = currentGame();
+  const sb = sbGet(c.fen());
+  if (sb && !sb.over && r.drop != null) return hmGrade(c, sb, r);
+  return ['best', 'inaccuracy', 'mistake', 'blunder'][r.tier ?? 0];
+}
+
 function sbMeter(r, turn, bestEval) {
   const ev = sbEvalAfter(r, turn, bestEval);
   const lv = sbLevel(ev, turn);
@@ -1033,8 +1047,9 @@ function sbMeter(r, turn, bestEval) {
   const name = SB_LEVEL[lv];
   const words = lv >= top ? (lv === 3 ? 'Keeps it equal' : `Keeps you ${name}`)
     : top === 5 && lv <= 3 ? `Throws away the win: ${lv === 3 ? 'equal' : `you're ${name}`}`
-    : lv === 3 ? 'Drops to equal' : lv === 4 ? 'Still better, less so' : `Now you're ${name}`;
-  return `<span class="sb-meter" title="${words} (${ev})">${[1, 2, 3, 4, 5].map((i) => `<i${i <= lv ? ' class="on"' : ''}></i>`).join('')}</span>`;
+    : lv === 3 ? 'Drops to equal' : lv === 4 ? 'Still better, but the win is gone' : `Now you're ${name}`;
+  const g = sbRowGrade(r);
+  return `<span class="sb-meter g-${g}" title="${SB_GRADE_NAME[g]} · ${words} (${ev})">${'<i></i>'.repeat(SB_DOTS[g])}</span>`;
 }
 
 // The quick candidates before the deep search lands: the eval's few lines and Maia's list, scored against the
@@ -4576,9 +4591,14 @@ document.addEventListener('keydown', (e) => {
   const linked = +(location.hash.match(/ply=(\d+)/)?.[1] || 0);
   if (SECTION !== 'board') await import(`./sections/${SECTION}.js`);  // fills `hooks`
   const intent = takeIntent();
-  // A browser's first visit starts from the starting position: the server's one board is whatever any device or
-  // section left on it last (a drill, a puzzle), which looked like scattered pieces (user, 2026-10-14)
-  if (SECTION === 'board' && !snapshot() && !linked && !intent) review = await api('/api/analysis', {});
+  // The app's first load in a tab (or a browser's first visit) starts from the starting position (user, 2026-10-21;
+  // first visits only since 2026-10-14: the server's one board is whatever any device or section left on it). A
+  // refresh, or coming back from another section in the same tab, still resumes: sessionStorage lives per tab and
+  // survives both. Every page sets the mark, so Puzzles → Analysis in a new tab goes back to the board as left.
+  let firstInTab = false;
+  try { firstInTab = !sessionStorage.getItem('appTab'); sessionStorage.setItem('appTab', '1'); } catch {}
+  const fresh = SECTION === 'board' && (!snapshot() || firstInTab) && !linked && !intent;
+  if (fresh) review = await api('/api/analysis', {});
   const taken = recall('boardTakenBy');
   if (SECTION === 'board') store('boardTakenBy', undefined);
   // Work sections (the board: games, analysis, bot games) come back where you left them; exercise sections
@@ -4586,11 +4606,11 @@ document.addEventListener('keydown', (e) => {
   // 2026-10-11: leaving a drill to play a game, you'd expect to start over)
   const reload = performance.getEntriesByType('navigation')[0]?.type === 'reload';
   const resume = !hooks.freshOnArrival || reload;
-  let restored = resume && restoreBoard(review);
+  let restored = !fresh && resume && restoreBoard(review);
   // Reopen this section's own board when another section took the server's. The board page waits for that
   // signal, so a game loaded on another device or tab still wins on a plain refresh; a section page's board
   // only ever comes from its own snapshot.
-  if (!restored && resume && taken !== SECTION && (taken || SECTION !== 'board')) {
+  if (!fresh && !restored && resume && taken !== SECTION && (taken || SECTION !== 'board')) {
     const again = await reopenBoard();
     restored = !!again && restoreBoard(again);
     if (restored && SECTION !== 'board') markBoardTaken();
