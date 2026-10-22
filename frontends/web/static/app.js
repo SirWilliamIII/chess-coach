@@ -934,6 +934,14 @@ function requestScoreboard(c) {
     const old = sbGet(L.fens[k - 1]);
     if (!old || !(old.over || sbRow(old, uci) || old.included?.includes(uci))) jobs.push({ at: k - 1, include: [uci] });
   }
+  // a loaded game's move card (noteMove) is about the board's last move, whoever made it: its position too, for the
+  // card's rank and players tiles (your own moves are already the job above)
+  const n = L.plays.length;
+  if (n >= 1 && n !== k && state.review && !state.play && !state.extra.length && !state.demo) {
+    const uci = L.plays[n - 1].uci;
+    const old = sbGet(L.fens[n - 1]);
+    if (!old || !(old.over || sbRow(old, uci) || old.included?.includes(uci))) jobs.push({ at: n - 1, include: [uci] });
+  }
   if (!jobs.length) return;
   sbTimer = setTimeout(async () => {
     // one after the other: the server drops a search that a newer request overtakes
@@ -949,6 +957,7 @@ function requestScoreboard(c) {
         data.included = j.include;
         sbCache.set(fen, data);
         if (sbCache.size > 500) sbCache.delete(sbCache.keys().next().value);
+        refreshMoveCards();  // a move card waiting for this position's rank and players
       } catch (e) {
         if (token === sbToken) sbError = e.message;
       }
@@ -1687,7 +1696,6 @@ async function showLines() {
 function update() {
   $('board-wrap').classList.toggle('game-over', !!state.play?.over);
   if (state.editor) return updateEditor();
-  clearHeldThreats();  // right-clicked threat arrows are stale once the position moves on
   // a pinned/hovered square from chat text refers to the position it was clicked on — stale once
   // the board moves on, so it would otherwise sit there highlighted with no visible explanation
   pinnedSquares.clear();
@@ -1871,6 +1879,8 @@ function paintSquares() {
   // a selected piece's moves as circles in their grade's colour (a ring on a capture), each with its number in the
   // square's corner; the previewed one (first click) filled. Nothing while no piece is selected (user's calls, 2026-10-21)
   const shown = selectedMoveGrades();
+  // a piece picked up before the deep search lands: its plain move dots pulse until the circles arrive
+  $('board-wrap').classList.toggle('hm-searching', !!cg.state.selected && !!hmContext()?.pending);
   hmHoverable = new Map([...shown].map(([sq, m]) => [sq, m.uci]));
   if (hmHoverSq && !hmHoverable.has(hmHoverSq)) hmHoverSq = null;
   if (hmArmed && !hmHoverable.has(hmArmed)) hmArmed = null;
@@ -2029,8 +2039,7 @@ function legalAt(k, san) {
 }
 
 // a threat mentioned before it's actually playable ("...Nxe4" while it's still your move) isn't
-// legal at the current position — try it with the side to move flipped, same trick movesShapesFor
-// uses to preview an opponent piece's options
+// legal at the current position — try it with the side to move flipped
 function legalAtFlipped(k, san) {
   const line = currentLine();
   const c = new Chess(line.startFen);
@@ -2195,35 +2204,8 @@ function knightShapes(from, to, brush) {
   return [{ orig: from, dest: bend, brush: `${brush}Mid` }, { orig: bend, dest: to, brush }];
 }
 
-// threat arrows for the piece on `sq`: one per enemy piece it attacks (captures only, not every
-// move), [] if none apply right now (empty square, game over, editor/demo mode, or not the player's
-// turn in a live bot game). attackers() works for either side regardless of whose turn it is and
-// counts a pinned piece's attacks too, which legal moves would hide.
-function movesShapesFor(sq) {
-  if (!sq || state.editor || state.demo) return [];
-  const c = currentGame();
-  if (c.isGameOver()) return [];
-  const turn = c.turn() === 'w' ? 'white' : 'black';
-  // In a live bot game only show during the player's turn
-  if (state.play) {
-    const p = state.play;
-    if (p.over || p.thinking || p.view !== p.moves.length) return [];
-  }
-  const piece = cg.state.pieces.get(sq);
-  if (!piece) return [];
-  const isOpponent = piece.color !== turn;
-  const by = piece.color === 'white' ? 'w' : 'b';
-  const shapes = [];
-  for (const [target, p] of cg.state.pieces) {
-    if (p.color === piece.color || !c.attackers(target, by).includes(sq)) continue;
-    const brush = p.role === 'king' ? (isOpponent ? 'hvOppCheck' : 'hvCheck') : (isOpponent ? 'hvOppCapture' : 'hvCapture');
-    shapes.push(...(piece.role === 'knight' ? knightShapes(sq, target, brush) : [{ orig: sq, dest: target, brush }]));
-  }
-  return shapes;
-}
-
 function renderShapes() {
-  cg.setAutoShapes([...baseShapes(), ...heldThreats]);
+  cg.setAutoShapes(baseShapes());
 }
 
 // ---- board overlays (the eye button under the board), from your side whoever's turn it is (user, 2026-10-10:
@@ -2293,17 +2275,15 @@ const ovAny = () => !!(overlays.captures || overlays.checks || overlays.threats)
 let hmHoverable = new Map();  // square → uci of the selected piece's moves, as last painted
 let hmArmed = null;           // the square a first click previewed
 
-// the position when the overlay may show, with its scoreboard search
+// the position when the overlay may show, with its scoreboard search; { pending: true } while that search is still
+// running. Shown during an unrevealed tactic hint too, though it gives the answer away (user's call, 2026-10-21)
 function hmContext() {
   if (!overlays.players || !state.engineOn || state.editor || state.study || puzzleLive() || !state.review) return null;
   const c = currentGame();
-  if (!canMove(c, c.turn() === 'w' ? 'white' : 'black')) return null;
-  const fen = c.fen();
-  const sb = sbGet(fen);
-  if (!sb || sb.over) return null;
-  const t = tacticHere();
-  if (t && t.fen === fen && t.level < 4) return null;  // the Great/Brilliant square would be the answer
-  return { c, sb };
+  if (!canMove(c, c.turn() === 'w' ? 'white' : 'black') || c.isGameOver()) return null;
+  const sb = sbGet(c.fen());
+  if (!sb) return { pending: true };
+  return sb.over ? null : { c, sb };
 }
 
 // the selected piece's moves, graded (promotions: the queen's)
@@ -2311,7 +2291,7 @@ function selectedMoveGrades() {
   const out = new Map();
   const from = cg.state.selected;
   const ctx = from && hmContext();
-  if (!ctx) return out;
+  if (!ctx || ctx.pending) return out;
   for (const r of ctx.sb.all) {
     if (!r.uci.startsWith(from) || (r.uci.length === 5 && r.uci[4] !== 'q')) continue;
     out.set(r.uci.slice(2, 4), { uci: r.uci, grade: hmGrade(ctx.c, ctx.sb, r) });
@@ -2499,13 +2479,26 @@ function currentDrawings() {
 }
 
 // Right-drag: an arrow. Right-click on an empty square (or on any square with a modifier): fill it.
-// Plain right-click on a piece: its threat arrows (on the set-up board, which has none: fill it). A second
-// right-click on the same square undoes it.
+// Plain right-click on a piece: clear the board (on the set-up board: fill it). A second right-click on a filled
+// square undoes it.
 function userShape(s) {
   const brush = drawBrush(drawMods) || drawColor;
   if (s.dest) toggleDrawing({ orig: s.orig, dest: s.dest, brush });
   else if (drawBrush(drawMods) || state.editor || !cg.state.pieces.get(s.orig)) toggleDrawing({ orig: s.orig, brush });
-  else holdThreatSquare(s.orig);
+  else clearBoardMarks();
+}
+
+// a plain right-click on a piece wipes everything drawn on the board (user's call, 2026-10-21; it held that piece's
+// threat arrows before): your arrows and filled squares, the automatic arrows (overlays, a tactic hint) until the
+// board moves, a hover arrow, and the selected piece with its graded circles
+function clearBoardMarks() {
+  drawings = [];
+  drawingsFen = null;
+  shapesClearedFen = currentGame().fen();
+  hmArmed = null;
+  cg.selectSquare(null);
+  renderShapes();
+  paintSquares();
 }
 
 // drawing the same arrow again removes it (as chessground does), a different colour recolours it;
@@ -2538,39 +2531,10 @@ function drawnShapes() {
 }
 
 function clearUserShapes() {
-  const had = drawings.length || heldSquares.size;
+  const had = drawings.length;
   drawings = [];
   drawingsFen = null;  // so savedMarks come back on the next render
-  heldSquares.clear();
-  heldThreats = [];
   if (had) { renderShapes(); paintSquares(); }
-}
-
-// ---- right-click a piece to hold its threat arrows (accumulates across pieces);
-// left click resets them all — see the drawable.onChange hook and the board's mousedown listener
-
-let heldThreats = [];
-let heldSquares = new Set();
-
-function holdThreatSquare(sq) {
-  if (heldSquares.has(sq)) {  // right-click the same piece again: drop its arrows
-    heldSquares.delete(sq);
-    heldThreats = [...heldSquares].flatMap(movesShapesFor);
-    renderShapes();
-    return;
-  }
-  const shapes = movesShapesFor(sq);
-  if (!shapes.length) return;
-  heldSquares.add(sq);
-  heldThreats.push(...shapes);
-  renderShapes();
-}
-
-function clearHeldThreats() {
-  if (!heldSquares.size) return;
-  heldSquares.clear();
-  heldThreats = [];
-  renderShapes();
 }
 
 function myColor() {
@@ -3604,23 +3568,27 @@ function noteMove() {
   const name = moveName(m.label, m.san);
   const best = m.best ? moveName(m.label, m.best) : null;
   const lost = Math.round(m.win_pct_lost);
-  const mate = /^#-?0$/.test(m.eval_after);
   // collapsed: one narrow line (move, a grade dot and word); open: stat tiles (user's call, 2026-10-21)
   const grade = m.played_best ? 'best' : m.class || (lost >= 3 ? 'loose' : 'fine');
   const gradeWord = { best: 'Best move', fine: 'Fine', loose: 'A little loose', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder' }[grade];
   // under 1% the engine's preference is a matter of taste, so don't suggest it
   const showBest = !m.played_best && best && lost >= 1;
-  const stat = (k, v, s = '') => `<div class="stat"><span class="stat-k">${k}</span><span class="stat-v">${v}</span><span class="stat-s">${s}</span></div>`;
-  const rows = [`<div class="card-stats">`
-    + stat('Eval', esc(fmtEval(m.eval_after)), esc(mate ? 'checkmate' : evalWords(evalValue(m.eval_after)).replace(' is ', ' ')))  // fits two lines in a narrow tile
-    + stat('Cost', lost >= 1 ? `−${lost}%` : '0%', lost >= 1 ? 'win chance lost' : 'win chance kept')
-    + (showBest ? stat('Best', moveChip(best), `${esc(fmtEval(m.eval_before))} instead`) : stat('Best', '✓', m.played_best ? 'you played it' : 'close enough'))
-    + '</div>'];
+  // the open card (user's call, 2026-10-21: more detail, laid out properly): win chance before → after, three tiles
+  // (eval, rank among the legal moves, share of ~N players), then what to play instead. Rank and share come from the
+  // scoreboard's search of the position before the move and fill in when it lands (refreshMoveCards)
+  const after = moverWin(m.eval_after, m.color);
+  const before = Math.min(100, after + m.win_pct_lost);
+  const rows = [`<div class="card-wc">${wcHtml(before, after, lost)}</div>`,
+    `<div class="card-stats">${evalStat(m.eval_after)}<span class="card-live"></span></div>`];
   const line = (m.best_line || '').replace(/\d+\.+\s*/g, '').split(/\s+/).filter(Boolean);
+  const alt = [];
+  alt.push(`<div class="alt-best">${showBest ? `<div class="alt-row"><span class="stat-k">Best</span>${moveChip(best)}<span class="alt-ev">${esc(fmtEval(m.eval_before))}</span></div>` : ''}</div>`);
   if (line.length > 1) {
-    rows.push(`<div class="card-line"><button class="demo-btn" data-demo="best" title="Show it on the demo board">▶</button>`
-      + `<span class="stat-k">${m.played_best ? 'Main' : 'Best'} line</span><span class="card-line-moves">${esc(m.best_line.split(/\s+/).slice(0, 8).join(' '))}…</span></div>`);
+    alt.push(`<div class="card-line"><button class="demo-btn" data-demo="best" title="Show it on the demo board">▶</button>`
+      + `<span class="stat-k">${m.played_best ? 'Main' : 'Best'} line</span><span class="card-line-moves">${esc(m.best_line.split(/\s+/).slice(0, 10).join(' '))}…</span></div>`);
   }
+  alt.push('<div class="card-popular"></div>');
+  rows.push(`<div class="card-alt">${alt.join('')}</div>`);
   if (m.trap) {
     const kind = m.trap.kind;
     // 'fell' is about this move's mover; 'punished'/'missed' about the setter, who made this move
@@ -3634,6 +3602,11 @@ function noteMove() {
     + `<span class="card-caret">▾</span></div><div class="card-body">${rows.join('')}</div>`);
   msg.querySelector('.card-head').onclick = () => msg.classList.toggle('collapsed');
   msg.querySelector('.card-back').onclick = () => closeDemo();
+  msg.dataset.fen = ply > 1 ? state.review.moves[ply - 2].fen_after : state.review.start_fen;
+  msg.dataset.uci = m.uci;
+  msg.dataset.label = m.label;
+  msg.dataset.ply = ply;
+  fillMoveCard(msg);
   const trapBtn = msg.querySelector('[data-demo="trap"]');
   if (trapBtn) {
     // 'fell': show the refutation from after this move; 'missed': from before it (the move that should have been played)
@@ -3650,6 +3623,85 @@ function noteMove() {
   msg.querySelector('.note-why').onclick = () => ask(moveQuestion(m), { hideQuestion: true, at: { ply, extra: [] } });
   syncCards();
   if (m.win_pct_lost >= BIG_MOMENT_PCT) explainBigMoment(m, ply);
+}
+
+const cardStat = (k, v, sub = '') => `<div class="stat"><span class="stat-k">${k}</span><span class="stat-v">${v}</span><span class="stat-s">${sub}</span></div>`;
+
+// the mover's win chance from a White's-view eval string ("+1.20", "#-3")
+function moverWin(ev, color) {
+  const s = String(ev ?? '0').replace('−', '-');
+  const cp = s.startsWith('#') ? (s.includes('-') ? -1500 : 1500) : Math.max(-1500, Math.min(1500, parseFloat(s) * 100 || 0));
+  return winPct(color === 'white' ? cp : -cp);
+}
+
+// a move card's parts from the scoreboard's search of the position before it: the move's rank among the legal moves,
+// how many ~N players pick it, and what most of them play instead
+function fillMoveCard(msg) {
+  const sb = sbGet(msg.dataset.fen);
+  const live = msg.querySelector('.card-live'), pop = msg.querySelector('.card-popular');
+  if (!live || live.dataset.done) return;
+  if (!sb || sb.over || !sb.all) {
+    live.innerHTML = cardStat('Rank', '<i class="skel-text">#0</i>', 'searching…') + cardStat('Players', '<i class="skel-text">0%</i>', '');
+    return;
+  }
+  const uci = msg.dataset.uci, rating = maiaRating();
+  const i = sb.all.findIndex((r) => r.uci === uci);
+  const rank = i < 0 ? null : (sb.all[i].rank ?? i + 1);
+  const pcts = sbPcts(sb, rating);
+  const pct = pcts.get(uci) || 0;
+  live.innerHTML = cardStat('Rank', rank ? `#${rank}` : '–', `of ${sb.all.length} moves`)
+    + cardStat('Players', pct >= 1 ? `${Math.round(pct)}%` : '<1%', `of ~${rating} play it`);
+  live.dataset.done = '1';
+  if (i >= 0) regradeMoveCard(msg, sb, sb.all[i]);
+  const [topUci, topPct] = [...pcts].sort((a, b) => b[1] - a[1])[0] || [];
+  const top = topUci && topUci !== uci && sb.all.find((r) => r.uci === topUci);
+  if (top && pop) pop.innerHTML = `<div class="alt-row"><span class="stat-k">Most ~${rating} play</span>${moveChip(top.move)}`
+    + `<span class="alt-ev">${Math.round(topPct)}%</span></div>`;
+}
+
+// the card re-graded from the scoreboard's deeper search (user's call, 2026-10-21: the review's 0.3 s grade said
+// "Mistake −23%" next to "#2 of 34 moves"): grade, win chance, eval and the best move all from that one search, on the
+// scoreboard's grade scale (sbGrade, hmGrade), so the card agrees with its own rank
+function regradeMoveCard(msg, sb, r) {
+  const fen = msg.dataset.fen, turn = fen.split(' ')[1], color = turn === 'w' ? 'white' : 'black';
+  const top = sb.all[0];
+  const drop = r.rank === 1 ? 0 : (r.drop ?? 0);
+  const g = hmGrade(new Chess(fen), sb, r);
+  const word = { brilliant: 'Brilliant', great: 'Great' }[g] || sbGrade(drop, r.rank)[0];
+  msg.className = msg.className.replace(/\bg-\w+/, `g-${g}`);
+  msg.querySelector('.card-grade').textContent = word;
+  const before = moverWin(top.eval_white, color), after = Math.max(0, before - drop);
+  msg.querySelector('.card-wc').innerHTML = wcHtml(before, after, Math.round(drop));
+  const ev = sbEvalAfter(r, turn, top.eval_white);
+  const evTile = msg.querySelector('.card-stats .stat');
+  if (evTile) evTile.outerHTML = evalStat(ev);
+  // the best move and its line from the same search (top 5 rows carry their continuation, `cont`)
+  const best = r.rank === 1 ? r : top;
+  const altBest = msg.querySelector('.alt-best');
+  if (altBest) altBest.innerHTML = r.rank === 1 || drop < 1 ? ''
+    : `<div class="alt-row"><span class="stat-k">Best</span>${moveChip(best.move)}<span class="alt-ev">${esc(fmtEval(best.eval_white))}</span></div>`;
+  const lineEl = msg.querySelector('.card-line');
+  if (best.cont && lineEl) {
+    const lab = msg.dataset.label;
+    const text = `${lab}${lab.endsWith('...') ? '' : ' '}${best.move} ${best.cont}`;
+    lineEl.querySelector('.stat-k').textContent = r.rank === 1 ? 'Main line' : 'Best line';
+    lineEl.querySelector('.card-line-moves').textContent = `${text.split(/\s+/).slice(0, 10).join(' ')}…`;
+    const moves = [best.move, ...best.cont.replace(/\d+\.+\s*/g, '').split(/\s+/).filter(Boolean)];
+    lineEl.querySelector('.demo-btn').onclick = () => openDemo({ title: `${r.rank === 1 ? 'Main' : 'Best'} line: ${best.move}`,
+      start_fen: fen, moves, notes: [], ply: +msg.dataset.ply, then_moves: [] });
+  }
+}
+
+const wcHtml = (before, after, lost) => `<div class="wc-head"><span class="stat-k">Win chance</span>`
+  + `<span class="wc-nums">${Math.round(before)}% <span class="wc-arrow">→</span> <b>${Math.round(after)}%</b>${lost >= 1 ? `<span class="wc-lost-n">−${lost}</span>` : ''}</span></div>`
+  + `<div class="wc-bar"><span class="wc-keep" style="width:${after}%"></span><span class="wc-gone" style="left:${after}%;width:${before - after}%"></span></div>`;
+
+const evalStat = (ev) => cardStat('Eval', esc(fmtEval(ev)),
+  esc(/^#-?0$/.test(ev) ? 'checkmate' : evalWords(evalValue(String(ev).replace('−', '-'))).replace(' is ', ' ')));  // fits two lines in a narrow tile
+
+// a search landed: fill the cards still waiting for theirs
+function refreshMoveCards() {
+  document.querySelectorAll('.msg.card[data-fen] .card-live:not([data-done])').forEach((el) => fillMoveCard(el.closest('.msg.card')));
 }
 
 async function explainBigMoment(m, ply) {
@@ -4675,21 +4727,19 @@ document.addEventListener('keydown', (e) => {
   const linked = +(location.hash.match(/ply=(\d+)/)?.[1] || 0);
   if (SECTION !== 'board') await import(`./sections/${SECTION}.js`);  // fills `hooks`
   const intent = takeIntent();
-  // The app's first load in a tab (or a browser's first visit) starts from the starting position (user, 2026-10-21;
-  // first visits only since 2026-10-14: the server's one board is whatever any device or section left on it). A
-  // refresh, or coming back from another section in the same tab, still resumes: sessionStorage lives per tab and
-  // survives both. Every page sets the mark, so Puzzles → Analysis in a new tab goes back to the board as left.
-  let firstInTab = false;
-  try { firstInTab = !sessionStorage.getItem('appTab'); sessionStorage.setItem('appTab', '1'); } catch {}
-  const fresh = SECTION === 'board' && (!snapshot() || firstInTab) && !linked && !intent;
+  // Opening the app starts from the starting position (user, 2026-10-21: "almost never at the starting position"): a
+  // typed address, a bookmark, a new or restored tab. A refresh or Back/Forward resumes, and so does moving between
+  // the app's sections (goSection leaves an intent). Was "first load in this tab" by sessionStorage, which Chrome
+  // keeps across a retyped address, a reopened tab and links opened in a new tab, so it nearly always resumed.
+  const nav = performance.getEntriesByType('navigation')[0]?.type;
+  const fresh = SECTION === 'board' && nav !== 'reload' && nav !== 'back_forward' && !linked && !intent;
   if (fresh) review = await api('/api/analysis', {});
   const taken = recall('boardTakenBy');
   if (SECTION === 'board') store('boardTakenBy', undefined);
   // Work sections (the board: games, analysis, bot games) come back where you left them; exercise sections
   // (hooks.freshOnArrival: drills) start fresh when you arrive and come back only on a refresh (user's call,
   // 2026-10-11: leaving a drill to play a game, you'd expect to start over)
-  const reload = performance.getEntriesByType('navigation')[0]?.type === 'reload';
-  const resume = !hooks.freshOnArrival || reload;
+  const resume = !hooks.freshOnArrival || nav === 'reload';
   let restored = !fresh && resume && restoreBoard(review);
   // Reopen this section's own board when another section took the server's. The board page waits for that
   // signal, so a game loaded on another device or tab still wins on a plain refresh; a section page's board

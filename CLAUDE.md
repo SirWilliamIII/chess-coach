@@ -158,10 +158,13 @@ file says what is true now. Last full cleanup: 2026-10-03.
   `reopen` recipe. The server still holds one board, so a section page that replaces it calls `markBoardTaken()`
   (localStorage `boardTakenBy`); the board page then reopens its own on load (`reopenBoard()`: `/api/play/new` for a bot
   game, `/api/saved/open` for a saved review, else `/api/analysis`), and only then, so a game loaded on another
-  device still wins a plain refresh. The app's first load in a tab (sessionStorage `appTab`, set by every page) or a browser with no `board`
-  snapshot gets a fresh board from the starting position instead of the server's (2026-10-14 first visits only:
-  it showed whatever drill or puzzle was left there; every new tab since 2026-10-21, user's call). A refresh or
-  another section → Analysis in the same tab still resumes. A new tab replaces the server's one board, so another
+  device still wins a plain refresh. **Opening the app** (a typed address, a bookmark, a new or restored tab) gives a fresh board from the starting
+  position instead of the server's; a refresh or Back/Forward (`performance` navigation type) resumes, and so does
+  another section → Analysis (`goSection()` leaves an intent). History: 2026-10-14 first visits only (it showed
+  whatever drill or puzzle was left there); then "first load in a tab" by sessionStorage, which Chrome keeps across a
+  retyped address, a reopened tab and links opened in a new tab, so it nearly always resumed (user, 2026-10-21).
+  Tested (Playwright): play, refresh, Endgames → Analysis, back/forward all resume; the address typed again starts
+  fresh. Not checked: what navigation type Chrome reports for tabs restored at startup. A new tab replaces the server's one board, so another
   device's loaded game shows the starting position on its next refresh (single global state; not tested). **Work vs exercise sections** (user's call, 2026-10-11): the board page (games,
   analysis, bot games) always resumes; an exercise section (`hooks.freshOnArrival`: Endgames) resumes only on a
   refresh (`performance` navigation type `reload`) and otherwise starts fresh: Endgames opens the picker on the
@@ -362,8 +365,15 @@ file says what is true now. Last full cleanup: 2026-10-03.
   chess.com, a chess.com game's as they are. The ratings shown on screen stay the site's own.
 - **Per-move cards when stepping through a game** (`noteMove()`; restyled 2026-10-21, user's call): collapsed = one
   narrow line in a smaller font (move, grade dot + word; `g-<grade>` sets `--gc`, the scoreboard's grade colours, on
-  the edge), the newest open: three stat tiles (Eval + words, Cost = win chance lost, Best + its eval), ▶ best line,
-  Why?, Back to my game. The bot-game "Your move" card shares the collapsed look; built from the saved review (`best_line` etc. in `public_review()`), no
+  the edge). Open (more detail, 2026-10-21, user's call): win chance before → after for the mover with a bar (the lost
+  part in the grade colour, `moverWin()`; before = after + `win_pct_lost` so it matches the grade), tiles Eval / Rank
+  ("#9 of 37 moves") / Players ("8% of ~800 play it"), then an Instead block: Best + its eval, ▶ best line, and "Most
+  ~800 play X N%" when that differs. Rank and Players come from the scoreboard's search of the position before the
+  move (`fillMoveCard()`, refreshed by `refreshMoveCards()` when a search is stored; `requestScoreboard()` also queues
+  that position for the opponent's moves); "searching…" until then. When it lands the card is **re-graded from that
+  search** (`regradeMoveCard()`: grade on the scoreboard's scale incl. Brilliant/Great, win chance, eval, best move and
+  its line from `cont`), because the review's 0.3 s grade said "Mistake −23%" next to "#2 of 34 moves" (user's call,
+  2026-10-21). The collapsed line, the move strip's ?! flags and the game report still use the review. Why?, Back to my game. The bot-game "Your move" card shares the collapsed look; built from the saved review (`best_line` etc. in `public_review()`), no
   engine call. Paid: a move losing ≥ 10% win chance (`BIG_MOMENT_PCT`) gets an automatic "⚠ Big moment"
   answer after 1.2 s on it, max 8 per game; it and Why? share `moveQuestion()` so they share the answer cache.
   Why? uses `.note-why` because `syncCards()` disables `.card-why` outside bot games.
@@ -400,6 +410,8 @@ file says what is true now. Last full cleanup: 2026-10-03.
 
 ### Board (chessground)
 
+- **Coordinates** 14 px bold #cfcabf outside the board (12 px `--muted` until 2026-10-21, user: easier to read); the
+  file letters' 2 extra px come out of the board's height budget (`112px` in the desktop `--board-w`), so no scroll.
 - **Look** (2026-10-21, user's picks): squares cream #fbfae9 / tan #cea861 (`--sq-light`/`--sq-dark`, from chess.com's
   board; was green). Pieces: chess.com's **Neo** on this machine only: `scripts/fetch_pieces.py [set]` downloads the 12
   PNGs (300 px; their server 403s without a browser user agent) to gitignored `data/pieces/` and writes
@@ -410,11 +422,11 @@ file says what is true now. Last full cleanup: 2026-10-03.
 - **Right-click/drag** (`drawable.onChange` in `app.js`): we call `cg.setShapes([])` after every change, so
   each call carries only the new shape. A right-drag is your arrow (`userShape()` → `drawings`, per position
   via `drawnShapes()`); a right-click on an empty square, or with a modifier on any square, **fills** it
-  (`drawnSquares()` → `sq-fill-<brush>` via `paintSquares()`); a plain right-click on a piece holds its
-  **threat arrows**: one per enemy piece it attacks (`movesShapesFor()`, chess.js `attackers()`, so pins and
-  whose turn it is don't matter; knights as an L via `knightShapes()`). A second right-click undoes it. Since
-  chessground's list is always empty, its left-click erase never fires, so our capture-phase `mousedown`
-  listener clears drawings and held threats on a left click. A left click on an **empty square with nothing
+  (`drawnSquares()` → `sq-fill-<brush>` via `paintSquares()`); a plain right-click on a piece **clears the board**
+  (`clearBoardMarks()`, 2026-10-21, user's call): your arrows and fills, the automatic arrows until the board moves,
+  a hover arrow, and the selected piece with its graded circles. Until then it held that piece's threat arrows
+  (`movesShapesFor()`, `heldThreats`; removed with it). Since chessground's list is always empty, its left-click
+  erase never fires, so our capture-phase `mousedown` listener clears drawings on a left click. A left click on an **empty square with nothing
   selected** also clears the automatic arrows (overlays, a tactic hint's ring/arrow, a hover arrow) for that position
   (`shapesClearedFen`, read in `baseShapes()`; 2026-10-21, user: a way to reset); moving on, or back to it, shows them
   again. Lesson guide arrows, saved marks and Player-moves fills stay.
@@ -454,13 +466,15 @@ file says what is true now. Last full cleanup: 2026-10-03.
   A click or tap on a square with nothing selected plays the move (chessground's `select` event → `onPlayerSquare()`,
   deferred a tick); two moves to one square, the more popular wins. Painted through `paintSquares()` (under drawn
   fills), refreshed from `renderKeyCard()`. Only where you can move (`canMove()`); off in lessons, live puzzles, the
-  editor, with the engine off, and while a tactic hint hides the lists. Tested (Playwright, 2026-10-21): start
+  editor and with the engine off. Shown during an unrevealed tactic hint too (2026-10-21, user's call, though it gives
+  the answer away). A piece picked up before the deep search lands: its plain move dots pulse (`#board-wrap.hm-searching`,
+  `hmContext()` → `{pending}`) until the circles arrive. Tested (Playwright, 2026-10-21): start
   position (5 greens, click e4 plays it), Greek gift (Bxh7+ Brilliant, click/tap on h7 plays it, phone 390 px).
   Inaccuracy yellow seen on a loaded game; WebKit draws the squares.
   **Reworked the same day (user's picks, final form):** nothing shows until you **select a piece**; then every one of
   its moves is a circle in its grade colour (a ring on a capture; `selectedMoveGrades()` from `sb.all`, the select
-  event repaints a tick later; one solid dark edge, `--hm-edge`), each with its number in white, dark-outlined, in the
-  square's top-right corner (`showHmNumbers()` → `#hm-nums`; padding in px, a % is of the board's width). **Two clicks
+  event repaints a tick later; one solid dark edge, `--hm-edge`), each with its number in black, weight 900 (white with a dark outline until later
+  the same day, user's call), in the square's top-right corner (`showHmNumbers()` → `#hm-nums`; padding in px, a % is of the board's width). **Two clicks
   to move** (user: a stray click shouldn't move): the first click on a circle previews it (`hmArmed`: the square
   filled in its grade colour, the arrow kept; the board's capture-phase mousedown stops chessground seeing it), a
   second click on it plays it, any other click cancels; dragging still moves in one go. Dropped the same day: Maia's

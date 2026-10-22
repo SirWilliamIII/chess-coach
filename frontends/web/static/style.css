@@ -188,7 +188,7 @@ body.hide-score .tab-score, body.hide-chat .tab-chat { display: flex; }
   position: relative;
   width: var(--board-w);
   aspect-ratio: 1;
-  margin-bottom: 18px;  /* room for the file letters under the board */
+  margin-bottom: 20px;  /* room for the file letters under the board */
 }
 #board { width: 100%; height: 100%; transition: filter .5s ease; }
 .board-wrap.game-over #board { filter: brightness(.55) saturate(.7); }
@@ -206,13 +206,13 @@ cg-board square.selected { background-color: rgba(255, 255, 51, 0.55); }
 cg-board square.move-dest { background: radial-gradient(rgba(0,0,0,.18) 19%, transparent 20%); }
 cg-board square.oc.move-dest { background: radial-gradient(transparent 0%, transparent 79%, rgba(0,0,0,.18) 80%); }
 cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,0,0,1) 0%, rgba(231,0,0,1) 25%, rgba(169,0,0,0) 89%, rgba(158,0,0,0) 100%); }
-.cg-wrap coords { opacity: 1; font-family: inherit; font-weight: 700; font-size: 12px; }
+.cg-wrap coords { opacity: 1; font-family: inherit; font-weight: 700; font-size: 14px; }  /* 12 until 2026-10-21 (user: easier to read) */
 /* outside the board (user's call): 1-8 in the strip left of it, a-h underneath, one muted colour */
-.cg-wrap coords.ranks { left: -15px; top: 0; width: 12px; height: 100%; }
+.cg-wrap coords.ranks { left: -17px; top: 0; width: 14px; height: 100%; }
 .cg-wrap coords.ranks coord { transform: none; display: flex; align-items: center; justify-content: center; }
-.cg-wrap coords.files { left: 0; bottom: -19px; width: 100%; height: 16px; text-transform: none; }
+.cg-wrap coords.files { left: 0; bottom: -21px; width: 100%; height: 18px; text-transform: none; }
 .cg-wrap coords.files coord { text-align: center; padding: 0; transform: none; }
-.cg-wrap coords coord { color: var(--muted); }
+.cg-wrap coords coord { color: #cfcabf; }  /* brighter than --muted, for reading at a glance */
 
 .evalbar {
   position: relative; width: var(--board-w); height: 20px; border-radius: 4px; overflow: hidden;
@@ -236,7 +236,7 @@ cg-board square.check { background: radial-gradient(ellipse at center, rgba(255,
   main {
     --strip: 46px;     /* 20 bar + 8 + 18 rank labels */
     --nav-col: 52px;   /* 40 buttons + 12 gap */
-    --board-w: min(var(--board-max), calc(100vh - var(--head-h, 0px) - 110px - 2 * var(--pad-y, 28px)),
+    --board-w: min(var(--board-max), calc(100vh - var(--head-h, 0px) - 112px - 2 * var(--pad-y, 28px)),
       calc(100vw - var(--nav-w) - var(--side-w) - 2 * var(--pad-x) - var(--gap) - var(--strip) - var(--nav-col)));
     grid-template-rows: repeat(3, auto);
   }
@@ -685,15 +685,18 @@ cg-board { --hm-edge: #1f1d1a; }
 cg-board square.hm-dot { background: radial-gradient(circle closest-side, var(--g) 0 32%, var(--hm-edge) 33% 38%, transparent 39%); }
 cg-board square.hm-dot.oc, cg-board square.hm-dot.hm-cap { background: radial-gradient(circle closest-side, transparent 0 78%, var(--hm-edge) 79% 82%,
   var(--g) 83% 94%, var(--hm-edge) 95% 98%, transparent 99%); }
+/* the deep search still running for the picked-up piece (paintSquares): its plain dots pulse */
+.hm-searching cg-board square.move-dest { animation: hm-pulse 1s ease-in-out infinite; }
+@keyframes hm-pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .hm-searching cg-board square.move-dest { animation: none; opacity: .5; } }
 /* the previewed move (a first click on its circle): the square filled in its grade colour; a second click plays it */
 cg-board square.hm-dot.hm-armed { background: var(--g); box-shadow: inset 0 0 0 2px var(--hm-edge); }
-/* the circles' numbers (showHmNumbers): white text in each square's top-right corner, no bubble (user's call), with a
-   dark outline so it reads on cream as on tan. Padding in px: a % would be of the whole board's width */
+/* the circles' numbers (showHmNumbers): black, heavy text in each square's top-right corner, no bubble (user's calls,
+   2026-10-21; white with a dark outline before). Padding in px: a % would be of the whole board's width */
 #hm-nums { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
 .hm-num { position: absolute; width: 12.5%; height: 12.5%; display: flex; justify-content: flex-end; align-items: flex-start;
   padding: 3px 5px 0 0; box-sizing: border-box; }
-.hm-num b { color: #fff; font: 800 calc(var(--board-w) / 8 * .17) / 1 system-ui, sans-serif; font-variant-numeric: tabular-nums;
-  text-shadow: -1px -1px 0 #1f1d1a, 1px -1px 0 #1f1d1a, -1px 1px 0 #1f1d1a, 1px 1px 0 #1f1d1a, 0 0 3px #1f1d1a; }
+.hm-num b { color: #111; font: 900 calc(var(--board-w) / 8 * .18) / 1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
 .ov-players { height: 10px; width: 10px; border-radius: 2px; background: linear-gradient(90deg, #81b64c 50%, #e58f2a 50%); border-radius: 50%; }
 
 /* ---------- library ---------- */
@@ -754,6 +757,9 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .msg.card.g-inaccuracy { --gc: #e3b134; }
 .msg.card.g-mistake { --gc: #e58f2a; }
 .msg.card.g-blunder { --gc: #b23330; }
+.msg.card.g-brilliant { --gc: #1baca6; }
+.msg.card.g-great { --gc: #4b8fbc; }
+.alt-best:empty { display: none; }
 .card-head { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .card-head b { font-size: 14.5px; }
 .card-head .card-sub { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -776,6 +782,24 @@ ol.points li.card-play.active { box-shadow: 0 0 0 1px var(--accent), 0 2px 8px r
 .stat-v { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; color: #f1eee6; line-height: 1.2; }
 .stat-v .san { font-size: 16px; }
 .stat-s { font-size: 11.5px; line-height: 1.3; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.card-live { display: contents; }  /* its two tiles sit in the stats grid */
+/* win chance before → after: the kept part light, the lost part in the grade's colour */
+.card-wc { display: flex; flex-direction: column; gap: 6px; }
+.wc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.wc-nums { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.wc-nums b { font-size: 15px; color: #f1eee6; }
+.wc-arrow { margin: 0 2px; }
+.wc-lost-n { margin-left: 8px; padding: 1px 6px; border-radius: 99px; font-size: 11.5px; font-weight: 700; color: #1f1d1a; background: var(--gc); }
+.wc-bar { position: relative; height: 8px; border-radius: 99px; background: #23211f; overflow: hidden; }
+.wc-keep { position: absolute; left: 0; top: 0; bottom: 0; background: #d8d4cb; }
+.wc-gone { position: absolute; top: 0; bottom: 0; background: var(--gc); }
+/* what to play instead: best move, its line, and the move most players at the rating pick */
+.card-alt { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 8px; background: #2a2826; }
+.alt-row { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.alt-row .stat-k { min-width: 92px; }
+.alt-ev { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.card-popular:empty { display: none; }
+.card-alt .card-line .stat-k { min-width: 92px; }
 .card-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .card-line .demo-btn { flex: none; width: 28px; height: 28px; padding: 0; border-radius: 50%; font-size: 11px; }
 .card-line .stat-k { flex: none; }
