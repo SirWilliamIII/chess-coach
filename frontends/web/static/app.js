@@ -221,6 +221,7 @@ document.querySelectorAll('#m-tabs button').forEach((b) => { b.onclick = () => s
 // handler. A left click (no Shift: Shift+left-drag also draws in chessground) clears your drawings and
 // held threat arrows, like chess.com.
 let drawMods = null;
+let shapesClearedFen = null;  // the position whose automatic arrows a click on an empty square cleared
 $('board').addEventListener('mousedown', (e) => {
   if (e.button === 2 || e.shiftKey) {
     drawMods = { fn: !!e.getModifierState?.('Fn'), shift: e.shiftKey, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey };
@@ -231,6 +232,13 @@ $('board').addEventListener('mousedown', (e) => {
       if (cg.state.drawable.current) cg.state.drawable.current.brush = drawBrush(drawMods) || 'drawNone';
     });
   } else if (e.button === 0 && !state.editor) {
+    // a click on an empty square with nothing selected also clears the automatic arrows (overlays, a tactic hint's
+    // ring and arrow) for this position, until the board moves (user, 2026-10-21: a way to reset the board)
+    const sq = cg.getKeyAtDomPos([e.clientX, e.clientY]);
+    if (sq && !cg.state.selected && !cg.state.pieces.get(sq)) {
+      shapesClearedFen = currentGame().fen();
+      sbHideMove();  // redraws with them gone
+    }
     clearUserShapes();
   }
 }, true);
@@ -1854,6 +1862,7 @@ function paintSquares() {
   // a selected piece: graded dots on its squares instead of the top-5 fills (fills: the piece's colour + a grade badge)
   const dots = selectedMoveGrades();
   hmHoverable = new Map([...(dots.size ? dots : hmSquares)].map(([sq, m]) => [sq, m.uci]));
+  if (hmHoverSq && !hmHoverable.has(hmHoverSq)) { hmHoverSq = null; showHmValue(null); }
   const hm = dots.size ? [...dots].map(([sq, m]) => [sq, `hm-dot hm-g-${m.grade}`])
     : [...hmSquares].map(([sq, m]) => [sq, `hm-p-${m.piece} hm-g-${m.grade}`]);
   const marks = new Map([...hm,
@@ -2321,10 +2330,40 @@ function onBoardHover(e) {
   if (sq === hmHoverSq) return;
   if (hmHoverSq) { document.querySelectorAll('.score-body .hot').forEach((t) => t.classList.remove('hot')); sbHideMove(); }
   hmHoverSq = uci ? sq : null;
+  showHmValue(uci ? sq : null, uci);
   if (!uci) return;
   sbShowMove(uci);
   document.querySelectorAll(`.score-body .live [data-uci="${uci}"]`).forEach((t) => t.classList.add('hot'));
 }
+// the hovered move's number, small in its square: what it does to your score against the material on the board now,
+// from the mover's side (user's call, 2026-10-21: down 5 with a free rook to take reads +5.00 — the engine's own
+// "before" eval already counts the best move, so measured from it the best move would always read 0.00)
+function hmValue(uci) {
+  const c = currentGame();
+  const sb = sbGet(c.fen());
+  const r = sb && sbRow(sb, uci);
+  if (!r) return null;
+  const turn = c.turn(), sign = turn === 'w' ? 1 : -1;
+  const ev = sbEvalAfter(r, turn, sb.all[0].eval_white).replace('−', '-');
+  if (ev.startsWith('#')) return ev.includes('-') === (turn === 'b') ? `M${ev.replace(/[#-]/g, '')}` : `−M${ev.replace(/[#-]/g, '')}`;
+  const v = sign * parseFloat(ev) - sign * material(c).diff;
+  if (Number.isNaN(v)) return null;
+  return Math.abs(v) < 0.005 ? '0.00' : `${v > 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}`;
+}
+
+function showHmValue(sq, uci) {
+  let el = $('hm-val');
+  if (!sq) { el?.remove(); return; }
+  const text = hmValue(uci);
+  if (!text) { el?.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'hm-val'; $('board-wrap').appendChild(el); }
+  const f = sq.charCodeAt(0) - 97, rk = +sq[1] - 1, white = state.orientation === 'white';
+  el.style.left = `${(white ? f : 7 - f) * 12.5}%`;
+  el.style.top = `${(white ? 7 - rk : rk) * 12.5}%`;
+  el.dataset.v = text;
+  el.classList.toggle('neg', text.startsWith('−'));
+}
+
 if (!TOUCH) {
   $('board').addEventListener('mousemove', onBoardHover);
   $('board').addEventListener('mouseleave', () => onBoardHover({ clientX: -1, clientY: -1 }));
@@ -3429,7 +3468,11 @@ async function backToGame() {
 // arrows that belong to the position rather than to a hover: the Learn guide (empty elsewhere), plus
 // the arrows you drew on it
 function baseShapes() {
-  return [...overlayShapes(), ...guideShapes(), ...tacticShapes(), ...drawnShapes()];
+  // cleared by a click on an empty square: only for that visit, so moving on (or back to it) shows them again
+  const fen = currentGame()?.fen();
+  if (shapesClearedFen && shapesClearedFen !== fen) shapesClearedFen = null;
+  const cleared = !!shapesClearedFen;
+  return [...(cleared ? [] : overlayShapes()), ...guideShapes(), ...(cleared ? [] : tacticShapes()), ...drawnShapes()];
 }
 
 function guideShapes() {
@@ -3573,19 +3616,21 @@ function noteMove() {
   const best = m.best ? moveName(m.label, m.best) : null;
   const lost = Math.round(m.win_pct_lost);
   const mate = /^#-?0$/.test(m.eval_after);
-  const verdict = m.played_best ? 'Best move' : m.class ? `${m.class[0].toUpperCase()}${m.class.slice(1)} · ${lost}% win chance`
-    : lost >= 3 ? `A little loose · ${lost}% win chance` : 'Fine';
-  const rows = [];
-  rows.push(`<div class="card-row"><span class="card-k">Played</span>${moveChip(name)}${evalPill(m.eval_after)}`
-    + `<span class="card-sub">${esc(mate ? 'checkmate' : evalWords(evalValue(m.eval_after)))}</span></div>`);
+  // collapsed: one narrow line (move, a grade dot and word); open: stat tiles (user's call, 2026-10-21)
+  const grade = m.played_best ? 'best' : m.class || (lost >= 3 ? 'loose' : 'fine');
+  const gradeWord = { best: 'Best move', fine: 'Fine', loose: 'A little loose', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder' }[grade];
   // under 1% the engine's preference is a matter of taste, so don't suggest it
-  if (!m.played_best && best && lost >= 1) {
-    rows.push(`<div class="card-row"><span class="card-k">Best</span>${moveChip(best)}${evalPill(m.eval_before)}</div>`);
-  }
+  const showBest = !m.played_best && best && lost >= 1;
+  const stat = (k, v, s = '') => `<div class="stat"><span class="stat-k">${k}</span><span class="stat-v">${v}</span><span class="stat-s">${s}</span></div>`;
+  const rows = [`<div class="card-stats">`
+    + stat('Eval', esc(fmtEval(m.eval_after)), esc(mate ? 'checkmate' : evalWords(evalValue(m.eval_after)).replace(' is ', ' ')))  // fits two lines in a narrow tile
+    + stat('Cost', lost >= 1 ? `−${lost}%` : '0%', lost >= 1 ? 'win chance lost' : 'win chance kept')
+    + (showBest ? stat('Best', moveChip(best), `${esc(fmtEval(m.eval_before))} instead`) : stat('Best', '✓', m.played_best ? 'you played it' : 'close enough'))
+    + '</div>'];
   const line = (m.best_line || '').replace(/\d+\.+\s*/g, '').split(/\s+/).filter(Boolean);
   if (line.length > 1) {
-    rows.push(`<div class="card-row"><button class="demo-btn" data-demo="best">▶ ${m.played_best ? 'Main' : 'Best'} line</button>`
-      + `<span class="card-sub">${esc(m.best_line.split(/\s+/).slice(0, 6).join(' '))}…</span></div>`);
+    rows.push(`<div class="card-line"><button class="demo-btn" data-demo="best" title="Show it on the demo board">▶</button>`
+      + `<span class="stat-k">${m.played_best ? 'Main' : 'Best'} line</span><span class="card-line-moves">${esc(m.best_line.split(/\s+/).slice(0, 8).join(' '))}…</span></div>`);
   }
   if (m.trap) {
     const kind = m.trap.kind;
@@ -3596,7 +3641,7 @@ function noteMove() {
     + '<button class="btn ghost small card-back" title="Close the demo board and return to the game">Back to my game</button></div>');
 
   document.querySelectorAll('.msg.card:not(.collapsed)').forEach((el) => el.classList.add('collapsed'));  // keep the chat short
-  const msg = addMsg('coach card', `<div class="card-head"><b>${esc(name)}</b><span class="card-sub">${esc(verdict)}</span>`
+  const msg = addMsg(`coach card g-${grade}`, `<div class="card-head"><b>${esc(name)}</b><span class="card-grade">${esc(gradeWord)}</span>`
     + `<span class="card-caret">▾</span></div><div class="card-body">${rows.join('')}</div>`);
   msg.querySelector('.card-head').onclick = () => msg.classList.toggle('collapsed');
   msg.querySelector('.card-back').onclick = () => closeDemo();
@@ -4534,8 +4579,11 @@ $('side-split').ondblclick = () => { $('side').style.removeProperty('--chat-h');
 // Beside the board (above 900 px): drag to size the board; the side column takes the rest (CSS --board-user caps
 // the board, the height and width limits still apply). Remembered per browser; double-click goes back to the max.
 function setBoardMax(px) {
-  if (px) document.querySelector('main').style.setProperty('--board-user', `${Math.round(px)}px`);
-  else document.querySelector('main').style.removeProperty('--board-user');
+  const main = document.querySelector('main');
+  if (px) main.style.setProperty('--board-user', `${Math.round(px)}px`);
+  else main.style.removeProperty('--board-user');
+  // a size you dragged may go past the default caps: less page padding, narrower panels (style.css .board-sized)
+  main.classList.toggle('board-sized', !!px);
   requestAnimationFrame(() => { document.body.dispatchEvent(new Event('chessground.resize')); cg.redrawAll(); });
 }
 if (+recall('boardMax')) setBoardMax(+recall('boardMax'));

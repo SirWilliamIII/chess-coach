@@ -360,8 +360,10 @@ file says what is true now. Last full cleanup: 2026-10-03.
   game's ratings any more. Game ratings go through
   `white_elo_cc`/`black_elo_cc` (`public_review()`): a Lichess game's (`review.from_lichess()`) converted to
   chess.com, a chess.com game's as they are. The ratings shown on screen stay the site's own.
-- **Per-move cards when stepping through a game** (`noteMove()`): verdict, played/best with eval pills, ▶
-  best line, Why?, Back to my game; built from the saved review (`best_line` etc. in `public_review()`), no
+- **Per-move cards when stepping through a game** (`noteMove()`; restyled 2026-10-21, user's call): collapsed = one
+  narrow line in a smaller font (move, grade dot + word; `g-<grade>` sets `--gc`, the scoreboard's grade colours, on
+  the edge), the newest open: three stat tiles (Eval + words, Cost = win chance lost, Best + its eval), ▶ best line,
+  Why?, Back to my game. The bot-game "Your move" card shares the collapsed look; built from the saved review (`best_line` etc. in `public_review()`), no
   engine call. Paid: a move losing ≥ 10% win chance (`BIG_MOMENT_PCT`) gets an automatic "⚠ Big moment"
   answer after 1.2 s on it, max 8 per game; it and Why? share `moveQuestion()` so they share the answer cache.
   Why? uses `.note-why` because `syncCards()` disables `.card-why` outside bot games.
@@ -412,7 +414,10 @@ file says what is true now. Last full cleanup: 2026-10-03.
   **threat arrows**: one per enemy piece it attacks (`movesShapesFor()`, chess.js `attackers()`, so pins and
   whose turn it is don't matter; knights as an L via `knightShapes()`). A second right-click undoes it. Since
   chessground's list is always empty, its left-click erase never fires, so our capture-phase `mousedown`
-  listener clears drawings and held threats on a left click.
+  listener clears drawings and held threats on a left click. A left click on an **empty square with nothing
+  selected** also clears the automatic arrows (overlays, a tactic hint's ring/arrow, a hover arrow) for that position
+  (`shapesClearedFen`, read in `baseShapes()`; 2026-10-21, user: a way to reset); moving on, or back to it, shows them
+  again. Lesson guide arrows, saved marks and Player-moves fills stay.
 - **Drawing colours** (2026-10-03, user's call: dark, opaque, no green because it vanished on the dark squares):
   `drawBrush()` reads modifiers on mousedown: none #d35400 orange, ⌃ #b01e1e red, ⌥ #0e7c7b teal, ⌘ #1f3f9e
   blue, fn #6b2fa0 purple (Shift stands in for fn). lineWidth 6 like the threat arrows (chessground scales the
@@ -440,7 +445,7 @@ file says what is true now. Last full cleanup: 2026-10-03.
   discovered attacks count) with the moved piece safe. Not built: mating-net threats (a quiet move threatening mate).
   "Defended" = any attacker of that square, so pins and x-rays aren't weighed. Any board, including the set-up board
   (once its FEN is valid); off while a puzzle is live. Not tested: Safari/Firefox, a real touch screen.
-- **Player moves on the board** (2026-10-21, user's idea; "Player moves" in the eye menu, `overlays.players`, off by
+- **Player moves on the board** (2026-10-21, user's idea; "Player moves" first in the eye menu, above Mine/Theirs, `overlays.players`, off by
   default): the destination squares of Maia's top 5 at the players' rating (`playerMoveSquares()`, from the scoreboard's
   search: `sbPcts()` + `sb.all`), filled in chess.com's grade colours (user's list: Brilliant #1baca6, Great #4b8fbc,
   Best #81b64c, Inaccuracy #e3b134, Mistake #e58f2a, Blunder #b23330; Excellent/Good share Best's green, user's
@@ -453,11 +458,16 @@ file says what is true now. Last full cleanup: 2026-10-03.
   position (5 greens, click e4 plays it), Greek gift (Bxh7+ Brilliant, click/tap on h7 plays it, phone 390 px).
   Inaccuracy yellow seen on a loaded game; WebKit draws the squares.
   **Reworked the same day (user's picks):** a fill is now the moving piece's colour (`hm-p-<piece>`: pawn blue, knight
-  lavender, bishop teal, rook orange, queen pink, king grey; 80% so tan squares don't turn it grey) and the grade a
-  corner badge (`hm-g-<grade>`, `--gt`: !! ! ✓ ?! ? ??, above the pieces via z-index). A selected piece shows every
-  one of its moves as a dot in its grade colour, a ring on captures (`selectedMoveGrades()` from `sb.all`; the select
+  lavender, bishop teal, rook orange, queen pink, king grey; solid, so a colour reads the same on cream and tan,
+  with a darker edge of its own colour so neighbours stay apart) and the grade a corner badge (`hm-g-<grade>`, `--gt`: !! ! ✓ ?! ? ??, above the pieces via z-index). A selected piece shows every
+  one of its moves as a dot in its grade colour, a ring on captures (dots, rings and badges share one solid dark edge,
+  `--hm-edge`) (`selectedMoveGrades()` from `sb.all`; the select
   event repaints a tick later), instead of the fills. Hovering a fill or a dot draws its arrow and lights its
   scoreboard rows (`onBoardHover()`, `cg.getKeyAtDomPos`, `hmHoverable`; not on touch). One toggle for all of it.
+  Hover also shows the move's number in its square (`hmValue()` → `#hm-val`, a solid dark pill): the eval after the
+  move minus the material on the board now, both from the mover's side (user's call: "down 5, a 3-point capture reads
+  3.00"; measured from the engine's own eval the best move would always read 0.00). It's the engine's eval, so
+  position counts too: down a rook with a free knight to take read +1.59, not +3.00; quiet moves there −2.7 to −3.4.
   Tested (Playwright): start position fills, hover e4 (arrow + rows), Ng1 dots (Nf3 green, Nh3 yellow), deselect, click
   e4 plays, Qd8 after exd5 (ring on d5). The user saw them live (after a hard reload:
   a cached `app.js` shows the checkbox but no squares). Not checked: Mistake/Blunder squares, whether Brilliant fires
@@ -493,7 +503,10 @@ file says what is true now. Last full cleanup: 2026-10-03.
     (the board formula subtracts it) and a height-bound board or a hidden panel widens the panels instead of
     centring margins. Both panels hidden: capped at `--side-w`. **Board size handle** (`#side-resize`, the gap
     left of `.side`, `setBoardMax()`): dragging sets `--board-user` (→ `--board-max`, min 320) on `main`,
-    localStorage `boardMax`, double-click clears it. Hidden ≤ 900 px.
+    localStorage `boardMax`, double-click clears it. Hidden ≤ 900 px. A dragged size may pass the default caps
+    (2026-10-21, user: it only made the board smaller): `main.board-sized` drops the page's top/bottom padding to 8 px
+    (`--pad-y`, in the height term) and the panels' minimum to 300 px stacked / 2×260 + 24 side by side. Measured:
+    1440×790 624 → 664, 1440×900 734 → 774, 1920×1080 740 → 950; no page scroll; shrinking and double-click work.
   - **Phones and touch** (2026-10-09, user: "way too many things to accidentally click when scrolling"): on a touch
     screen (`TOUCH`, `pointer: coarse`) moves are tap-only: a capture-phase `touchstart` listener on `#board` stops
     chessground seeing touches (it grabbed pieces on touchstart and, with one selected, moved on the next touch), so
@@ -1110,9 +1123,6 @@ Add an entry the moment something is noticed, even when it's out of scope for th
   The only signs are the top name "Bot (~1100)", "Bot game" under the board, Takeback and one coach line. No way out
   but the nav's "Start over". Not decided: a status or an "End game" button in that row (the "Your move" text was
   removed on purpose earlier).
-- **Board smaller at 1680-2000 px wide** (2026-10-21, from the bar-left/buttons-right change): the three-column layout
-  is width-bound there and the new bar + button column take 80 px of width: 1920×1080 820 → 740 px. Fix if it
-  matters: let the `#side-resize` drag shrink `--side-w` (it can only raise `--board-max` now).
 - **Not tested on purpose:** coming back to /openings during a lesson build (a real build costs ~$0.25 and 4-6 min;
   user's call 2026-10-12).
 - **Decided, left as is (user, 2026-10-12):** with the scoreboard hidden, the Engine switch and the move strip are
